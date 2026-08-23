@@ -1,0 +1,48 @@
+# The broker daemon, on the same skeleton as the issuer's unit. Its Compose
+# counterpart is the `broker` service, starting the same binary with the same
+# argument surface; debian/check-manifests holds the two to each other.
+[Unit]
+Description=KerBridge broker daemon
+Documentation=man:kerbridge-broker(8)
+# The broker opens the issuer socket per request rather than at startup, so
+# ordering is tidiness and a cold boot needs no health gate.
+Wants=kerbridge-issuerd.service
+After=kerbridge-issuerd.service network-online.target
+# Installed and not yet configured is a designed state, and every failure a
+# condition cannot see latches into `failed` after ~25 s rather than looping --
+# see the issuer's unit for both.
+ConditionPathExists=/etc/kerbridge/main.toml
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+ExecStartPre=/usr/bin/kbconfig --config /etc/kerbridge check
+ExecStart=/usr/sbin/kerbridge-broker
+Restart=on-failure
+RestartSec=5s
+User=_kerbridge-broker
+# _kerbridge is this account's *primary* group -- the postinst creates it with
+# `adduser --ingroup`, so there is no per-user group. Stated here rather
+# than left to the passwd entry, and not repeated as SupplementaryGroups=, which
+# would name the same group twice.
+Group=_kerbridge
+StateDirectory=kerbridge/broker
+StateDirectoryMode=0750
+LogsDirectory=kerbridge/broker
+LogsDirectoryMode=0750
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Empty, and it can be: this daemon runs under User=, and the one capability a
+# listener might want is CAP_NET_BIND_SERVICE -- which it does not, because
+# `listen` is loopback with a high port (127.0.0.1:8080 by default, and a
+# non-loopback address is refused in code). A privileged port there would fail
+# to bind under this line. AmbientCapabilities= is meaningful only under User=,
+# and there is nothing to hand back.
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

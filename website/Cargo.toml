@@ -1,0 +1,17 @@
+[package]
+name = "kerbridge-website"
+version = "0.9.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+# Its own workspace, like `client/` is. Nothing here ships, so keeping it out of
+# the other two lockfiles keeps a templating dependency out of the audit surface
+# of anything that does -- including the `cargo tree` gates in the root Makefile,
+# which assert one rustls and one ring across a workspace.
+[workspace]
+
+[dependencies]
+minijinja = { version = "2.5", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"

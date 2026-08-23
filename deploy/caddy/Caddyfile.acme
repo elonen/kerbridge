@@ -1,0 +1,40 @@
+# TLS strategy: acme (TLS_STRATEGY=acme). Caddy obtains and renews the
+# certificate for {$BROKER_FQDN} itself (Let's Encrypt by default) over a
+# challenge that the CA drives *inbound*, and stores it in the durable /data
+# volume. So this strategy only works on a host the public internet can reach:
+# {$BROKER_FQDN} must resolve publicly to it, with :443 open (TLS-ALPN-01) or :80
+# published as well (HTTP-01). A broker on a LAN satisfies neither -- use
+# Caddyfile.acme-dns there, which proves control through DNS instead.
+#
+# The cost of any built-in ACME is that the host holds the ACME account; here it
+# holds nothing else. Registration is anonymous, and there is no reload-caddy.sh
+# step -- Caddy renews on its own schedule.
+{
+	# Log level, from CADDY_LOG_LEVEL. DEBUG is how a failing challenge gets
+	# debugged: at INFO the ACME client says only that it is trying to solve one,
+	# and the CA's own reason for rejecting it is not printed at all.
+	# Nothing else about the log changes: still stderr, still JSON.
+	log {
+		level {$CADDY_LOG_LEVEL:INFO}
+	}
+	# No admin API: nothing external drives Caddy in this strategy, and the
+	# default localhost:2019 would sit in the broker's shared network namespace.
+	admin off
+	# Keep certificate automation, drop the :80 redirect vhost it would otherwise
+	# add. The HTTP-01 challenge endpoint is unaffected; the redirect is not
+	# wanted, since the only client is the KerBridge client, which refuses plain http.
+	auto_https disable_redirects
+	import /etc/caddy/timeouts.caddyfile
+}
+
+https://{$BROKER_FQDN}:443 {
+	tls {
+		# The ACME directory, from ACME_CA. Always set, never empty -- an empty
+		# `ca` is a parse error. Point it at Let's Encrypt staging while debugging
+		# a challenge: failed validations against production count against a rate
+		# limit (5 per account, per hostname, per hour) that retries burn quickly,
+		# and staging issues from an untrusted root so nothing else is affected.
+		ca {$ACME_CA}
+	}
+	import /etc/caddy/routes.caddyfile
+}

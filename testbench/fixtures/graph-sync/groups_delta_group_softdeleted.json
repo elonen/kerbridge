@@ -1,0 +1,24 @@
+{
+  "note": "reason \"changed\" = soft-deleted, restorable from /directory/deletedItems for 30 days. Cloud security group soft delete is in preview (groups-restore-deleted doc); sync must treat BOTH reasons as: quarantine now.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA3"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA4",
+      "value": [
+        {
+          "id": "77770001-aaaa-bbbb-cccc-000000000001",
+          "@removed": {
+            "reason": "changed"
+          }
+        }
+      ]
+    }
+  }
+}

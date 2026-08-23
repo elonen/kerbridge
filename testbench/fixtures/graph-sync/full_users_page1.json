@@ -1,0 +1,43 @@
+{
+  "note": "accountEnabled/userType/onPremisesSyncEnabled require explicit $select (user resource docs).",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,accountEnabled,userType,onPremisesSyncEnabled"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users(id,displayName,userPrincipalName,accountEnabled,userType,onPremisesSyncEnabled)",
+      "@odata.nextLink": "https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,accountEnabled,userType,onPremisesSyncEnabled&$skiptoken=RFDU-page2-opaque",
+      "value": [
+        {
+          "id": "33334444-dddd-5555-eeee-6666ffff7777",
+          "displayName": "Alice Anderson",
+          "userPrincipalName": "alice.anderson@contoso.example",
+          "accountEnabled": true,
+          "userType": "Member",
+          "onPremisesSyncEnabled": null
+        },
+        {
+          "id": "9f3a0002-aaaa-bbbb-cccc-000000000002",
+          "displayName": "John Doe",
+          "userPrincipalName": "jdoe@contoso.example",
+          "accountEnabled": true,
+          "userType": "Member",
+          "onPremisesSyncEnabled": null
+        },
+        {
+          "id": "8b210003-aaaa-bbbb-cccc-000000000003",
+          "displayName": "John Doe",
+          "userPrincipalName": "john.doe2@contoso.example",
+          "accountEnabled": true,
+          "userType": "Member",
+          "onPremisesSyncEnabled": null
+        }
+      ]
+    }
+  }
+}

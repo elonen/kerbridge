@@ -1,0 +1,102 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/kerbridge-core",
+    "crates/kerbridge-notify",
+    "crates/kerbridge-idp",
+    "crates/kerbridge-config",
+    "crates/kerbridge-broker",
+    "crates/kerbridge-sync",
+    "crates/kerbridge-manage",
+    "crates/kerbridge-setup",
+    "crates/kerbridge-issuerd",
+]
+
+# Client is its own workspace (client/Cargo.toml): everything there targets a
+# workstation -- Windows and macOS -- and shares no code with the server crates,
+# which target x86_64-musl.
+exclude = ["client"]
+
+[workspace.package]
+version = "0.9.0"
+edition = "2024"
+rust-version = "1.91"
+
+# `kerbridge-core` is the deliberate exception and sets its own -- see its manifest.
+license = "GPL-3.0-or-later"
+
+
+[workspace.dependencies]
+kerbridge-core = { path = "crates/kerbridge-core" }
+kerbridge-notify = { path = "crates/kerbridge-notify" }
+kerbridge-idp = { path = "crates/kerbridge-idp" }
+
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+# Dev-only, and only to hold the schema `kbconfig` publishes to a document the
+# parser accepts. No default features: those fetch a remote `$ref` over HTTP,
+# which these self-contained documents never have and a test must never do.
+jsonschema = { version = "0.49", default-features = false }
+
+# The config structs describe themselves, behind `kerbridge-core/schema`. It
+# reads the `#[serde(...)]` attributes already on those structs rather than a
+# parallel vocabulary that can drift, and it evaluates a `default = "fn"` to the
+# value the function returns.
+#
+# `std` is not optional for us: it is the feature carrying `impl JsonSchema for
+# PathBuf` (schemars 1.2.2, `json_schema_impls/primitives.rs:74`), and eleven
+# `PathBuf` fields across those structs need it. Both are named rather than
+# taken as defaults so that a default which later grows a facet does not arrive
+# unasked -- the pair *is* today's default set, spelled out.
+schemars = { version = "1.2", default-features = false, features = ["derive", "std"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+    "rustls-tls-native-roots",
+    "json",
+] }
+
+# `tls-rustls-ring`, never the bare `tls-rustls`: that one pulls rustls with *no*
+# crypto provider, and rustls 0.23 then resolves one from a process-global
+# default -- which is whatever the dependency graph installed, and a panic on
+# first use when two are compiled in. Naming ring here is also what keeps
+# aws-lc-rs out, since it is rustls 0.23's own default provider.
+
+ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ring"] }
+
+# Pinned to ldap3's rustls major so one ClientConfig type serves both.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+
+# Transitively present via reqwest and ldap3 already, so naming it here adds no crate to the lock.
+url = "2"
+
+# The same, through reqwest's `rustls-tls-webpki-roots`: the trust anchors a
+# client would use, for the one probe here that asks what a client would see.
+webpki-roots = "1"
+
+# Three calls std does not expose -- `geteuid`, `getegid`, `getgroups` -- which
+# `secret`'s permission diagnosis needs to say who was denied. Safe wrappers, so
+# `kerbridge-core` forbids `unsafe` like every other server crate; raw libc here
+# is what used to cost it that. Not `nix`, whose `getgroups` is
+# `cfg(not(apple_targets))` and the bench that runs these tests is macOS.
+# `process` is the only feature named: `std` is the default and carries the
+# `alloc` that `getgroups`'s `Vec` needs.
+rustix = { version = "1", features = ["process"] }
+
+axum = "0.8"
+unicode-normalization = "0.1"
+clap = { version = "4", features = ["derive"] }
+# `sync` is named rather than inherited: the JWKS cache and the broker's
+# in-flight semaphore both need it, and until now it arrived only because some
+# other crate in the same graph happened to enable it.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+base64 = "0.22"
+
+# JWT signature verification uses ring directly. rustls already brings it, so this adds nothing, and naming it
+# here is what keeps aws-lc-rs -- which needs cmake and fights musl -- from drifting in.
+ring = "0.17"
+
+[profile.release]
+strip = "symbols"
+lto = "thin"

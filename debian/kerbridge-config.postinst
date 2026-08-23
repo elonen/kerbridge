@@ -1,0 +1,203 @@
+#!/bin/sh
+# Create the group, create the directories, and -- on a first install with
+# answers to use -- write the configuration set the whole deployment reads.
+#
+# WHAT THIS NEVER DOES. It never modifies a configuration file that already
+# exists, provisioned realm or not. Policy §10.7.3 names the shape as
+# ordinary practice: "a common practice is to create a script called
+# package-configure and have the package's postinst call it if and only if the
+# configuration file does not already exist". That is also why there is no
+# dpkg-reconfigure guard anywhere in this package: with nothing ever rewritten
+# there is nothing to guard, and reconfiguring re-asks, sees the files and
+# prints one line.
+#
+# It also never provisions a realm. That is `kbsetup realm`, run by an operator
+# afterwards with a terminal, and no package installs a domain.
+set -e
+
+# dh_installdebconf deliberately does not add this line -- "it is too hard to
+# do it right" -- and without it the config script never runs at all.
+. /usr/share/debconf/confmodule
+
+CONFIG_DIR=/etc/kerbridge
+KBCONFIG=/usr/bin/kbconfig
+PREPARE_STATE=/usr/libexec/kerbridge/prepare-state
+
+# Every answer, by question name. Empty is the answer debconf gives for a
+# question nobody answered, and the whole shape of this script turns on it.
+answer() {
+    db_get "kerbridge-config/$1"
+    printf '%s' "$RET"
+}
+
+# Write the set, with the seven answers and the six values this package supplies
+# without asking. `kbconfig init` is the one place both rules live -- write only
+# if absent, write nothing at all if a required answer is empty -- so they are
+# covered by `cargo test` instead of being retyped here. See
+# `init_writes_nothing_when_a_required_answer_is_empty` in
+# crates/kerbridge-config/src/main.rs.
+seed() {
+    realm=$(answer realm)
+    if [ -z "$realm" ]; then
+        echo "kerbridge-config: no realm was given, so no configuration set was" >&2
+        echo "    written. Run 'dpkg-reconfigure kerbridge-config' to answer, or" >&2
+        echo "    write $CONFIG_DIR yourself with 'kbconfig init $CONFIG_DIR'." >&2
+        return 0
+    fi
+    ldap_url=$(answer ldap_url)
+    tenant_id=$(answer tenant_id)
+
+    # The domain root, asked of the parser rather than derived again here. It is
+    # one of six values the realm already implies, and a maintainer script
+    # re-deriving one of them is a second spelling of a rule that has to keep
+    # agreeing with the first. So a throwaway set is written, asked, and thrown
+    # away -- the answer costs seven files nobody reads.
+    #
+    # The broker's password file comes back the same way and for the same
+    # reason: the directory it sits in is the one this deployment keeps its
+    # secrets in, and `kbsetup directory` puts svc-kerbridge-manage's password
+    # beside it rather than in a compiled-in /etc/kerbridge.secrets. See
+    # `beside` in crates/kerbridge-setup/src/directory.rs, which is the rule
+    # this follows; asking the parser is what keeps the two agreeing.
+    scratch=$(mktemp -d)
+    base_dn=""
+    broker_password_file=""
+    if "$KBCONFIG" init "$scratch" --set "realm.realm=$realm" \
+            --set "realm.ldap_url=$ldap_url" >/dev/null 2>&1; then
+        base_dn=$("$KBCONFIG" --config "$scratch" get realm.base_dn 2>/dev/null) || base_dn=""
+        broker_password_file=$("$KBCONFIG" --config "$scratch" get broker.bind_password_file \
+            2>/dev/null) || broker_password_file=""
+    fi
+    rm -rf "$scratch"
+
+    set -- \
+        --set "realm.realm=$realm" \
+        --set "realm.ldap_url=$ldap_url" \
+        --set "realm.ldap_ca_file=$CONFIG_DIR/certs/realm-ca.pem" \
+        --set "issuerd.socket_group=_kerbridge" \
+        --set "issuerd.broker_user=_kerbridge-broker"
+    # The two identity keys above matter more than they look. Their numeric
+    # siblings default to 10002 and 10001 -- Compose's fixed ids -- and
+    # `adduser --system` picks numbers no package can predict. The name fields
+    # exist for exactly this case: state the name, never the number, and
+    # `kbconfig check` refuses both at once.
+
+    if [ -n "$base_dn" ]; then
+        set -- "$@" \
+            --set "broker.bind_dn=CN=svc-kerbridge-broker,CN=Users,$base_dn" \
+            --set "idp_entra.bind_dn=CN=svc-kerbridge-sync-entra,CN=Users,$base_dn" \
+            --set "kbmanage.bind_dn=CN=svc-kerbridge-manage,CN=Users,$base_dn"
+    fi
+
+    # kbmanage.toml's two stated keys are written for the operator whose CLI is
+    # on their own workstation, so both ship as the documented example: an
+    # identity in DC=example,DC=site and a path under /home/you.
+    #
+    # On this host neither is a guess. The metapackage puts kbmanage on the
+    # domain controller itself, `kbsetup directory` creates that identity in
+    # this realm, and it writes the password beside the broker's. Left unset,
+    # the two would be the only part of a package-installed set still naming
+    # the example. `kbmanage doctor` would then fail on the credential before
+    # it reported a single link of the chain it walks, and
+    # debian-deployment.md ends by telling the operator to run it.
+    if [ -n "$broker_password_file" ]; then
+        set -- "$@" --set \
+            "kbmanage.bind_password_file=$(dirname "$broker_password_file")/svc_kerbridge_manage_password"
+    fi
+
+    if [ -n "$tenant_id" ]; then
+        set -- "$@" \
+            --set 'main.sources=["entra"]' \
+            --set "idp_entra.provider_config.tenant_id=$tenant_id" \
+            --set "idp_entra.provider_config.broker_api_client_id=$(answer broker_api_client_id)" \
+            --set "idp_entra.provider_config.public_client_id=$(answer public_client_id)" \
+            --set "idp_entra.provider_config.sync_client_id=$(answer sync_client_id)" \
+            --set "idp_entra.provider_config.admission_group=$(answer admission_group)"
+    else
+        # A realm-only set: legal, and exactly the administrator's host that
+        # runs kbmanage and no daemon.
+        set -- "$@" --set 'main.sources=[]'
+    fi
+
+    # Not fatal on a refusal. `init` already exits 0 and reports when a
+    # required answer was empty -- the write-nothing rule -- so the only way
+    # this fails is an answer whose text cannot become the type the option
+    # holds, which is a wrong preseed. Naming it beats wedging apt over it.
+    if ! "$KBCONFIG" init "$CONFIG_DIR" "$@"; then
+        echo "kerbridge-config: the answers above were refused, so no" >&2
+        echo "    configuration set was written. Correct the preseed and run" >&2
+        echo "    'dpkg-reconfigure kerbridge-config'." >&2
+    fi
+}
+
+case "$1" in
+    configure)
+        # Idempotent by adduser's own rules: an existing system group exits 0.
+        # No --force-badname: measured, trixie's adduser 3.152 and noble's
+        # 3.137 both take the leading underscore unprompted. It is Policy
+        # §9.2.1, not a BSD habit.
+        addgroup --system _kerbridge >/dev/null
+
+        # The tier-2 helper this package ships, and the same bytes a Docker
+        # Compose deployment runs in a throwaway container. It creates every
+        # directory and sets its owner, group and mode; the per-daemon children of
+        # /var/lib/kerbridge and /var/log/kerbridge are deliberately not its
+        # job, because each unit's StateDirectory= and LogsDirectory= creates
+        # its own.
+        "$PREPARE_STATE" native
+
+        if [ -e "$CONFIG_DIR/main.toml" ]; then
+            echo "kerbridge-config: $CONFIG_DIR already holds a configuration set;" \
+                 "nothing was written."
+        else
+            seed
+        fi
+
+        # The per-source directories under the secrets tree, once the set says
+        # which sources there are. Second call rather than an argument to the
+        # first, because the answer only exists after the set is written -- and
+        # every step in the helper is create-if-absent, so re-running it is
+        # what it is designed for.
+        if [ -e "$CONFIG_DIR/main.toml" ]; then
+            sources=$("$KBCONFIG" --config "$CONFIG_DIR" sources 2>/dev/null) || sources=""
+            # Word splitting is wanted: `kbconfig sources` prints one name per
+            # line and each becomes an argument.
+            # shellcheck disable=SC2086
+            "$PREPARE_STATE" native $sources
+        fi
+
+        # Whether the set that is now there is coherent. Reported, never fatal:
+        # a package that fails its postinst over a configuration file wedges
+        # apt for every other package too, and the place a bad set is supposed
+        # to stop something is one service's ExecStartPre, which runs this same
+        # command.
+        if [ -e "$CONFIG_DIR/main.toml" ]; then
+            if ! "$KBCONFIG" --config "$CONFIG_DIR" check; then
+                echo "kerbridge-config: the configuration set above does not check out." >&2
+                echo "    No daemon will start until it does; nothing else is affected." >&2
+            fi
+        fi
+
+        # On upgrade only, and it cannot fail: exit 2 means the set is not this
+        # version's shape, which is a line for the operator rather than a
+        # reason to stop an installation.
+        if [ -n "$2" ] && [ -e "$CONFIG_DIR/main.toml" ]; then
+            if ! "$KBCONFIG" --config "$CONFIG_DIR" upgrade --dry-run >/dev/null 2>&1; then
+                echo "kerbridge-config: $CONFIG_DIR is not this version's shape." \
+                     "Run 'kbconfig --config $CONFIG_DIR upgrade' to carry it across."
+            fi
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

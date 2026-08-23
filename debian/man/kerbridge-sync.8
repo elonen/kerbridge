@@ -1,0 +1,96 @@
+.\" Hand-written on purpose, and it names no flag but --help -- see the note at
+.\" the top of issuerd.8 for why, and `make test` for what holds it there.
+.TH KERBRIDGE-SYNC 8 "KerBridge" "KerBridge" "System Manager's Manual"
+.SH NAME
+kerbridge-sync \- KerBridge directory synchronisation daemon
+.SH DESCRIPTION
+.B kerbridge-sync
+mirrors the admitted users and their groups out of a cloud identity provider
+into this realm's Samba AD directory. It reads the provider over HTTPS and
+writes the directory over LDAPS, in cycles, at a configured interval.
+.PP
+The direction is one-way and the cloud directory is never written. Each source
+owns exactly one organisational unit here, and reconciliation is scoped to it:
+accounts are created inside it, renames are followed, and a group that no
+longer exists upstream is retired rather than deleted, so that its security
+identifier \- and every filesystem access control entry carrying it \- survives.
+.PP
+It is the only KerBridge daemon that changes durable state in the directory,
+which is why it keeps an audit record of its own beside the service log. Your
+own resource groups live outside every synchronised organisational unit
+precisely so that this daemon does not own them and cannot reconcile them away;
+.BR kbmanage (1)
+is what manages those.
+.SH CONFIGURATION
+.B kerbridge-sync
+reads the KerBridge configuration set, a directory of TOML files whose default
+location is
+.IR /etc/kerbridge .
+Its own file there is
+.IR sync.toml ,
+and it reads
+.IR realm.toml ,
+.I main.toml
+and one
+.I idp_<source>.toml
+per identity provider beside it.
+.PP
+The set is validated before the daemon starts, by
+.B kbconfig check
+as
+.B ExecStartPre
+of the unit below. A set that does not check out keeps this one service from
+starting, and affects nothing else; systemd retries five times and then leaves
+the unit
+.BR failed ,
+so the reason stays in
+.B systemctl status
+instead of scrolling past in the journal.
+.PP
+With no configuration set at all the unit is skipped rather than started:
+.B ConditionPathExists=/etc/kerbridge/main.toml
+guards it, so an installed-but-unconfigured host is quiet and
+.B systemctl start
+still exits 0.
+.PP
+No credential is ever written in the configuration set. Secrets are files under
+.IR /etc/kerbridge.secrets/ ,
+named in the set as paths and read through the
+.B _kerbridge
+group.
+.SH FILES
+.TP
+.I /etc/kerbridge/sync.toml
+This daemon's own configuration.
+.TP
+.I /var/log/kerbridge/sync/audit.log
+The append-only record of what each cycle applied and what it could not.
+Rotated by
+.IR /etc/logrotate.d/kerbridge-sync ,
+which signals the daemon to reopen the file rather than truncating it under its
+feet.
+.TP
+.I /var/lib/kerbridge/sync/
+Durable state: the operator-notification conditions currently outstanding, and
+the synchronisation cursor.
+.SH SIGNALS
+.TP
+.B SIGUSR1
+Reopen the audit log. Sent by
+.BR logrotate (8)
+after it has rotated the file.
+.SH OPTIONS
+kerbridge-sync takes a small and stable set of options, and this page deliberately
+names none of them: a hand-written list is a copy, and a copy is what goes
+stale the first time an option changes. Run
+.B kerbridge-sync --help
+for the set this build has. An argument it does not recognise is refused rather
+than ignored, and the refusal prints the same usage line.
+.SH "SEE ALSO"
+.BR kbconfig (1),
+.BR kbmanage (1),
+.BR issuerd (8),
+.BR kerbridge-broker (8),
+.BR systemd.exec (5)
+.SH AUTHOR
+Jarno Elonen.

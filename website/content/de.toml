@@ -1,0 +1,376 @@
+# Übersetzung von content/en.toml. Die Schlüssel müssen exakt übereinstimmen.
+#
+# Beschriftungen der App gehören nicht hierher: sie kommen aus den
+# Sprachtabellen des Clients, sind also bereits übersetzt und geprüft. Wer hier
+# einen Schaltflächennamen tippt, benutzt stattdessen `{{ s.* }}` in der Vorlage.
+
+language_name = "Deutsch"
+page_title = "NAS Access — Hilfe"
+page_description = "Wie NAS Access Ihre Netzlaufwerke mit dem Cloud-Konto Ihrer Organisation öffnet, und was jeder Teil davon bedeutet."
+
+help_word = "Hilfe"
+search_placeholder = "Diese Seite durchsuchen…"
+search_matches = "{n} Treffer"
+search_empty = "Dazu passt auf dieser Seite nichts. Versuchen Sie ein kürzeres Wort — oder den Namen einer Schaltfläche."
+on_this_page = "Auf dieser Seite"
+topics = "Themen"
+platform_group = "Plattform wählen"
+language_group = "Sprache wählen"
+theme_toggle = "Zwischen hell und dunkel wechseln"
+technically = "Technisch"
+part = "TEIL {n}"
+glossary = "GLOSSAR"
+finally = "ZUM SCHLUSS"
+yes = "Ja"
+no = "Nein"
+footer_help = "Hilfe für Anwender"
+
+th_headline = "Überschrift"
+th_means = "Was das bedeutet"
+th_means_here = "Bedeutet hier"
+th_todo = "Was zu tun ist"
+th_line = "Zeile"
+th_says = "Was dort steht"
+th_plain = "Im Klartext"
+th_value = "Wert"
+th_button = "Schaltfläche"
+th_item = "Eintrag"
+th_does = "Was sie tut"
+th_word = "Wort"
+th_symptom = "Symptom"
+th_cause = "Wahrscheinliche Ursache"
+th_will_hear = "Sie werden benachrichtigt über"
+th_wont_hear = "Nicht über"
+th_ends_access = "Beendet Ihren Zugriff auf die Laufwerke"
+th_ends_grant = "Beendet die Autorisierung dieses Geräts"
+th_ends_signin = "Beendet Ihre Browser-Anmeldung"
+
+hero_kicker = "Hilfe für Anwender"
+hero_title = "Netzlaufwerke, ohne Passwort."
+hero_lead = "NAS Access meldet Sie mit dem Cloud-Konto Ihrer Organisation an und öffnet damit Ihre Netzlaufwerke. Sobald es läuft, öffnen Sie Ihre Laufwerke wie immer. Es gibt kein zusätzliches Passwort zu merken und nichts zu tippen."
+
+goals = [
+  { id = "purpose",       title = "Wozu diese App da ist",       sub = "Warum es sie gibt und was sie tut" },
+  { id = "icon",          title = "Das Symbol",                  sub = "Vier Zustände auf einen Blick" },
+  { id = "panel",         title = "Die Statusansicht",           sub = "Jede Zeile erklärt" },
+  { id = "buttons",       title = "Die Schaltflächen",           sub = "Was jede tut — und was nicht" },
+  { id = "settings",      title = "Einstellungen",               sub = "Allgemein, Erweitert, Info" },
+  { id = "notifications", title = "Benachrichtigungen",          sub = "Worüber sie informiert, und wann" },
+  { id = "trouble",       title = "Wenn etwas nicht funktioniert", sub = "Symptome, Ursachen, Abhilfe" },
+  { id = "answers",       title = "Kurze Antworten",             sub = "Die häufigsten Fragen" },
+  { id = "words",         title = "Die Wörter dieser App",       sub = "Neun Begriffe, erklärt" },
+  { id = "support",       title = "Um Hilfe bitten",             sub = "Was Sie bereithalten sollten" },
+]
+
+shot_alt_win = "Die geöffnete NAS-Auth-Statusansicht über dem Windows-Infobereich, mit der Meldung Zugriff OK."
+shot_alt_mac = "Das geöffnete NAS-Auth-Menü in der macOS-Menüleiste, mit der Meldung Zugriff OK."
+shot_caption_win = "Wenn Ihnen das bekannt vorkommt, sind Sie richtig hier — es öffnet sich aus dem Infobereich."
+shot_caption_mac = "Wenn Ihnen das bekannt vorkommt, sind Sie richtig hier — es öffnet sich aus der Menüleiste."
+
+two_worlds_title = "Zwei Systeme, die nicht von selbst zueinanderfinden"
+two_worlds = [
+  "<strong>Ihr Konto liegt in der Cloud.</strong> Es ist dasselbe Konto, mit dem Sie E-Mails lesen und sich bei Arbeitswebseiten anmelden. Ihre Organisation verwaltet es dort.",
+  "<strong>Ihre Dateien liegen in Ihrem Gebäude.</strong> Sie stehen auf einem Dateiserver — dem Gerät, von dem Ihre Netzlaufwerke und freigegebenen Ordner kommen. Dieser Server ist in Sicherheitsfragen bewusst altmodisch und hat von der Cloud noch nie gehört.",
+  "Sich selbst überlassen, können sich die beiden nicht darauf einigen, dass Sie Sie sind.",
+]
+
+gobetween_title = "NAS Access ist der Vermittler"
+gobetween_lead = "NAS Access wandelt Ihre Cloud-Anmeldung in einen Ausweis um, den der Dateiserver versteht und akzeptiert."
+
+worth_knowing_title = "Drei Dinge, die man wissen sollte"
+worth_knowing = [
+  "<strong>Der Ausweis gilt nur eine begrenzte Zeit.</strong> Meist den größten Teil eines Arbeitstages. Das ist normal und beabsichtigt — genau dadurch kann Ihre Organisation den Zugriff bei Bedarf entziehen.",
+  "<strong>NAS Access holt etwa auf halber Strecke unbemerkt einen frischen Ausweis</strong>, lange bevor der alte abläuft. An einem gewöhnlichen Tag bekommen Sie davon nichts mit.",
+  "<strong>Es kann nicht erneuern, was es nicht hat.</strong> Kann die App nicht selbstständig einen frischen Ausweis holen, sagt sie Ihnen das, <em>bevor</em> der aktuelle abläuft — ein Klick, und Sie machen weiter.",
+]
+
+tech_concepts_hint = "die genauen Begriffe, für alle, die sie möchten"
+tech_concepts = [
+  "Ihr Cloud-Konto ist eine <strong>OIDC</strong>-Identität bei einem <strong>Identitätsanbieter</strong> (in den meisten Installationen Entra ID). Der Nachweis ist ein OIDC-Access-Token, geholt über einen Authorization-Code-Flow mit PKCE im Systembrowser.",
+  "Der <strong>Broker</strong> ist der KerBridge-Dienst, den Ihre IT betreibt. Er prüft das Token und bittet das <strong>KDC</strong>, ein echtes <strong>Kerberos-TGT</strong> (Ticket Granting Ticket) für Ihr Konto im lokalen <strong>Realm</strong> auszustellen.",
+  "Die „Ausweistasche“ ist der <strong>Ticket-Cache</strong> Ihrer Anmeldesitzung — unter Windows die LSA-Anmeldesitzung, unter macOS der Heimdal-<code>API:</code>-Cache. Das Ablegen des Tickets dort heißt <strong>Injektion</strong>. Danach macht der normale SMB-Client gewöhnliches Kerberos: er holt mit dem TGT ein Service-Ticket für den Dateiserver. Am Dateizugriffspfad ist nichts verändert.",
+  "Der „frische Ausweis auf halber Strecke“ ist eine <strong>Neuinjektion</strong> und keine Erneuerung auf Kerberos-Ebene. Unseren Tests zufolge bittet Windows das KDC zwar, ein von KerBridge injiziertes TGT zu erneuern, installiert das Ergebnis dann aber nie — also führt der Agent den ganzen Austausch erneut durch und injiziert ein neues Ticket.",
+]
+
+not_do_title = "Was sie nicht tut"
+not_do = [
+  "Sie speichert Ihr Passwort nicht. Sie sieht nie eines.",
+  "Sie liest und ändert weder Ihre Dateien noch Ihre Laufwerke oder Laufwerksbuchstaben.",
+  "Sie ersetzt die Anmeldung Ihrer Organisation nicht. Sie nutzt sie.",
+  "Sie muss nicht laufen, damit Sie Ihren Rechner <em>benutzen</em> können — nur damit Ihre Netzlaufwerke erreichbar bleiben.",
+]
+
+tech_at_rest_hint = "was gespeichert wird, und wo"
+tech_at_rest = [
+  "<strong>Kein Geheimnis auf der Festplatte.</strong> Das Access-Token wird verworfen, sobald der Ticket-Austausch abgeschlossen ist. Das Refresh-Token liegt nur im Arbeitsspeicher des Prozesses und stirbt mit ihm — es wird nie auf die Platte und nie ins Protokoll geschrieben. Gespeichert werden die Broker-URL, eine zwischengespeicherte Kopie der ermittelten Konfiguration und der Autorisierungszustand dieses Geräts. Von Ihrem NAS oder anderen Kerberos-Diensten weiß sie eigentlich gar nichts; sie hat nur mit Kerberos-TGTs zu tun.",
+]
+
+icon_lead_win = "NAS Access wohnt im Infobereich. Das Symbol ist der ganze Status auf einen Blick."
+icon_lead_mac = "NAS Access wohnt in der Menüleiste. Das Symbol ist der ganze Status auf einen Blick."
+
+icon_states = [
+  { icon = "working",     headline = "cond_working",   name_win = "Voll",                       name_mac = "Voll",                    todo = "Nichts zu tun", tone = "" },
+  { icon = "not-started", headline = "cond_off",       name_win = "Blass, ohne Zeichen",        name_mac = "Blass, ohne Zeichen",     todo = "Nichts zu tun", tone = "" },
+  { icon = "will-stop",   headline = "cond_will_stop", name_win = "Blass, gelbes Dreieck",      name_mac = "Blass, Dreieck",          todo = "Bald, aber nicht jetzt", tone = " warn" },
+  { icon = "stopped",     headline = "cond_stopped",   name_win = "Blass, roter Kreis",         name_mac = "Blass, Kreis",            todo = "Ja — hier sind Sie gefragt", tone = " stop" },
+]
+
+icon_notes = [
+  "<strong>Blass heißt nicht kaputt.</strong> Volle Stärke ist für <em>hier gibt es nichts zu sehen</em> reserviert, damit das, was es zu sehen gibt, auch auffällt.",
+  "Die Formen sind so wichtig wie die Farben — Dreieck und Kreis bleiben unterscheidbar, auch wenn jemand Gelb und Rot schwer auseinanderhält.",
+]
+icon_mac_note = "Auf einem Mac erscheinen dieselben vier Formen in der einen Farbe der Menüleiste, weil die Menüleiste alles so zeichnet."
+
+panel_lead_win = "Ein Klick auf das Symbol öffnet ein kleines Fenster. Es zeigt, <strong>was von Ihnen erwartet wird</strong>, dann <strong>wer Sie sind</strong>, dann <strong>wie lange</strong> — und schließlich <strong>warum</strong>, falls etwas nicht stimmt."
+panel_lead_mac = "Ein Klick auf das Symbol öffnet das Menü. Es zeigt, <strong>was von Ihnen erwartet wird</strong>, <strong>wer Sie sind</strong>, <strong>wie lange</strong> und <strong>warum Sie handeln müssen</strong>, falls etwas nicht stimmt."
+
+headline_title = "Die Überschrift"
+headline_lead = "Eine farbige Zeile, die die Lage benennt."
+headlines = [
+  { headline = "cond_working",   tone = "ok",   means = "Ihre Laufwerke funktionieren, und die App hält sie von selbst am Laufen.", todo = "Nichts." },
+  { headline = "cond_flaky",     tone = "warn", means = "Ihre Laufwerke funktionieren im Moment. Die App hat Mühe, den Server Ihrer IT zu erreichen.", todo = "Meist nichts — das klärt sich oft von selbst. Hält es an, sagen Sie der IT Bescheid." },
+  { headline = "cond_will_stop", tone = "warn", means = "Ihre Laufwerke funktionieren, aber der Zugriff endet zu einem bekannten Zeitpunkt, und nichts erneuert ihn von selbst.", todo = "Nutzen Sie vor diesem Zeitpunkt die Schaltfläche zum Verlängern — wann immer es Ihnen passt." },
+  { headline = "cond_stopped",   tone = "stop", means = "Ihre Laufwerke lassen sich nicht öffnen.", todo = "Lesen Sie die Erklärung unter der Überschrift — sie nennt den Grund und bietet die Schaltfläche, die das behebt." },
+  { headline = "cond_off",       tone = "off",  means = "Die App ist hier aus, und das soll auch so sein — etwa nachdem Sie sich abgemeldet haben.", todo = "Nichts, außer Sie möchten den Zugriff zurück." },
+]
+headline_note = "<strong>Eine Ablaufwarnung ist kein Fehler.</strong> Sie bedeutet, dass der App die stillen Wege zum Erneuern ausgegangen sind — oft schlicht, weil die Browsersitzung geschlossen wurde oder die Autorisierung des Geräts zur Erneuerung ansteht. Ihr Zugriff bleibt bis zur angezeigten Zeit bestehen. Ein Klick stellt die stillen Erneuerungen wieder her."
+
+tech_condition_hint = "woraus die Überschrift berechnet wird"
+tech_condition = [
+  "Die Überschrift stellt <code>Condition</code> dar, eines von <code>Working</code>, <code>Flaky</code>, <code>WillStop</code>, <code>Stopped</code> und <code>NotStarted</code>. Sie ist eine reine Funktion dreier lokaler Tatsachen: ob ein <strong>brauchbares</strong> Ticket vorliegt, ob von dieser Maschine erwartet wird, dass sie hier arbeitet, und ob es eine <strong>stille Quelle</strong> für die nächste Erneuerung gibt.",
+  "Netzwerkbefunde fließen nicht ein — ein Broker-Ausfall verändert den Zustand nie. Er erscheint als Hindernis, und als <code>Flaky</code> erst, wenn er länger anhält.",
+]
+
+identity_title = "Die Identitätszeile"
+identity_signed_in = "Das Konto, zu dem Ihr Zugriff — und alles, was Sie speichern — gehört."
+identity_working_as = "Dieser Rechner wurde eingerichtet, um unter einem <em>anderen Konto</em> zu arbeiten."
+identity_note = "<strong>Die zweite Zeile sollten Sie zweimal lesen.</strong> Auf so einem Rechner werden Dateien, die Sie auf den Netzlaufwerken speichern, unter dem Namen jenes (oft geteilten) Kontos abgelegt, nicht unter Ihrem. Wenn Sie sich hier anmelden, bürgen Sie für die Maschine — Sie erhalten nicht Ihren eigenen Zugriff. Auf Buildmaschinen, Kiosken und geteilten Arbeitsplätzen ist das normal, und Ihre IT hat es bewusst so eingerichtet."
+
+tech_delegation_hint = "Gerätegenehmigungen"
+tech_delegation = [
+  "Die Maschine ist <strong>delegiert</strong>, TGTs für ein bestimmtes Konto zu holen: ein <code>grant_for</code>-Ziel ist konfiguriert, sodass nur eine Gerätegenehmigung ein Ticket erhalten kann und die Tickets den Principal des Ziels tragen. Eine delegierte Anmeldung <strong>autorisiert den Zugriff als der angegebene Benutzer</strong>, nicht als die anmeldende Person — die Anmeldung belegt, wer an der Tastatur sitzt, nicht das Konto, mit dem die Maschine Ihre Kerberos-Dienste erreicht.",
+]
+
+# Eine ganze Nominalphrase: der Client stellt Tage über `days()` dar, damit sie
+# sich dort einfügt, wo eine bloße Zahl nicht passen würde.
+example_days = "6 Tage"
+
+clocks_title = "Die Ablaufuhren"
+clock_access = "Wann der aktuelle Ausweis abläuft. Normalerweise trifft etwa auf halber Strecke ein frischer ein, das hier ist also eine Zahl und keine Frist."
+clock_grant = "Die Erlaubnis dieses Geräts, den Browser zu überspringen, neigt sich dem Ende zu. Melden Sie sich vorher einmal über den Browser an, dann verlängert sie sich."
+clocks_note = "Die beiden erscheinen nie als widersprüchliche Warnungen — läuft der Zugriff wirklich ab, ist die Autorisierungsuhr nicht das Problem."
+
+explanation_title = "Die Erklärung"
+explanation_lead = "Wenn es etwas zu sagen gibt, erscheint es in einem eigenen Block unter den Angaben. Das sind die, die Ihnen begegnen können:"
+blockers = [
+  { blocker = "blk_no_supply",            plain = "Zeit, wieder zu belegen, dass Sie es sind.", todo = "Melden Sie sich über den Browser an. Dauert ein paar Sekunden." },
+  { blocker = "blk_network_error",        arg = "Server", plain = "Die App erreicht den Server Ihrer IT nicht.", todo = "Prüfen Sie Netzwerk oder VPN. Bereits geöffnete Laufwerke funktionieren meist weiter." },
+  { blocker = "blk_realm_unknown",        arg = "Server", plain = "Die App hat den Server erreicht, aber seine Konfiguration noch nicht erhalten.", todo = "Warten. Sie versucht es von selbst erneut." },
+  { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "Ein einmaliger Einrichtungsschritt für diesen Rechner fehlt noch.", todo = "Nutzen Sie die Einrichtungsschaltfläche. Sie verlangt Administratorrechte und einen Neustart." },
+  { blocker = "blk_ntlm_fallback",        os = "win", plain = "Ein bekannter Windows-Schluckauf, nachdem ein Ausweis abgelaufen ist. Ihre Laufwerke hängen.", todo = "Arbeit sichern, dann die Reparaturschaltfläche nutzen." },
+  { blocker = "blk_refused",              plain = "Der Server Ihrer Organisation hat Ihr Konto für diese Laufwerke nicht akzeptiert.", todo = "Nichts, was dieser Rechner beheben kann — wenden Sie sich an die IT." },
+  { blocker = "blk_no_grant",             arg = "Konto", plain = "Eine Maschine mit geteiltem Konto, die noch nicht autorisiert wurde.", todo = "Jemand, der sie autorisieren darf, muss sich hier anmelden." },
+  { blocker = "blk_grant_refused",        plain = "Die Richtlinie erlaubt diesem Gerät nicht, den Browser zu überspringen.", todo = "Ein neuer Versuch hilft nicht. Wenden Sie sich an die IT." },
+  { blocker = "blk_no_broker_url",        plain = "Erster Start — die App weiß nicht, mit welchem Server sie sprechen soll.", todo = "Tragen Sie in den Einstellungen die Adresse ein, die Sie von der IT bekommen haben." },
+]
+
+tech_blockers_hint = "Hindernisse gegenüber Aktionen"
+tech_blockers = [
+  "Das sind <strong>Hindernisse</strong>: was gerade fehlt, unmittelbar und nicht abgeleitet. Sie sind eine Liste und keine Rangfolge, denn mehrere können gleichzeitig zutreffen, und das Modell meldet alle statt nur das lauteste.",
+  "Hindernisse <em>erklären</em>; Aktionen <em>lösen</em>. Sie sind keine parallelen Listen, und nichts entspricht einander. Das Hindernis „Server nicht erreichbar“ fasst Unerreichbarkeit, TLS-Ablehnung, Ratenbegrenzung und 5xx zusammen, weil sich die vier in der Ursache unterscheiden, nicht aber darin, was man dagegen tut; der genaue Satz steht weiterhin in der ausführlichen Meldung.",
+]
+
+details_lead = "Ein eingeklappter Abschnitt für den Fall, dass Ihnen jemand hilft. Er enthält den Realm, das Ende des Ausweises, was die nächste Erneuerung verwenden wird, und wann die App es das nächste Mal versucht."
+details_supply_lead = "Die nützlichste Zeile benennt, was die nächste Erneuerung verwenden wird:"
+supply_grant = "Still. Diesem Gerät wird für eine festgelegte Anzahl von Tagen vertraut."
+supply_wam = "Still. Die Windows-eigene Anmeldung erledigt die Arbeit."
+supply_browser = "Still, solange die App weiterläuft."
+supply_none = "Deshalb warnt die Überschrift, dass der Zugriff abläuft."
+
+conventions_title = "Zwei Konventionen, die sich zu lernen lohnen"
+convention_ellipsis = "<strong>Endet eine Beschriftung auf „…“, kommt noch ein Schritt</strong> — ein Browserfenster oder eine Frage, die Sie beantworten müssen. Ohne die Punkte tut die Schaltfläche einfach, was dort steht. Das ist der einzige Unterschied zwischen den beiden Erneuerungsschaltflächen: Beide versprechen dasselbe Ergebnis, aber eine von ihnen öffnet einen Browser."
+convention_shield = "<strong>Ein Schild auf einer Schaltfläche heißt, dass Windows nach Administratorrechten fragt.</strong> Es ist dort immer zu sehen, ganz gleich, ob Sie selbst Administrator sind."
+
+getting_access_title = "Zugriff bekommen"
+getting_access = [
+  { action = "act_sign_in",        does = "Öffnet Ihren Browser, meldet Sie an, holt einen Ausweis. So fangen Sie normalerweise an." },
+  { action = "act_sign_in_extend", does = "Dasselbe, formuliert für den Fall, dass Sie bereits Zugriff haben. Holt einen frischen Ausweis und stellt die stillen Erneuerungen wieder her." },
+  { action = "act_reinject",       does = "Holt einen frischen Ausweis <em>ohne</em> Browser, mit dem, was die App schon hat. Wird nur angeboten, wenn es tatsächlich klappen kann." },
+  { action = "act_cancel",         does = "Erscheint nur, während auf eine Browser-Anmeldung gewartet wird. Beendet das Warten." },
+]
+getting_access_note = "Wird die browserlose Erneuerung angeboten, nehmen Sie sie — sie ist die günstige, und sie wird nur angeboten, wenn sie funktioniert."
+
+doors_title = "Gehen — drei getrennte Türen"
+doors_lead = "Diese drei klingen ähnlich, bewirken aber Verschiedenes. Das ist die eine Tabelle dieser Seite, die man sich merken sollte."
+
+tech_doors_hint = "was jede Tür tatsächlich tut"
+tech_doors = [
+  "<strong>Die Abmeldung beim Identitätsanbieter</strong> beendet die SSO-Sitzung bei der Authority und verwirft das Refresh-Token im Speicher. Sie kann Sie nicht von Windows selbst abmelden; eine Anwendung kann nur ihre eigene Sitzung freigeben.",
+  "<strong>Das Entfernen der Autorisierung</strong> löscht <em>zuerst</em> den nicht exportierbaren ECDSA-P-256-Schlüssel der Gerätegenehmigung aus dem TPM dieses Geräts und widerruft ihn erst dann beim Broker — genau diese Reihenfolge lässt es auch offline funktionieren.",
+  "<strong>Das Abmelden</strong> ist eine auf den Realm begrenzte Leerung des Ticket-Caches — nur das TGT und die Service-Tickets dieses Realms. Tickets anderer Realms bleiben unberührt, was es in einem Cloud-Trust-Tenant sicher macht. Eine bereits aufgebaute SMB-Sitzung liefert weiter Dateien aus einem leeren Cache, ohne Kerberos-Verkehr — kein auf Tickets begrenztes Kommando kann also ehrlich versprechen, dass Verbindungen enden.",
+]
+
+fixing_title = "Dinge in Ordnung bringen"
+fixing = [
+  { action = "act_enroll",              does = "Einmalig, pro Rechner. Macht Windows mit dem Realm Ihrer Organisation bekannt. Braucht Administratorrechte und danach einen Neustart." },
+  { action = "act_restart_workstation", does = "Löst einen festgefahrenen Netzlaufwerkszustand. <strong>Sichern Sie vorher Ihre Arbeit</strong> — jedes Netzlaufwerk des Rechners wird getrennt, nicht nur diese." },
+  { action = "act_reenroll",            does = "Dieselbe Einrichtung, über eine unvollständige oder veraltete gelegt. Unter Einstellungen ▸ Erweitert." },
+  { action = "act_unenroll",            does = "Entfernt die Einrichtung vollständig. Unter Einstellungen ▸ Erweitert." },
+]
+fixing_note = "Alles Unumkehrbare fragt vorher, sagt genau, was es tun wird, und ist auf Abbrechen voreingestellt. Sie können das Fenster schließen und die Arbeit laufen lassen — sie meldet, wie es ausgegangen ist."
+fixing_mac = "<strong>macOS braucht nichts davon.</strong> Es findet den Realm von selbst; es gibt also keinen Einrichtungsschritt, nirgends im Produkt eine Administratorabfrage und keine Reparatur — eine abgebrochene Verbindung wird dort einfach neu aufgebaut."
+
+authorizing_title = "Dieses Gerät autorisieren"
+authorizing = [
+  { action = "act_create_grant",       does = "Erlaubt diesem Gerät, für eine festgelegte Anzahl von Tagen Ausweise ohne Browser-Anmeldung zu holen." },
+  { action = "act_create_grant_again", does = "Dasselbe, wenn die Autorisierung bereits besteht — so wird sie verlängert." },
+]
+authorizing_notes = [
+  "Was tatsächlich passiert: Im Sicherheitschip dieses Geräts wird ein Schlüssel erzeugt. Er lässt sich nicht vom Gerät kopieren, er gilt nur für Ihr Konto auf diesem Gerät, und Ihre IT kann ihn jederzeit widerrufen.",
+  "Bevor die Autorisierung abläuft, bekommen Sie eine Erinnerung. Eine einzige Anmeldung über den Browser verlängert sie.",
+]
+
+tech_grant_hint = "die Gerätegenehmigung"
+tech_grant = [
+  "Das ist eine KerBridge-<strong>Gerätegenehmigung</strong> — ein nicht exportierbarer ECDSA-P-256-Schlüssel im TPM, erzeugt über den Platform Crypto Provider von CNG im Benutzerkontext, sodass er keine Rechteerhöhung braucht und mit dem Profil verschwindet. Der Broker hält den passenden öffentlichen Schlüssel und setzt seine eigene Tagesobergrenze durch — wird diese gesenkt, verkürzt das jede ausstehende Genehmigung.",
+]
+
+everything_else_title = "Alles Übrige"
+everything_else = [
+  { action = "menu_open_status", does = "Öffnet die Statusansicht." },
+  { action = "menu_settings",    does = "Siehe den Abschnitt Einstellungen weiter unten." },
+  { action = "menu_help",        does = "Diese Seite." },
+  { action = "act_open_log",     does = "Eine technische Aufzeichnung dessen, was die App getan hat — für den Fall, dass Ihnen jemand hilft. Erscheint, wenn etwas schiefgegangen ist, und immer unter Einstellungen ▸ Erweitert ▸ Fehlersuche." },
+  { action = "menu_quit",        does = "Beendet die App. Ihr aktueller Ausweis bleibt bis zum Ablauf gültig, und danach erneuert ihn nichts mehr." },
+]
+
+settings_basic = [
+  "<strong>Broker-URL</strong> — der Server, den Sie von Ihrer IT bekommen haben. Das ist das Einzige, was die App wissen muss; alles Weitere erfragt sie bei diesem Server.",
+  "Steht dort, die URL sei von Ihrem IT-Team festgelegt und hier nicht änderbar, wurde sie zentral vorgegeben — auf einem verwalteten Rechner ist das normal.",
+  "<strong>Beim Anmelden starten</strong> — meldet Sie nach Ihrer Anmeldung automatisch an, damit Ihre Laufwerke bereit sind, wenn Sie es sind. Empfohlen.",
+]
+settings_wam = "<strong>„Windows-Anmeldung verwenden, wenn möglich“</strong> überspringt den Browser, wenn die Windows-eigene Anmeldung still für Sie bürgen kann. Lassen Sie die Einstellung an; hilft sie einmal nicht weiter, weicht die App auf den Browser aus, und nichts geht verloren."
+settings_advanced = [
+  "<strong>Autorisierung</strong> — zeigt, als was dieses Gerät autorisiert ist, und enthält die Schaltflächen zum Anlegen und Entfernen. Das Feld, mit dem das Gerät stellvertretend für ein anderes Konto autorisiert wird, ist für Maschinen mit geteiltem Konto gedacht: für Ihr eigenes Konto lassen Sie es leer.",
+  "Eine Änderung dort entscheidet, für wen die <em>nächste</em> Autorisierung gilt. An der bestehenden ändert sie nichts.",
+  "<strong>Windows-Einrichtung</strong> — ob dieser Rechner den Realm Ihrer Organisation kennt, samt der Schaltflächen zum erneuten Einrichten und zum Entfernen.",
+  "<strong>Fehlersuche</strong> — öffnet den Protokollordner.",
+]
+settings_mac_title = "Unter macOS"
+settings_mac = "Die Einstellungen sind ein einziges Fenster mit der Broker-URL, dem Schalter zum Start beim Anmelden und einem Paar aus OK und Abbrechen — die übrigen Abschnitte beschreiben Dinge, die es unter macOS nicht gibt."
+settings_about = "Version und Lizenz."
+
+notify_lead = "Die App spricht selten und nur über Dinge, auf die es ankommt."
+notify = [
+  ["Zugriff, der nach einem Problem wiederhergestellt wurde", "Routine-Erneuerungen, die funktioniert haben"],
+  ["Zugriff, der etwa in zwanzig Minuten endet", "Die normal ablaufende Ausweisuhr"],
+  ["Zugriff, der geendet hat", "Kurze Netzwerkprobleme, die sich von selbst gelöst haben"],
+  ["Die anstehende Erneuerung der Autorisierung Ihres Geräts", "Eine Maschine, die schlicht ausgeschaltet ist"],
+]
+notify_notes = [
+  "<strong>Es geht nichts verloren, wenn Sie eine verpassen.</strong> Eine Benachrichtigung ist eine Unterbrechung, nie eine Aufzeichnung — die Statusansicht hat immer die aktuelle Wahrheit, und nichts verfällt. Es gibt keine Ungelesen-Markierung und keine Liste des Verpassten.",
+  "Die Erinnerung zur Erneuerung wartet, bis Sie wirklich an der Tastatur sind, statt um drei Uhr nachts loszugehen.",
+]
+
+trouble_lead = "Fangen Sie beim Symbol an, dann bei der Ansicht. Fast immer benennt sie das Problem und legt die Lösung auf eine Schaltfläche."
+trouble = [
+  { symptom = "Ein Laufwerk fragt nach einem Passwort", cause = "Der Ausweis ist abgelaufen oder wurde nie geholt", todo = "Öffnen Sie die Ansicht. Sie sagt, dass kein Zugriff besteht oder dass er abläuft." },
+  { symptom = "Laufwerke funktionierten erst, dann mitten in der Sitzung nicht mehr", os = "win", cause = "Der NTLM-Schluckauf von Windows", todo = "Reparaturschaltfläche nutzen, nachdem Sie Ihre Arbeit gesichert haben" },
+  { symptom = "Die Ansicht sagt, der Server sei nicht erreichbar", cause = "Nicht im Netzwerk, oder das VPN ist getrennt", todo = "Neu verbinden. Die App versucht es von selbst weiter und erholt sich." },
+  { symptom = "Die IT hat Ihnen gerade Zugriff auf einen Ordner gegeben, und er geht trotzdem nicht auf", cause = "Ihr Ausweis wurde vor der Änderung ausgestellt", todo = "Erneuern — ein Ausweis trägt eine Momentaufnahme Ihrer Gruppen, es braucht also einen frischen" },
+  { symptom = "Alles sieht gut aus, aber ein Ordner verweigert den Zugriff", cause = "Die Berechtigungen dieses Ordners", todo = "Kein NAS-Auth-Problem — wenden Sie sich an die Person, der der Ordner gehört" },
+  { symptom = "Die Ansicht sagt, ein Administrator müsse es beheben", cause = "Muss er", todo = "Schicken Sie der IT die Meldung genau so, wie sie dasteht" },
+]
+
+error_title = "Eine Fehlermeldung lesen"
+error_lead = "Jede ausführliche Meldung ist in zwei Hälften geschrieben:"
+error_example_handle = "TLS untrusted:"
+error_before = "Vor dem Doppelpunkt"
+error_before_means = "ein technischer Anhaltspunkt, bewusst dort platziert für die Person, die Ihnen hilft"
+error_after = "Danach"
+error_after_means = "was es für Sie bedeutet"
+error_note = "Wenn Sie ein Problem melden, zitieren Sie die ganze Zeile — der Anhaltspunkt ist oft alles, was Ihre IT braucht."
+
+answers = [
+  { q = "Muss die App durchgehend laufen?", a = "Ja, damit die Laufwerke erreichbar bleiben. Im Leerlauf braucht sie fast nichts, und startet sie beim Anmelden, müssen Sie nie an sie denken." },
+  { q = "Warum öffnet sich beim Anmelden ein Browserfenster?", a = "Weil Ihre Anmeldung Ihrer Organisation gehört und nicht dieser App. Die App sieht Ihr Passwort nie — das erledigt Ihr Browser, genau wie bei Ihren anderen Arbeitsseiten." },
+  { q = "Warum hat sie mich heute Morgen nichts gefragt?", a = "Weil sie nicht musste. Genau so ist es gedacht." },
+  { q = "Ich habe über Mittag den Deckel zugeklappt.", a = "Kein Problem. Sie macht dort weiter, wo sie war, und holt bei Bedarf einen frischen Ausweis." },
+  { q = "Ich arbeite von zu Hause.", a = "NAS Access braucht genau das, was Ihren Dateiserver auch sonst erreicht — VPN oder anders. Funktionieren Ihre Laufwerke heute zu Hause, funktionieren sie auch mit NAS Access." },
+  { q = "Wird mein Passwort irgendwo gespeichert?", a = "Nein. Die App bekommt nie eines. Nichts, was sie auf der Platte behält, taugt dazu, sich als Sie anzumelden." },
+  { q = "Sieht die IT, was ich öffne?", a = "NAS Access beobachtet Ihre Dateien nicht. Ihr Dateiserver führt seine eigenen Aufzeichnungen, wie eh und je." },
+  { q = "Ich habe mich abgemeldet, aber ein Laufwerk ist noch offen.", a = "Ihr Betriebssystem hält eine Verbindung offen, die schon bestand. Schließen Sie das Fenster, trennen Sie das Laufwerk, oder starten Sie neu. Neu öffnen lässt sich nichts." },
+]
+
+words = [
+  { word = "Zugriff",        means = "Sich am Dateiserver im Netz authentifizieren können" },
+  { word = "Anmelden",       means = "Im Browser belegen, wer Sie sind" },
+  { label = "act_drop_ticket", means = "Den aktuellen Ausweis für die Netzlaufwerke wegwerfen" },
+  { word = "Autorisierung",  means = "Die Erlaubnis dieses Geräts, den Browser eine Zeit lang zu überspringen, wahlweise als anderer Benutzer" },
+  { word = "Erneuern",       means = "Einen frischen Ausweis holen, ohne Sie zu behelligen" },
+  { word = "Realm",          means = "Der Name des lokalen Systems, zu dem Ihre Laufwerke gehören, etwa <code>EXAMPLE.SITE</code>" },
+  { word = "Broker",         means = "Der Server Ihrer IT — der, bei dem NAS Access einen Ausweis anfordert" },
+  { word = "Ticket",         means = "Der Ausweis selbst. Ein Fachbegriff; er taucht nur unter den Kerberos-Details auf" },
+  { word = "Dieses Gerät",   means = "Der Rechner, an dem Sie sitzen" },
+]
+
+support_lead = "Halten Sie diese Dinge bereit — die App zeigt sie alle an:"
+support_steps = [
+  { what = "Die Überschrift", detail = "Die farbige Zeile oben in der Ansicht" },
+  { what = "Die vollständige Meldung", detail = "Einschließlich des Teils vor dem Doppelpunkt" },
+  { what = "Den Realm", detail = "Aus den Kerberos-Details — das Erste, wonach gefragt wird" },
+  { what = "Das Protokoll", detail = "Einstellungen ▸ Erweitert ▸ Fehlersuche ▸ Protokollordner öffnen" },
+]
+support_note = "Das reicht meist, um die Sache zu klären, ohne dass jemand an Ihren Rechner muss."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Ab hier TOML-Tabellensyntax: eine Tabellenüberschrift vereinnahmt alle
+# folgenden Schlüssel, deshalb muss das hier ganz unten stehen. Neue einfache
+# Schlüssel gehören über diese Linie.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[[doors]]
+action = "act_sign_out_idp"
+arg = "Entra"
+access = false
+grant  = false
+signin = true
+detail = "Schließt die Anmeldesitzung, die diese App in Ihrem Browser hinterlassen hat. Auf einem geteilten Rechner ist das gute Hygiene. Ihre Laufwerke berührt es nicht."
+
+[[doors]]
+action = "act_give_up_grant"
+access = false
+grant  = true
+signin = false
+detail = "Gibt die Erlaubnis dieses Geräts auf, Ihre Laufwerke <em>ohne Browser</em> zu erreichen. Ihr aktueller Zugriff bleibt unberührt — Sie melden sich künftig einfach jedes Mal über den Browser an. Rückgängig machen lässt sich das nicht: Eine erneute Autorisierung erzeugt eine neue Erlaubnis, statt die alte wiederherzustellen."
+caveat = """
+Auf einer Maschine mit geteiltem Konto — einer, deren Ansicht sagt, sie arbeite \
+unter einem anderen Konto — gibt es kein „zurück zum Browser“. Die Autorisierung \
+ist der einzige Weg, auf dem so eine Maschine Zugriff bekommt; sie zu entfernen \
+heißt, dass der Zugriff abläuft und endet. Die Bestätigung sagt genau, \
+wie viel Zeit Ihnen bleibt."""
+
+[[doors]]
+action = "act_drop_ticket"
+access = true
+grant  = false
+signin = false
+detail = "Wirft den Ausweis dieses Rechners weg. Das ist die alltägliche der drei — das, was man tut, wenn der Tag zu Ende ist oder man den Zugriff auf die geteilten Laufwerke nicht mehr braucht."
+caveat = """
+Ein ehrlicher Vorbehalt: <strong>Bereits geöffnete Netzlaufwerke funktionieren \
+möglicherweise weiter</strong>, bis Sie sie schließen oder neu starten. Dahinter \
+steckt Ihr Betriebssystem, das eine Verbindung offen hält — keine App kann etwas \
+anderes versprechen. Neu öffnen lässt sich aber nichts."""
+
+# Lucide paths, keyed by section. Not translated -- they are drawings.
+[goal_icons]
+purpose = '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>'
+icon = '<rect x="2" y="3" width="20" height="14"/><path d="M8 21h8"/><path d="M12 17v4"/>'
+panel = '<rect x="3" y="3" width="18" height="18"/><path d="M3 9h18"/><path d="M7 13h7"/>'
+buttons = '<path d="M9 9l5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 8-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/>'
+settings = '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>'
+notifications = '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'
+trouble = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'
+answers = '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
+words = '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+support = '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>'

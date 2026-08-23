@@ -1,0 +1,28 @@
+# Shipped live rather than disabled: the postrotate line below needs a daemon
+# that reopens its audit file on SIGUSR1. Unhandled, the signal stops the issuer
+# instead of rotating its record -- `grep -rn SIGUSR1 crates/kerbridge-issuerd/src` is the
+# check.
+#
+# `create` is what makes the successor file's mode a decision rather than an
+# accident: AuditLog opens with create(true), so a file the daemon makes itself
+# is 0644 minus its umask, while a file logrotate makes is whatever this says.
+# With `create` present logrotate makes it first and the daemon's O_APPEND open
+# leaves mode and ownership alone -- verified under logrotate 3.22.0.
+#
+# `su` names this daemon's own owner, because each daemon has a log directory
+# of its own precisely so a compromised peer cannot unlink another's
+# append-only record. The owners are the ones `prepare-state` and the units
+# set: `ls -ld /var/log/kerbridge/*` on an installed host.
+/var/log/kerbridge/issuerd/*.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    notifempty
+    missingok
+    su root _kerbridge
+    create 0640 root _kerbridge
+    postrotate
+        systemctl kill -s USR1 kerbridge-issuerd.service
+    endscript
+}

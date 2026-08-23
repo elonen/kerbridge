@@ -1,0 +1,27 @@
+[package]
+name = "kerbridge-notify"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Deliberately not a module of `kerbridge-core`: that crate is linked by
+# `issuerd`, which holds KDC authority, and an HTTP plus TLS dependency tree has
+# no business inside that process.
+[dependencies]
+kerbridge-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+reqwest.workspace = true
+tokio.workspace = true
+# The webhook URL is parsed rather than pattern-matched: the insecure opt-in is
+# keyed on its host, and a substring test for a host name matches a path too.
+url.workspace = true
+
+[dev-dependencies]
+# A one-request receiver, so the round trip is tested against a real server
+# rather than against a hand-parsed socket. Already in the lock via the broker.
+axum.workspace = true
+

@@ -1,0 +1,26 @@
+{
+  "note": "accountEnabled:false -> sync disables the Samba account (UAC |= 0x2).",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/users/delta?$select=id,displayName,userPrincipalName,accountEnabled,userType,onPremisesSyncEnabled&$deltatoken=tok-U1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/users/delta?$deltatoken=tok-U2",
+      "value": [
+        {
+          "id": "b0b00004-aaaa-bbbb-cccc-000000000004",
+          "displayName": "Bob Nested",
+          "userPrincipalName": "bob.nested@contoso.example",
+          "accountEnabled": false,
+          "userType": "Member",
+          "onPremisesSyncEnabled": null
+        }
+      ]
+    }
+  }
+}

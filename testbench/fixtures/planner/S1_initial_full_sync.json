@@ -1,0 +1,233 @@
+{
+  "desired": {
+    "complete": true,
+    "admission_subject": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
+    "users": {
+      "33334444-dddd-5555-eeee-6666ffff7777": {
+        "display_name": "Alice Anderson",
+        "upn": "alice.anderson@contoso.example",
+        "enabled": true
+      },
+      "9f3a0002-aaaa-bbbb-cccc-000000000002": {
+        "display_name": "John Doe",
+        "upn": "jdoe@contoso.example",
+        "enabled": true
+      },
+      "8b210003-aaaa-bbbb-cccc-000000000003": {
+        "display_name": "John Doe",
+        "upn": "john.doe2@contoso.example",
+        "enabled": true
+      },
+      "b0b00004-aaaa-bbbb-cccc-000000000004": {
+        "display_name": "Bob Nested",
+        "upn": "bob.nested@contoso.example",
+        "enabled": true
+      },
+      "ca201005-aaaa-bbbb-cccc-000000000005": {
+        "display_name": "Carol Cycle",
+        "upn": "carol.cycle@contoso.example",
+        "enabled": true
+      }
+    },
+    "groups": {
+      "4e8a1c9d-5f6b-4d7e-b8a9-001122334455": {
+        "display_name": "onprem-realm-users"
+      },
+      "61000006-aaaa-bbbb-cccc-000000000006": {
+        "display_name": "inner-devs"
+      },
+      "77770001-aaaa-bbbb-cccc-000000000001": {
+        "display_name": "proj-x"
+      },
+      "a1d00007-aaaa-bbbb-cccc-000000000007": {
+        "display_name": "mid-group"
+      },
+      "c1c00008-aaaa-bbbb-cccc-000000000008": {
+        "display_name": "cyc-a"
+      },
+      "c1c00009-aaaa-bbbb-cccc-000000000009": {
+        "display_name": "cyc-b"
+      }
+    },
+    "membership": {
+      "4e8a1c9d-5f6b-4d7e-b8a9-001122334455": [
+        "33334444-dddd-5555-eeee-6666ffff7777",
+        "9f3a0002-aaaa-bbbb-cccc-000000000002",
+        "8b210003-aaaa-bbbb-cccc-000000000003",
+        "a1d00007-aaaa-bbbb-cccc-000000000007",
+        "c1c00008-aaaa-bbbb-cccc-000000000008"
+      ],
+      "61000006-aaaa-bbbb-cccc-000000000006": [
+        "b0b00004-aaaa-bbbb-cccc-000000000004"
+      ],
+      "77770001-aaaa-bbbb-cccc-000000000001": [
+        "33334444-dddd-5555-eeee-6666ffff7777"
+      ],
+      "a1d00007-aaaa-bbbb-cccc-000000000007": [
+        "61000006-aaaa-bbbb-cccc-000000000006"
+      ],
+      "c1c00008-aaaa-bbbb-cccc-000000000008": [
+        "c1c00009-aaaa-bbbb-cccc-000000000009"
+      ],
+      "c1c00009-aaaa-bbbb-cccc-000000000009": [
+        "c1c00008-aaaa-bbbb-cccc-000000000008",
+        "ca201005-aaaa-bbbb-cccc-000000000005"
+      ]
+    }
+  },
+  "current": {
+    "users": {},
+    "groups": {},
+    "foreign_sams": [],
+    "unmanaged_dns": []
+  },
+  "plan": {
+    "ops": [
+      {
+        "display_name": "Alice Anderson",
+        "dn": "CN=Alice Anderson,OU=Entra,DC=example,DC=site",
+        "enabled": true,
+        "identity": "kb1|entra|33334444-dddd-5555-eeee-6666ffff7777",
+        "op": "create_user",
+        "sam": "alice.anderson",
+        "upn": "alice.anderson@example.site"
+      },
+      {
+        "display_name": "John Doe",
+        "dn": "CN=John Doe,OU=Entra,DC=example,DC=site",
+        "enabled": true,
+        "identity": "kb1|entra|8b210003-aaaa-bbbb-cccc-000000000003",
+        "op": "create_user",
+        "sam": "john.doe2",
+        "upn": "john.doe2@example.site"
+      },
+      {
+        "display_name": "John Doe",
+        "dn": "CN=John Doe (9f3a),OU=Entra,DC=example,DC=site",
+        "enabled": true,
+        "identity": "kb1|entra|9f3a0002-aaaa-bbbb-cccc-000000000002",
+        "op": "create_user",
+        "sam": "jdoe",
+        "upn": "jdoe@example.site"
+      },
+      {
+        "display_name": "Bob Nested",
+        "dn": "CN=Bob Nested,OU=Entra,DC=example,DC=site",
+        "enabled": true,
+        "identity": "kb1|entra|b0b00004-aaaa-bbbb-cccc-000000000004",
+        "op": "create_user",
+        "sam": "bob.nested",
+        "upn": "bob.nested@example.site"
+      },
+      {
+        "display_name": "Carol Cycle",
+        "dn": "CN=Carol Cycle,OU=Entra,DC=example,DC=site",
+        "enabled": true,
+        "identity": "kb1|entra|ca201005-aaaa-bbbb-cccc-000000000005",
+        "op": "create_user",
+        "sam": "carol.cycle",
+        "upn": "carol.cycle@example.site"
+      },
+      {
+        "dn": "CN=onprem-realm-users,OU=Entra,DC=example,DC=site",
+        "identity": "kb1|entra|4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
+        "op": "create_group",
+        "role_marker": "kbrole1|realm-admission",
+        "sam": "onprem-realm-users"
+      },
+      {
+        "dn": "CN=inner-devs,OU=Entra,DC=example,DC=site",
+        "identity": "kb1|entra|61000006-aaaa-bbbb-cccc-000000000006",
+        "op": "create_group",
+        "sam": "inner-devs"
+      },
+      {
+        "dn": "CN=proj-x,OU=Entra,DC=example,DC=site",
+        "identity": "kb1|entra|77770001-aaaa-bbbb-cccc-000000000001",
+        "op": "create_group",
+        "sam": "proj-x"
+      },
+      {
+        "dn": "CN=mid-group,OU=Entra,DC=example,DC=site",
+        "identity": "kb1|entra|a1d00007-aaaa-bbbb-cccc-000000000007",
+        "op": "create_group",
+        "sam": "mid-group"
+      },
+      {
+        "dn": "CN=cyc-a,OU=Entra,DC=example,DC=site",
+        "identity": "kb1|entra|c1c00008-aaaa-bbbb-cccc-000000000008",
+        "op": "create_group",
+        "sam": "cyc-a"
+      },
+      {
+        "dn": "CN=cyc-b,OU=Entra,DC=example,DC=site",
+        "identity": "kb1|entra|c1c00009-aaaa-bbbb-cccc-000000000009",
+        "op": "create_group",
+        "sam": "cyc-b"
+      },
+      {
+        "dn": "CN=onprem-realm-users,OU=Entra,DC=example,DC=site",
+        "member": "CN=Alice Anderson,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=onprem-realm-users,OU=Entra,DC=example,DC=site",
+        "member": "CN=John Doe (9f3a),OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=onprem-realm-users,OU=Entra,DC=example,DC=site",
+        "member": "CN=John Doe,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=onprem-realm-users,OU=Entra,DC=example,DC=site",
+        "member": "CN=cyc-a,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=onprem-realm-users,OU=Entra,DC=example,DC=site",
+        "member": "CN=mid-group,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=inner-devs,OU=Entra,DC=example,DC=site",
+        "member": "CN=Bob Nested,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=proj-x,OU=Entra,DC=example,DC=site",
+        "member": "CN=Alice Anderson,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=mid-group,OU=Entra,DC=example,DC=site",
+        "member": "CN=inner-devs,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=cyc-a,OU=Entra,DC=example,DC=site",
+        "member": "CN=cyc-b,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=cyc-b,OU=Entra,DC=example,DC=site",
+        "member": "CN=Carol Cycle,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      },
+      {
+        "dn": "CN=cyc-b,OU=Entra,DC=example,DC=site",
+        "member": "CN=cyc-a,OU=Entra,DC=example,DC=site",
+        "op": "add_member"
+      }
+    ],
+    "conflicts": [],
+    "alerts": [
+      {
+        "kind": "note",
+        "message": "admission group must be created and marked; requires empty-marker precondition re-check at apply time"
+      }
+    ]
+  },
+  "error": null
+}

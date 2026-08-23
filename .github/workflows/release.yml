@@ -1,0 +1,176 @@
+# One release per tag. This workflow builds both architectures, gates them with
+# the same checks `make test-deb` runs on main, and then publishes one release.
+#
+# The trigger is a tag push, not `on: release`. A release created with
+# GITHUB_TOKEN does not fire the `release` event, so a second workflow chained to
+# it would never run and nothing would say why.
+#
+# `workflow_dispatch` runs every job except the last one. Use it to rehearse a
+# release: it builds and gates, and it publishes nothing.
+#
+# The version is not written here. `make` derives it on the runner with
+# `debian/make-changelog --print-version`, which reads `git describe`, and passes
+# it into the build image -- so a tag push gives 0.10.0 and a commit after it
+# gives 0.10.0+git<date>.<sha>. Every checkout below therefore needs
+# `fetch-depth: 0`; the image itself needs no repository metadata.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# The default token is read-only. Only `publish` widens it, so a job that
+# builds untrusted code never holds a write token.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gate:
+    name: release notes and packaging values
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - run: debian/check-manifests
+
+  linux:
+    name: linux (${{ matrix.arch }})
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - run: make test-deb
+      # The two host CLIs come out of the packages that already carry them. A
+      # second compile would cost a build and could ship a standalone binary
+      # that differs from the packaged one of the same version.
+      - name: the standalone CLIs
+        run: |
+          set -eu
+          take() { # <package> <binary>
+            deb=$(ls "dist/debian/$1"_*_"${{ matrix.arch }}".deb)
+            out="dist/$2-linux-${{ matrix.arch }}"
+            dpkg-deb --fsys-tarfile "$deb" | tar -xO "./usr/bin/$2" > "$out"
+            chmod +x "$out"
+          }
+          take kerbridge-manage kbmanage
+          take kerbridge-config kbconfig
+          file dist/kb*-linux-*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            dist/debian/*.deb
+            dist/kbmanage-linux-${{ matrix.arch }}
+            dist/kbconfig-linux-${{ matrix.arch }}
+          if-no-files-found: error
+
+  windows:
+    name: windows client and installer
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # `installer` compiles the exes again rather than reusing the ones the
+      # step above wrote. Do not join the two: the independence is what lets the
+      # MSI build on a developer's Mac with no prior `make windows`.
+      #
+      # The MSI is unsigned. Signing is the publisher's step.
+      - run: make windows
+      - run: make installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.exe
+            dist/*.msi
+          if-no-files-found: error
+
+  publish:
+    name: publish the release
+    # A leg that fails or queues blocks the release. Half a release is worse
+    # than none: the tag looks published, and one architecture is absent.
+    needs: [linux, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+      - name: assemble the release
+        run: |
+          set -eu
+          mkdir release
+
+          # Everything that differs between the architectures, from both legs.
+          find incoming -type f ! -name 'kerbridge_*_all.deb' \
+            -exec cp {} release/ \;
+
+          # The metapackage is Architecture: all, so both legs build one, and a
+          # release holds one file of a name. Either copy is right only if the
+          # two agree, so compare the control fields and the file list. Do not
+          # compare the bytes: each build stamps its own time into the archive.
+          meta() { dpkg-deb -f "$1"; dpkg-deb --fsys-tarfile "$1" | tar -tf - | sort; }
+          amd=$(ls incoming/linux-amd64/debian/kerbridge_*_all.deb)
+          arm=$(ls incoming/linux-arm64/debian/kerbridge_*_all.deb)
+          diff <(meta "$amd") <(meta "$arm") || {
+            echo "the two legs packaged different metapackages" >&2
+            exit 1
+          }
+          cp "$amd" release/
+
+          # The operator's own check, with `sha256sum -c SHA256SUMS`. Relative
+          # names, so it works in the directory the files were downloaded to.
+          # Written outside the directory and moved in, so the file cannot list
+          # itself.
+          ( cd release && sha256sum ./* > ../SHA256SUMS )
+          mv SHA256SUMS release/
+          ls -l release
+      - name: the release notes
+        run: |
+          set -eu
+          version=${GITHUB_REF_NAME#v}
+          # The same section `debian/make-changelog` reads, kept as the markdown
+          # a release page renders. The gate job refuses an absent section too.
+          # Both checks stay: they parse the file differently, and only this one
+          # produces the text a person reads.
+          awk -v want="$version" '
+              /^## / { inside = ($2 == want); next }
+              inside { print }
+          ' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md || {
+            echo "CHANGELOG.md holds no section for $version, or an empty one" >&2
+            exit 1
+          }
+          cat notes.md
+      - name: publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md

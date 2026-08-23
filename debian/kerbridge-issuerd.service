@@ -1,0 +1,90 @@
+# The issuer daemon. Its Compose counterpart is the `issuer` service; the two
+# start the same binary with the same argument surface, and
+# debian/check-manifests compares this ExecStart= against that service's
+# `entrypoint:`.
+[Unit]
+Description=KerBridge issuer daemon
+Documentation=man:issuerd(8)
+# Wants=, never Requires=, BindsTo= or PartOf=: stopping the domain controller
+# for maintenance must not take the issuer's audit daemon with it. After= is
+# tidiness rather than correctness -- issuerd opens nothing at startup and every
+# directory access is a per-request ldbsearch, so a cold boot is tolerated by
+# construction. samba-ad-dc.service, never samba.service: Debian gates
+# each Samba unit with ExecCondition=/usr/share/samba/is-configured, so an
+# unprovisioned host is quiet and there is nothing to mask or unmask.
+Wants=samba-ad-dc.service
+After=samba-ad-dc.service
+# Installed and not yet configured is a designed state, not a fault, and
+# without this line it is a crash loop: with no config set the first
+# ExecStartPre= below fails, Restart= retries, and the stock start limiter never
+# ends it -- RestartSec=5s spaces the attempts wider than the stock burst of 5
+# inside StartLimitIntervalSec=10s, so the limiter never trips and the retries
+# never stop. A condition instead of an ExecCondition= because the test is a
+# path: no process is forked, `systemctl start` still exits 0, and the unit sits
+# inactive with the reason in the journal rather than in `systemctl --failed`.
+ConditionPathExists=/etc/kerbridge/main.toml
+# And for every failure a condition cannot see -- a set that does not check out,
+# durable state that does not match, a daemon that dies -- five attempts inside
+# a minute, which RestartSec=5s reaches in ~25 s. Then `failed`, where an
+# operator finds it, instead of a journal that scrolls for ever. The pair is
+# [Unit], not [Service], and both halves are needed: the interval alone still
+# leaves the stock burst of 5.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+# exec, not simple: it fails the job if the exec itself fails. Not notify and no
+# WatchdogSec= -- no daemon here calls sd_notify or writes a pidfile.
+Type=exec
+# Coherence of the config set first, then whether durable state still matches
+# it: a broken set makes `verify`'s answer meaningless. `kbconfig check` without
+# --online, always -- a boot with no network must not wedge the unit, and the
+# online probe returns 0 on a missing trust store anyway.
+ExecStartPre=/usr/bin/kbconfig --config /etc/kerbridge check
+ExecStartPre=/usr/sbin/kbsetup verify
+ExecStart=/usr/sbin/issuerd
+Restart=on-failure
+RestartSec=5s
+# One line for both directories, despite RuntimeDirectoryMode= being a single
+# value for the whole list: issuerd chowns and chmods both unconditionally, on a
+# pre-existing directory as readily as on one it created, so the apparent mode
+# clash is not one. /run is tmpfs by construction, which is what satisfies
+# tmp_dir's "key material must not reach a disk", and RuntimeDirectory= adds
+# removal-on-stop for free.
+RuntimeDirectory=kerbridge issuer
+RuntimeDirectoryMode=0700
+# The per-daemon children of the two parents `prepare-state` creates. systemd
+# owns the child and prepare-state owns the parent, deliberately: two mechanisms
+# creating one directory is how they come to disagree about its mode.
+StateDirectory=kerbridge/issuerd
+StateDirectoryMode=0750
+LogsDirectory=kerbridge/issuerd
+LogsDirectoryMode=0750
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+# Required, not decorative. Under ProtectSystem=strict alone /tmp is read-only
+# -- measured -- and issuerd spawns samba-tool, which is Python. `yes`, never
+# `disconnected`: that value exists only from systemd 257, and on noble (255) a
+# unit naming it does not fail. It logs a parse warning, falls back to false,
+# and the service runs with no private /tmp at all.
+PrivateTmp=yes
+# ldbmodify writes sam.ldb. /etc/samba is deliberately absent: smb.conf belongs
+# to kbsetup, not to issuerd, and this daemon has no business rewriting it.
+ReadWritePaths=/var/lib/samba
+# The one writable corner of the config set, and only this corner. `kbsetup
+# verify` runs above as ExecStartPre and republishes the realm CA when it has
+# gone missing. That is a copy out of Samba's own tls directory, and under
+# ProtectSystem=strict it is refused everywhere in /etc that is not named here.
+# The `-` prefix keeps the unit from failing on a host where the directory does
+# not exist yet. Nothing widens this to /etc/kerbridge itself: the config set is
+# kbconfig's, and this daemon reads it.
+ReadWritePaths=-/etc/kerbridge/certs
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# No User=, and this is the surprising one: issuerd runs as root because it
+# holds KDC authority and reads sam.ldb directly. No capability directive
+# either -- a bounding set is the only meaningful one outside a container, and
+# it buys little on a daemon that must be root.
+
+[Install]
+WantedBy=multi-user.target

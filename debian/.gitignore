@@ -1,0 +1,15 @@
+# The packaging's two generated files. debian/changelog is what dpkg reads the
+# version from, so whatever writes it is the release process -- here that is
+# debian/make-changelog, from CHANGELOG.md and `git describe` (#50 §9). It has
+# to exist before dpkg-buildpackage starts, which is why it is generated rather
+# than built. The NEWS file's prose is committed as *.NEWS.in; only its version
+# stamp comes from the same place the changelog's does.
+/changelog
+/kerbridge-config.NEWS
+
+# What the build hands the packaging: the six static musl binaries, the twelve
+# generated man pages and THIRD-PARTY-NOTICES, at the paths they install to.
+# debian/stage-prebuilt fills it; debian/rules only stages it. Never committed
+# -- these are build outputs, and the whole point of generating the man pages is
+# that no copy of them is kept.
+/prebuilt/

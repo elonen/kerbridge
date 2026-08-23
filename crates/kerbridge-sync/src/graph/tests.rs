@@ -1,0 +1,305 @@
+use super::*;
+
+const ADMISSION: &str = "4e8a1c9d-5f6b-4d7e-b8a9-001122334455";
+const PROJX: &str = "77770001-aaaa-bbbb-cccc-000000000001";
+
+fn fixture(name: &str) -> serde_json::Value {
+    let path =
+        format!("{}/../../testbench/fixtures/graph-sync/{name}.json", env!("CARGO_MANIFEST_DIR"));
+    let raw: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    raw["response"]["body"].clone()
+}
+
+fn users_of(name: &str) -> Vec<RawUser> {
+    serde_json::from_value::<Page<RawUser>>(fixture(name)).unwrap().value
+}
+
+fn groups_of(name: &str) -> Vec<RawGroup> {
+    serde_json::from_value::<Page<RawGroup>>(fixture(name)).unwrap().value
+}
+
+/// The initial full read: two user pages and two groups-delta pages, exactly
+/// as the sync spike captured them.
+fn initial_shadow() -> Shadow {
+    let mut s = Shadow::default();
+    s.apply_users(users_of("full_users_page1"));
+    s.apply_users(users_of("full_users_page2"));
+    s.apply_groups(groups_of("groups_delta_init_page1"));
+    s.apply_groups(groups_of("groups_delta_init_page2"));
+    s
+}
+
+fn desired_fixture(name: &str) -> serde_json::Value {
+    let path =
+        format!("{}/../../testbench/fixtures/planner/{name}.json", env!("CARGO_MANIFEST_DIR"));
+    let raw: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    raw["desired"].clone()
+}
+
+fn built(shadow: &Shadow) -> serde_json::Value {
+    let allow = [PROJX.to_owned()];
+    serde_json::to_value(build_desired(shadow, true, ADMISSION, &allow).0).unwrap()
+}
+
+/// The admission rule, both halves. An account exists for someone a selected
+/// group holds and for nobody else -- so the admission-group closure and the
+/// allowlist answer "who exists here", not merely "who may get a ticket", and an
+/// operator reading the IdP-specific OU sees the admitted set and nothing more.
+///
+/// Gary Guest carries both halves at once: a guest, so syncable, and in no
+/// group in the corpus, so unheld.
+#[test]
+fn an_account_exists_only_for_a_user_a_selected_group_holds() {
+    const GARY: &str = "9e570010-aaaa-bbbb-cccc-000000000010";
+    let shadow = initial_shadow();
+    assert!(shadow.users.contains_key(GARY), "the tenant read did see him");
+    assert!(user_syncable(&shadow.users[GARY]).is_ok(), "and he is syncable");
+
+    let d = built(&shadow);
+    assert!(
+        d["users"].as_object().unwrap().get(GARY).is_none(),
+        "syncable but held by no selected group: no account"
+    );
+
+    // Held by the admission group, and he gets one -- nothing about being a guest
+    // keeps him out, only being unheld did.
+    let mut held = initial_shadow();
+    held.apply_groups(
+        serde_json::from_value::<Page<RawGroup>>(serde_json::json!({
+            "value": [{
+                "id": ADMISSION,
+                "members@delta": [{"@odata.type": "#microsoft.graph.user", "id": GARY}],
+            }]
+        }))
+        .unwrap()
+        .value,
+    );
+    let d = built(&held);
+    assert!(d["users"].as_object().unwrap().contains_key(GARY), "held guest gets an account");
+    assert!(
+        d["membership"][ADMISSION].as_array().unwrap().iter().any(|m| m == GARY),
+        "and is an admission-group member"
+    );
+}
+
+#[test]
+fn initial_read_reproduces_the_s1_desired_state() {
+    assert_eq!(built(&initial_shadow()), desired_fixture("S1_initial_full_sync"));
+}
+
+#[test]
+fn user_disable_delta_reproduces_s3_desired() {
+    let mut s = initial_shadow();
+    s.apply_users(users_of("users_delta_user_disabled"));
+    assert_eq!(built(&s), desired_fixture("S3_user_disabled"));
+}
+
+#[test]
+fn membership_delta_reproduces_s4_desired() {
+    let mut s = initial_shadow();
+    s.apply_groups(groups_of("groups_delta_incr_add_remove"));
+    assert_eq!(built(&s), desired_fixture("S4_membership_add_remove"));
+}
+
+#[test]
+fn user_delete_delta_reproduces_s5_desired() {
+    let mut s = initial_shadow();
+    s.apply_users(users_of("users_delta_user_deleted"));
+    assert_eq!(built(&s), desired_fixture("S5_user_deleted_retention"));
+}
+
+#[test]
+fn group_softdelete_delta_reproduces_s6_desired() {
+    let mut s = initial_shadow();
+    s.apply_groups(groups_of("groups_delta_group_softdeleted"));
+    assert_eq!(built(&s), desired_fixture("S6_group_deleted_quarantine"));
+}
+
+#[test]
+fn admission_group_rename_delta_reproduces_s7_desired() {
+    let mut s = initial_shadow();
+    s.apply_groups(groups_of("groups_delta_admission_group_renamed"));
+    assert_eq!(built(&s), desired_fixture("S7_admission_group_renamed"));
+}
+
+/// A group split across delta pages must accumulate, not replace: naively
+/// overwriting on the second page would lose the first page's member.
+#[test]
+fn split_group_pages_merge_rather_than_replace() {
+    let mut s = Shadow::default();
+    s.apply_groups(groups_of("groups_delta_split_group_p1"));
+    s.apply_groups(groups_of("groups_delta_split_group_p2"));
+    let ids: Vec<&str> = s.groups[ADMISSION].members.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "33334444-dddd-5555-eeee-6666ffff7777",
+            "a1d00007-aaaa-bbbb-cccc-000000000007",
+            "c1c00008-aaaa-bbbb-cccc-000000000008",
+        ]
+    );
+}
+
+/// Every member type Entra can put in a group, on one admission group.
+///
+/// The group half is a **parse** test: a recorded page carries group properties
+/// the wire structs no longer declare -- `securityEnabled`, `groupTypes`,
+/// `onPremisesSyncEnabled` -- and this fails if they ever stop being tolerated.
+/// The user half is the policy, which is `userType` and nothing else.
+#[test]
+fn every_member_type_parses_and_only_user_type_refuses() {
+    let members = fixture("syncable_zoo_members");
+    let mut users = Shadow::default();
+    let mut groups = Shadow::default();
+    let mut kinds: BTreeMap<String, MemberKind> = BTreeMap::new();
+    for m in members["value"].as_array().unwrap() {
+        let kind = MemberKind::from_odata(m["@odata.type"].as_str().unwrap());
+        let id = m["id"].as_str().unwrap().to_owned();
+        kinds.insert(id, kind);
+        match kind {
+            MemberKind::User => users.apply_users(vec![serde_json::from_value(m.clone()).unwrap()]),
+            MemberKind::Group => {
+                groups.apply_groups(vec![serde_json::from_value(m.clone()).unwrap()])
+            }
+            _ => {}
+        }
+    }
+    let u = |id: &str| user_syncable(&users.users[id]).is_ok();
+
+    assert!(u("33334444-dddd-5555-eeee-6666ffff7777"), "member user syncable");
+    assert!(u("9e570010-aaaa-bbbb-cccc-000000000010"), "guest syncable");
+    // Security, Unified, dynamic and on-prem-synced: all four reach the shadow.
+    for gid in [
+        "a1d00007-aaaa-bbbb-cccc-000000000007",
+        "0365aa11-aaaa-bbbb-cccc-000000000011",
+        "d1a2bb12-aaaa-bbbb-cccc-000000000012",
+        "0b9e4c13-aaaa-bbbb-cccc-000000000013",
+    ] {
+        assert!(groups.groups.contains_key(gid), "{gid} must parse into the shadow");
+    }
+    assert_eq!(kinds["de71ce14-aaaa-bbbb-cccc-000000000014"], MemberKind::Device);
+    assert_eq!(kinds["5e9f1015-aaaa-bbbb-cccc-000000000015"], MemberKind::ServicePrincipal);
+}
+
+/// A member user, enabled and cloud-only.
+fn a_user(name: &str) -> ShadowUser {
+    ShadowUser {
+        display_name: Some(name.to_owned()),
+        upn: Some(format!("{name}@example.onmicrosoft.com")),
+        mail: None,
+        other_mails: None,
+        account_enabled: Some(true),
+        user_type: Some("Member".to_owned()),
+    }
+}
+
+/// A plain cloud security group holding `members`.
+fn a_group(name: &str, members: Vec<Member>) -> ShadowGroup {
+    ShadowGroup { display_name: Some(name.to_owned()), members }
+}
+
+fn user_member(id: &str) -> Member {
+    Member { kind: MemberKind::User, id: id.to_owned() }
+}
+
+fn group_member(id: &str) -> Member {
+    Member { kind: MemberKind::Group, id: id.to_owned() }
+}
+
+/// Mutual nesting terminates, and each group is expanded exactly once.
+///
+/// Entra permits `a -> b -> a`, and the recorded fixtures contain one reachable
+/// from the admission group, so the walk has to break the cycle.
+///
+/// Deliberately asserts membership too, not just termination: breaking the
+/// recursion must not lose an edge. `dana`, held only by the far side of the
+/// cycle, still gets an account.
+#[test]
+fn mutual_nesting_terminates_and_expands_each_group_once() {
+    let mut sh = Shadow::default();
+    sh.users.insert("u-dana".into(), a_user("dana"));
+    sh.groups
+        .insert("g-admission".into(), a_group("onprem-realm-users", vec![group_member("g-a")]));
+    sh.groups.insert("g-a".into(), a_group("cyc-a", vec![group_member("g-b")]));
+    // Back to g-a, and on to the admission group itself, which is the tighter loop.
+    sh.groups.insert(
+        "g-b".into(),
+        a_group(
+            "cyc-b",
+            vec![group_member("g-a"), group_member("g-admission"), user_member("u-dana")],
+        ),
+    );
+
+    let (d, _) = build_desired(&sh, true, "g-admission", &[]);
+
+    assert_eq!(d.groups.len(), 3, "each group once: {:?}", d.groups.keys().collect::<Vec<_>>());
+    assert!(d.users.contains_key("u-dana"), "an edge behind the cycle is still followed");
+    assert_eq!(d.membership["g-b"], vec!["g-a", "g-admission", "u-dana"], "edges preserved");
+}
+
+/// Every group named in `membership` has an object in `groups`.
+///
+/// Asserted here because downstream it holds only by accident: the planner drops
+/// a member whose DN it cannot resolve, so a violation is silent in another file.
+/// The reachable way in is a member group the read has not got to yet -- ordinary
+/// delta ordering, not a decision.
+#[test]
+fn membership_never_names_a_group_with_no_object() {
+    let mut sh = Shadow::default();
+    sh.users.insert("u-direct".into(), a_user("direct"));
+    sh.groups.insert(
+        "g-admission".into(),
+        a_group("onprem-realm-users", vec![user_member("u-direct"), group_member("g-unread")]),
+    );
+    // Named as a member, not yet in the shadow: no object, so no membership edge.
+
+    let (d, _) = build_desired(&sh, true, "g-admission", &[]);
+    assert!(!d.groups.contains_key("g-unread"));
+    for (gid, members) in &d.membership {
+        for m in members {
+            assert!(
+                d.users.contains_key(m) || d.groups.contains_key(m),
+                "{gid} names {m}, which has no object in the desired state"
+            );
+        }
+    }
+}
+
+/// A person the operator put in the admission group who still gets nothing is the
+/// one not-syncable outcome they cannot debug from the outside, so it is named.
+#[test]
+fn a_held_but_unsyncable_user_is_reported() {
+    let mut sh = Shadow::default();
+    sh.users.insert(
+        "u-device-ish".into(),
+        ShadowUser { user_type: Some("Unknown".to_owned()), ..a_user("shapeunknown") },
+    );
+    sh.users.insert("u-absent-type".into(), ShadowUser { user_type: None, ..a_user("shapeless") });
+    sh.groups.insert(
+        "g-admission".into(),
+        a_group(
+            "onprem-realm-users",
+            vec![
+                user_member("u-device-ish"),
+                user_member("u-absent-type"),
+                // Never read this cycle: ordinary delta ordering, not a decision.
+                user_member("u-not-in-shadow"),
+            ],
+        ),
+    );
+
+    let (d, refused) = build_desired(&sh, true, "g-admission", &[]);
+    assert!(d.users.is_empty(), "neither is syncable");
+    assert!(
+        refused.iter().any(|r| r.contains("u-device-ish") && r.contains("userType")),
+        "{refused:?}"
+    );
+    assert!(
+        refused.iter().any(|r| r.contains("u-absent-type") && r.contains("userType")),
+        "{refused:?}"
+    );
+    assert!(
+        !refused.iter().any(|r| r.contains("u-not-in-shadow")),
+        "an unread member is not a refusal: {refused:?}"
+    );
+}

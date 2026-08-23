@@ -1,0 +1,80 @@
+#!/bin/sh
+# The one edit this package makes outside its own tree: an `includedir` line in
+# /etc/krb5.conf, so that the drop-in `kbsetup realm` writes is read at all.
+#
+# WHY A DROP-IN AND NOT THE FILE. Owning /etc/krb5.conf outright was the
+# earlier plan, and measurement overturned it. Measured on trixie and noble,
+# with the resolver pinned to a dead nameserver so that no DNS
+# wildcard could answer an SRV lookup; the discriminator is MIT's own
+# KRB5_TRACE output rather than inspection. Re-check any line below with
+# `KRB5_TRACE=/dev/stderr kinit -k <principal>` on the release in question.
+# The findings that shape what is below:
+#
+#   * No release ships an `includedir` line, and no release ships or owns
+#     /etc/krb5.conf.d/. Both have to be made here.
+#   * A drop-in alone does nothing -- MIT's own KRB5_TRACE shows the SRV lookup
+#     still going out. With the include line added, the same test resolves the
+#     configured KDC by name.
+#   * With no /etc/krb5.conf at all, a drop-in is never read: there is no
+#     implicit include.
+#   * A DANGLING `includedir` IS FATAL, not ignored: every krb5 binary on the
+#     host, not only ours, fails with "Included profile directory could not be
+#     read". So the directory is created *before* the line that names it, and
+#     the purge order in postrm is the reverse. An empty but existing directory
+#     is fine.
+#   * A hand-added include line survives `dpkg-reconfigure krb5-config`
+#     byte-for-byte.
+#
+# The line is content-free -- no realm, no host, nothing debconf answers. The
+# substantive configuration is /etc/krb5.conf.d/kerbridge.conf, generated from
+# the config set by `kbsetup realm` and removed cleanly on purge.
+set -e
+
+KRB5_CONF=/etc/krb5.conf
+KRB5_CONF_D=/etc/krb5.conf.d
+MARKER='# Added by kerbridge-issuerd. Removed again when this package is purged.'
+INCLUDE="includedir $KRB5_CONF_D/"
+
+case "$1" in
+    configure)
+        # This package creates no unix account: issuerd runs as root because it
+        # holds KDC authority and reads sam.ldb directly. The _kerbridge
+        # group it chowns the issuer socket to comes from kerbridge-config,
+        # which dpkg configures first.
+
+        # The directory first, always -- see the header.
+        if [ ! -d "$KRB5_CONF_D" ]; then
+            mkdir -p "$KRB5_CONF_D"
+            chmod 0755 "$KRB5_CONF_D"
+        fi
+
+        if [ ! -e "$KRB5_CONF" ]; then
+            # krb5-user Recommends krb5-config on both targets, so
+            # --no-install-recommends really does leave no /etc/krb5.conf.
+            # The content is the include line and nothing else: everything with
+            # an opinion in it belongs in the drop-in.
+            {
+                printf '%s\n' "$MARKER"
+                printf '%s\n' "$INCLUDE"
+            } > "$KRB5_CONF"
+            chmod 0644 "$KRB5_CONF"
+        elif ! grep -qxF "$INCLUDE" "$KRB5_CONF"; then
+            {
+                printf '\n%s\n' "$MARKER"
+                printf '%s\n' "$INCLUDE"
+            } >> "$KRB5_CONF"
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

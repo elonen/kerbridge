@@ -1,0 +1,117 @@
+# The realm, as anything fronting it would see it. Nothing here is specific to
+# KerBridge; what is, is in main.toml. The one exception is the [provision]
+# table at the end, which is specific to Samba -- a different axis: it says how
+# this realm was made, not what it is.
+#
+# A commented-out line sets nothing. `#some_option = 8` means that KerBridge
+# uses 8, the default for that option. `#some_option =`, with no value, means
+# that the option has no default: the comment above the line says what
+# KerBridge does instead, and shows an example. main.toml gives the full rule.
+
+# SET ONCE, BEFORE THE FIRST PROVISIONING. Baked into the Samba database, and
+# startup fails if this later disagrees with it.
+#
+# UPPER CASE, and refused otherwise. ad_dns_domain below is this lowercased, so
+# a lower-case realm here derives a DNS domain identical to itself and looks
+# self-consistent everywhere -- samba-tool would provision it, and nothing after
+# that can correct the name.
+realm = "EXAMPLE.SITE"
+
+# Derived from `realm` -- the domain root the same way AD derives it, and the
+# UPN suffix as the realm lowercased. State either only if this realm was
+# provisioned with something else.
+#
+# Example: "DC=example,DC=site"
+#base_dn =
+#
+# Example: "example.site"
+#ad_dns_domain =
+
+# The domain's flat NT4-era name: what `EXAMPLE\alice` means and what a Windows
+# client shows. One label, no dots and no spaces, 15 characters at most. Derived
+# as the realm's first label uppercased, which is the answer samba-tool itself
+# picks -- state it only for a realm provisioned with a different one.
+#
+# Example: "EXAMPLE"
+#netbios_domain =
+
+# The DC's own short name, never its FQDN: that is this plus ad_dns_domain, and
+# is what the LDAPS certificate is issued for. Derived from ldap_url's host,
+# which already carries it -- state it only where ldap_url names an address
+# rather than a name, which is the one case there is nothing to derive from.
+#
+# Example: "kerbridge"
+#dc_hostname =
+
+# The OU holding one IdP-specific OU per cloud IdP, and nothing else. kbmanage
+# and issuerd test containment against this one: their question is "is this DN
+# sync-owned", which has to stay a single question however many cloud IdPs you
+# add. Each source's own OU is derived from it and the source name -- see
+# idp_<source>.toml.
+#
+# Example: "OU=CloudIdP,DC=example,DC=site"
+#idp_parent_ou =
+
+# Where your own resource groups live: outside every IdP-specific OU, because
+# sync does not own them and must not reconcile them away.
+#
+# Example: "OU=Resources,DC=example,DC=site"
+#resource_ou =
+
+# ldaps:// only. Plain ldap:// is refused where it is read, and StartTLS is not
+# negotiated either: the bind password, and every password sync writes, would
+# otherwise cross the network in the clear.
+ldap_url = "ldaps://kerbridge.example.site:636"
+
+# The realm's own CA, and only it -- there is no fallback to the OS trust store.
+# Samba's certificate has no SAN, so provisioning creates one from a CA that
+# exists only in the realm container and publishes it at this path.
+ldap_ca_file = "/run/kerbridge/realm-ca.pem"
+
+# What enrollment publishes to a client. Empty is the normal answer for both:
+# the realm is located through its _kerberos._udp SRV record, so enrollment pins
+# no KDC hostname and survives a DC being replaced. `services` is the escape
+# hatch for a service outside the realm's DNS zone, which the client's
+# DNS-suffix heuristic would not map.
+#kdcs = []
+#services = []
+
+# Kerberos ticket policy: 10 hours, renewable for 7 days.
+#
+# The first pair is what the broker asks for. The second is what issuerd is
+# willing to issue whatever it is asked -- Samba's own domain policy then caps
+# both again, so asking for more than the KDC allows gets what the KDC grants
+# rather than an error.
+#ticket_lifetime_seconds = 36000
+#ticket_renewable_seconds = 604800
+#max_lifetime_seconds = 36000
+#max_renewable_seconds = 604800
+
+
+# --- Provisioning: read once, when the realm is created ---
+# What Samba is told the day the realm is made, and the one group in this file
+# that is Samba's rather than the realm's. `kbsetup realm` reads these and
+# nothing reads them again: changing one afterwards reaches the realm only by
+# reprovisioning it, or by editing smb.conf in the volume by hand.
+[provision]
+
+# Upstream resolver for whatever uses the DC as its own -- the DC itself, and
+# any member pointed at it. Empty is no forwarder at all, which leaves those
+# able to resolve the AD zone and nothing else: normally right, since clients
+# here use the site resolver and an off-host member forwards the AD zone only.
+#dns_forwarder = ""
+
+# Samba's dynamic RPC ports. Narrow it where the range has to be published
+# through a firewall, which is what an off-host member needs.
+#rpc_port_range = "49152-49251"
+
+# The realm Administrator's password, which is also the credential a file
+# server joins with.
+#
+# WRITTEN, not read -- the one key in the whole config set naming a file
+# KerBridge creates rather than one it opens. Provisioning generates the
+# password and puts it here, and never overwrites a file already there. It is
+# a key at all, rather than the fixed path the rest of the secrets directory
+# is reached by, because a secrets directory on separate or encrypted storage
+# is the one thing an operator cannot otherwise route around.
+#admin_password_file = "/etc/kerbridge.secrets/generated/realm_admin_password"

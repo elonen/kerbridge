@@ -1,0 +1,185 @@
+# The six binary packages of one source package. Every field here was decided
+# before it was written; this file is the transcription, and a field it does
+# not name is one that was considered and left out. Two of those are worth
+# stating as absences rather than leaving to be rediscovered:
+#
+#   * No Multi-Arch: field on any package. The research came back "not found"
+#     for the arch:any-program-with-an-arch-independent-interface case, and a
+#     field nobody can cite a rule for is how a manifest acquires cargo cult.
+#     Absence means `no`, and the field can be added later.
+#   * No ${shlibs:Depends}, anywhere. These are static musl binaries with no
+#     dynamic section at all, so dpkg-shlibdeps succeeds and defines no
+#     substvar -- naming it yields a silently *empty* Depends field rather than
+#     an error. ${misc:Depends} only. dh_installdebconf adds the
+#     debconf dependency to it on its own.
+
+Source: kerbridge
+Section: net
+Priority: optional
+Maintainer: Jarno Elonen <elonen@iki.fi>
+# 13, and deliberately not 14. Trixie ships debhelper 13.24 and noble 13.14, so
+# compat 13 covers both targets, while compat 14 is in no stable release. 14 is
+# also where dh_installsysusers enters the default sequence, and this tree
+# creates its unix accounts with the `adduser` call Policy 9.2.2 names instead.
+# Re-check the floor with `apt-cache policy debhelper` on the oldest target.
+#
+# po-debconf is here for `debconf-updatepo`, which debian/rules runs from the
+# clean target -- the idiom po-debconf's own documentation recommends, and what
+# keeps debian/po/templates.pot from shipping a question set the templates file
+# no longer has.
+Build-Depends: debhelper-compat (= 13),
+               po-debconf
+Rules-Requires-Root: no
+Standards-Version: 4.6.2
+Homepage: https://kerbridge.org/
+
+Package: kerbridge-config
+Architecture: any
+# admin, not the source stanza's net: this one ships no daemon and talks to no
+# network. Same for kerbridge-manage below.
+Section: admin
+Depends: ${misc:Depends}, adduser
+Recommends: ca-certificates
+Description: KerBridge configuration tool, and the deployment's shared state
+ KerBridge gives cloud-identity users passwordless Kerberos access to on-prem
+ services. A sync daemon mirrors the chosen users out of a cloud IdP into a
+ local Samba AD domain controller, and a broker exchanges a cloud identity
+ proof for a KDC-signed ticket. Workstations join nothing; only the file
+ servers do.
+ .
+ This package holds kbconfig, which validates a deployment's config set, prints
+ one value out of it, and writes a new set with your answers already in it. It
+ links no LDAP client, so it can run before the realm it configures exists.
+ .
+ Every other KerBridge package depends on this one. It owns /etc/kerbridge and
+ /etc/kerbridge.secrets, it creates the _kerbridge unix group the daemons read
+ their credentials through, and it asks the install-time questions the whole
+ deployment is seeded from.
+
+Package: kerbridge-issuerd
+Architecture: any
+Depends: ${misc:Depends},
+         kerbridge-config (= ${binary:Version}),
+         samba-ad-dc (>= 2:4.19),
+         samba-common-bin,
+         python3-samba,
+         samba-dsdb-modules,
+         samba-vfs-modules,
+         winbind,
+         ldb-tools,
+         krb5-user
+Recommends: logrotate
+Description: KerBridge issuer daemon, and the realm setup command
+ KerBridge gives cloud-identity users passwordless Kerberos access to on-prem
+ services. A sync daemon mirrors the chosen users out of a cloud IdP into a
+ local Samba AD domain controller, and a broker exchanges a cloud identity
+ proof for a KDC-signed ticket. Workstations join nothing; only the file
+ servers do.
+ .
+ issuerd is the half of that exchange which holds KDC authority: it runs as
+ root on the domain controller, extracts a keytab for one account, obtains a
+ ticket-granting ticket with it, and hands the credential cache back over a
+ unix socket that only the broker's account may open. It reaches the directory
+ only through the local Samba tools, and it opens no network listener of its
+ own.
+ .
+ kbsetup ships here too: it provisions the realm, bootstraps the directory, and
+ answers whether durable state still matches the config set -- the last of
+ those on the issuer daemon's own start path.
+ .
+ Install this on the domain controller, which needs a Samba that can provision
+ the Windows Server 2016 schema: Debian 13 or Ubuntu 24.04 onwards. KerBridge
+ stores every external identity in an attribute that is stock only from that
+ schema, and an older Samba ships its definition without offering to lay it
+ down. Hence the versioned dependency, which is the whole of the requirement:
+ 4.19 is the first Samba that provisions the schema, and a release below it
+ cannot install this package at all.
+
+Package: kerbridge-broker
+Architecture: any
+Depends: ${misc:Depends}, kerbridge-config (= ${binary:Version}), adduser
+Recommends: ca-certificates, logrotate
+Description: KerBridge broker daemon, the client-facing half
+ KerBridge gives cloud-identity users passwordless Kerberos access to on-prem
+ services. A sync daemon mirrors the chosen users out of a cloud IdP into a
+ local Samba AD domain controller, and a broker exchanges a cloud identity
+ proof for a KDC-signed ticket. Workstations join nothing; only the file
+ servers do.
+ .
+ The broker is the only component a workstation talks to. It validates the
+ identity proof against the cloud IdP's published signing keys, decides whether
+ that identity is admitted, and asks the issuer for a ticket. It holds no KDC
+ authority: everything it can do, it can do because the issuer agreed to it.
+ .
+ It listens on the loopback interface and is refused any other address in code,
+ so a deployment terminates TLS in front of it on the same host. Tested Caddy
+ and nginx configurations are in this package's examples directory.
+
+Package: kerbridge-sync
+Architecture: any
+Depends: ${misc:Depends}, kerbridge-config (= ${binary:Version}), adduser
+Recommends: ca-certificates, logrotate
+Description: KerBridge directory synchronisation daemon
+ KerBridge gives cloud-identity users passwordless Kerberos access to on-prem
+ services. A sync daemon mirrors the chosen users out of a cloud IdP into a
+ local Samba AD domain controller, and a broker exchanges a cloud identity
+ proof for a KDC-signed ticket. Workstations join nothing; only the file
+ servers do.
+ .
+ sync is that mirror. It reads the admitted users and their groups from the
+ cloud IdP and reconciles one IdP-specific organisational unit per source
+ against them: it creates accounts, follows renames, and retires the groups
+ that no longer exist upstream. The direction is one-way and the cloud
+ directory is never written.
+ .
+ It is the only KerBridge daemon that changes durable state in the directory,
+ which is why it keeps an audit log of its own beside the service log.
+
+Package: kerbridge-manage
+Architecture: any
+Section: admin
+Depends: ${misc:Depends}, kerbridge-config (= ${binary:Version})
+Description: KerBridge operator command line
+ KerBridge gives cloud-identity users passwordless Kerberos access to on-prem
+ services. A sync daemon mirrors the chosen users out of a cloud IdP into a
+ local Samba AD domain controller, and a broker exchanges a cloud identity
+ proof for a KDC-signed ticket. Workstations join nothing; only the file
+ servers do.
+ .
+ kbmanage manages the resource groups that gate your services, nests the synced
+ groups into them, and diagnoses why an identity does or does not reach a
+ share. Inside the sync-owned organisational units it reads, deletes, renames a
+ login name and revokes a device grant, and nothing else -- a second writer
+ racing the reconciliation loop is the failure it exists to avoid.
+ .
+ It binds over LDAPS and runs as a person rather than as a service, so this
+ package installs beside kerbridge-config alone, on an administrator's own
+ machine. It creates no unix account and needs none.
+
+Package: kerbridge
+Architecture: all
+Section: metapackages
+# ${source:Version}, not the ${binary:Version} every other stanza uses: this is
+# the only Architecture: all package, and a binNMU bumps the arch-any versions
+# without bumping this one's -- leaving the metapackage naming a version that no
+# longer exists.
+Depends: ${misc:Depends},
+         kerbridge-config (= ${source:Version}),
+         kerbridge-issuerd (= ${source:Version}),
+         kerbridge-broker (= ${source:Version}),
+         kerbridge-sync (= ${source:Version}),
+         kerbridge-manage (= ${source:Version})
+Description: passwordless Kerberos for cloud identities (metapackage)
+ KerBridge gives cloud-identity users passwordless Kerberos access to on-prem
+ services. A sync daemon mirrors the chosen users out of a cloud IdP into a
+ local Samba AD domain controller, and a broker exchanges a cloud identity
+ proof for a KDC-signed ticket. Workstations join nothing; only the file
+ servers do.
+ .
+ This metapackage installs the whole server on one host: the issuer daemon and
+ the realm setup command, the broker, the synchronisation daemon, the operator
+ command line and the configuration tool. It ships no files of its own.
+ .
+ A deployment that splits the broker onto a host of its own, or that only wants
+ the operator tools on an administrator's machine, installs the individual
+ packages instead.

@@ -1,0 +1,182 @@
+# One cloud IdP, as this realm stores it.
+#
+# The filename stem after `idp_` is the source name, and `name` below repeats
+# it. Everything above [provider_config] is about *our* directory and *our*
+# naming policy and is read by KerBridge itself; everything inside that block is
+# about the cloud IdP and is read only by that provider's adapter.
+#
+# Add the file's name to `sources` in main.toml. That list is the enable switch:
+# a file no name lists is ignored, with a line in the log saying so.
+#
+# A commented-out line sets nothing. `#some_option = 8` means that KerBridge
+# uses 8, the default for that option. `#some_option =`, with no value, means
+# that the option has no default: the comment above the line says what
+# KerBridge does instead, and shows an example. main.toml gives the full rule.
+
+# !! FROZEN AT FIRST PROVISIONING !!
+#
+# The source name goes into every synchronized object's identity value, which is
+# what the broker searches for on every login. Change it afterwards and every
+# one of those values is rewritten: sync sees the old objects as gone, retires
+# each account and creates a replacement with a NEW SID, and every file whose
+# owner was resolved from the old SID loses its owner. Silent, and not
+# recoverable without a directory restore.
+#
+# Pointing an existing name at a different tenant costs the same. That one is at
+# least loud -- the new tenant's subjects share none of the old ones, so sync
+# retires every account and creates a replacement rather than confusing two
+# people -- but every SID is still new. A new tenant gets a new name and its own
+# file. Detail: docs/setup/names-and-decisions.md.
+name = "entra"
+
+# Which adapter verifies this source's tokens and reads its directory.
+provider = "entra"
+
+# What this source's group login names end with, which is what keeps them out of
+# every other source's. A sAMAccountName is unique across the whole realm, so
+# two cloud IdPs that each hold a `payroll` group collide -- and the second one
+# to reach the name refuses every sync cycle, mirroring no users either, until
+# one of them is renamed in its own IdP.
+#
+#   -entra, _goog, ...  appended to every synchronized group's login name, so
+#                       `payroll` becomes `payroll-entra`. Up to 20 characters,
+#                       none of them whitespace or anything AD or a DN rejects.
+#   none                no suffix. The right answer while this is your only
+#                       cloud IdP and you accept renaming its groups if you ever
+#                       add a second.
+#
+# Choose it before a second source exists. Chosen afterwards it renames groups
+# that are already in use, and a share ACL refers to the old name.
+group_suffix = "-entra"
+
+# This source's own directory account, and the file holding its password. One
+# account per source, never a shared one: AD enforces the write delegation
+# against the bound identity, and the directory's own audit is how you tell
+# which source's cycle wrote what.
+#
+# Under /etc/kerbridge.secrets/generated/idp/<name>/, which is one mounted
+# directory rather than a Docker secret each -- so a second source needs no edit
+# to compose.yaml. The host side is deploy/secrets/generated/idp/entra/, and
+# `kbsetup directory` writes this one with the account. The credential you paste
+# in yourself sits apart, under idp/: the two have different writers.
+bind_dn = "CN=svc-kerbridge-sync-entra,CN=Users,DC=example,DC=site"
+bind_password_file = "/etc/kerbridge.secrets/generated/idp/entra/bind_password"
+
+# The IdP-specific OU this source owns, derived from `name` and
+# realm.idp_parent_ou. State it only for a directory whose existing layout
+# collides with the derived name.
+#
+# Example: "OU=Entra,OU=CloudIdP,DC=example,DC=site"
+#ou =
+
+# Entra: the three app registrations from SETUP.md step 2, the sync app's Graph
+# credential, and the group that admits a user to the realm. What each value is,
+# and the four Entra defaults that are wrong for KerBridge: docs/setup/entra.md.
+# `terraform apply` in deploy/terraform/entra/ creates all three and prints
+# the ids.
+[provider_config]
+
+# The tenant, and the two app registrations the sign-in path uses. Each id is on
+# its app's Overview blade in the portal.
+#
+#   broker_api_client_id  the Broker API: the audience of every token this
+#                         source accepts, and the app that exposes `scope`
+#                         below. It holds no credential -- it only validates.
+#   public_client_id      the native app the agent signs in with, auth-code plus
+#                         PKCE. Public, so it has no secret.
+#
+# A typing error in any of them denies every login, and none of them looks wrong
+# afterwards.
+tenant_id = "aaaabbbb-0000-cccc-1111-dddd2222eeee"
+broker_api_client_id = "11112222-bbbb-3333-cccc-4444dddd5555"
+public_client_id = "22223333-cccc-4444-dddd-5555eeee6666"
+
+# The delegated scope the Broker API exposes. Change it only if you exposed the
+# API under another name. State the bare name: the agent asks for
+# `api://<broker_api_client_id>/<scope>`, which is Entra's spelling, and that is
+# assembled here.
+#scope = "access_as_user"
+
+# What the agent calls this IdP on screen -- "Sign out of Entra", and the note
+# after a device grant. Set it to whatever your sign-in page says: the name has
+# to match what the user just saw in the browser, not what the vendor calls
+# itself. Cosmetic, and safe to change at any time.
+#display_name = "Entra"
+
+# Both derived from tenant_id, and stated only for a cloud whose host name is
+# not the commercial one.
+#
+#   issuer     the one `iss` this source accepts, compared exactly. The
+#              `/common` and `/organizations` forms are another tenant's tokens
+#              as far as this deployment is concerned.
+#   authority  what the agent is told to sign in against.
+#
+# Example: "https://login.microsoftonline.com/aaaabbbb-0000-cccc-1111-dddd2222eeee/v2.0"
+#issuer =
+# Example: "https://login.microsoftonline.com/aaaabbbb-0000-cccc-1111-dddd2222eeee/v2.0"
+#authority =
+
+# Where this source's token signing keys come from. Neither one set means the
+# tenant's own live document, which is what you want: a broker that silently
+# fell back to a local file would verify tokens against whatever happened to be
+# on disk. Set at most one.
+#
+# jwks_file is for a broker with no outbound path to the IdP. Refreshing it
+# whenever Entra rolls a signing key is then yours to do, and every token is
+# refused until you have.
+# Example: "https://login.microsoftonline.com/aaaabbbb-0000-cccc-1111-dddd2222eeee/discovery/v2.0/keys"
+#jwks_url =
+# Example: "/etc/kerbridge/entra-jwks.json"
+#jwks_file =
+
+# The directory sync app: app-only, read-only Graph, and the only one of the
+# three holding a credential. Without admin consent on its permissions its token
+# carries no roles and every read is a 403.
+sync_client_id = "66667777-aaaa-8888-bbbb-9999cccc0000"
+
+# The file holding that credential's *Value*, never the value itself. Copy the
+# Value and not the Secret ID beside it: the Secret ID is a GUID, it stays
+# visible after the Value is masked, and it is the one usually copied later.
+# Sync refuses a GUID here for exactly that reason.
+#
+# Under this source's own /etc/kerbridge.secrets/idp/<name>/ -- beside
+# bind_password_file's directory and deliberately not in it, because you write
+# this one and `kbsetup directory` writes that one. Paste the portal value into
+# deploy/secrets/idp/entra/credential on the host. Empty means the app
+# registration does not exist yet: that source is skipped with a warning, and
+# every other source still mirrors.
+sync_credential_file = "/etc/kerbridge.secrets/idp/entra/credential"
+
+# What the portal shows in that credential's Expires field, YYYY-MM-DD. An
+# assertion rather than a measurement: rotate the secret without editing this
+# and the warning it drives reports headroom that is not there. Unset means no
+# advance warning, not a refusal to run. How far ahead to warn is local policy
+# -- sync.toml's credential_warn_before_days.
+# Example: "2027-01-31"
+#sync_credential_expires =
+
+# The Entra security group whose members may hold Kerberos tickets. Nothing
+# works without one: with no admission group sync mirrors no users and every
+# sign-in is a 403.
+#
+# By name or by object id, never both. The name is for the first binding only --
+# a group that is renamed or recreated can resolve to one you did not choose --
+# so state the id once the realm is live, and delete the name. Repointing at a
+# different group retires every user the new one does not admit.
+# Example: "KerBridge Allowed On-prem Users"
+#admission_group =
+# Example: "77778888-bbbb-9999-cccc-0000dddd1111"
+#admission_group_id =
+
+# Object ids of further groups to mirror, beyond those reachable from the
+# admission group.
+#extra_group_ids = []
+
+# The Entra group whose members may activate a device grant, under the same
+# name-or-id rule. Unset is a deployment with no device-grant group and
+# therefore no working grants, whatever main.toml's device_grant_days says: the
+# broker finds the group by its marker. docs/setup/device-grants.md.
+# Example: "KerBridge Device Grants"
+#device_grant_group =
+# Example: "88889999-cccc-0000-dddd-1111eeee2222"
+#device_grant_group_id =

@@ -1,0 +1,48 @@
+#!/bin/sh
+set -eu
+
+usage() {
+    echo "usage: $0 <archive.zst> <first-line> <last-line>" >&2
+    exit 2
+}
+
+[ "$#" -eq 3 ] || usage
+archive=$1
+first=$2
+last=$3
+
+case "$archive" in
+    */* | *[!A-Za-z0-9._-]*) usage ;;
+esac
+case "$archive" in
+    *.zst) ;;
+    *) usage ;;
+esac
+case "$first:$last" in
+    *[!0-9:]* | :* | *:) usage ;;
+esac
+[ "$first" -ge 1 ] && [ "$last" -ge "$first" ] || usage
+
+command -v zstd >/dev/null 2>&1 || {
+    echo "read-result: zstd is required" >&2
+    exit 1
+}
+
+CDPATH=''
+here=$(cd -- "$(dirname -- "$0")" && pwd)
+path=$here/$archive
+[ -f "$path" ] || {
+    echo "read-result: no such archive: $archive" >&2
+    exit 1
+}
+
+zstd -tq -- "$path"
+lines=$(zstd -qdc -- "$path" | awk 'END { print NR }')
+[ "$last" -le "$lines" ] || {
+    echo "read-result: $archive has $lines lines; requested through $last" >&2
+    exit 1
+}
+
+zstd -qdc -- "$path" | awk -v first="$first" -v last="$last" '
+    NR >= first && NR <= last { printf "%d: %s\n", NR, $0 }
+'

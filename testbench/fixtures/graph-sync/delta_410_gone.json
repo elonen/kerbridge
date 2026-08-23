@@ -1,0 +1,24 @@
+{
+  "note": "410 Gone + Location with empty $deltatoken -> restart FULL sync from the Location URL (delta-query-overview). Directory delta tokens last max 7 days.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-EXPIRED"
+  },
+  "response": {
+    "status": 410,
+    "headers": {
+      "Content-Type": "application/json",
+      "Location": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken="
+    },
+    "body": {
+      "error": {
+        "code": "syncStateNotFound",
+        "message": "The sync state generation is not found; a full read is required.",
+        "innerError": {
+          "date": "2026-07-21T12:00:00",
+          "request-id": "0f9b-fixture"
+        }
+      }
+    }
+  }
+}

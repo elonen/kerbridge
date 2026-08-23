@@ -1,0 +1,134 @@
+.\" Hand-written on purpose, and it lists no options at all.
+.\"
+.\" The three daemons parse their arguments by hand rather than with clap --
+.\" a handful of optional flags does not earn a dependency in a process on the
+.\" token path -- so nothing can generate these pages the way kbconfig.1,
+.\" kbmanage.1 and kbsetup.8 are generated. A page that names a flag is a page
+.\" that goes stale the first time one changes, and nothing fails when it does.
+.\" So this
+.\" one carries only prose that stays true, and points at --help for the rest
+.\" -- a flag the three daemons gained for this, since a hand-rolled parser has
+.\" none unless somebody writes one.
+.\" `make test` holds it to that.
+.TH ISSUERD 8 "KerBridge" "KerBridge" "System Manager's Manual"
+.SH NAME
+issuerd \- KerBridge issuer daemon
+.SH SYNOPSIS
+.B issuerd
+\fR[\fIoptions\fR]
+.SH DESCRIPTION
+.B issuerd
+is the half of KerBridge that holds KDC authority. It runs as root on the Samba
+AD domain controller, listens on a unix socket, and answers one question: for
+an account the broker has already admitted, produce a Kerberos ticket-granting
+ticket.
+.PP
+It does that with the local Samba tools rather than over the network. For each
+request it exports a keytab for the one principal, obtains a credential cache
+with it, hands the cache back over the socket, and deletes both. The keytab and
+the cache live in a directory that must be on tmpfs, because they are key
+material with a lifetime of one request.
+.PP
+The daemon opens no network listener and makes no outbound connection. Its
+entire external surface is five programs \- the Kerberos client, the Samba
+administration tool, two LDB tools and
+.BR timeout (1)
+\- run with a fixed PATH and a cleared environment.
+.PP
+The socket is the authorization boundary. It is created inside a directory the
+daemon owns, and the peer's credentials are checked against the configured
+broker account before a single byte is read: only root and that one account are
+answered.
+.SH CONFIGURATION
+.B issuerd
+reads the KerBridge configuration set, a directory of TOML files whose default
+location is
+.IR /etc/kerbridge .
+Its own file there is
+.IR issuerd.toml ,
+and it reads
+.I realm.toml
+and
+.I main.toml
+beside it.
+.PP
+The set is validated before the daemon starts:
+.B kbconfig check
+runs first and
+.B kbsetup verify
+after it, both as
+.B ExecStartPre
+of the unit below. A set that does not check out keeps this one service from
+starting, and affects nothing else; systemd retries five times and then leaves
+the unit
+.BR failed ,
+so the reason stays in
+.B systemctl status
+instead of scrolling past in the journal.
+.PP
+With no configuration set at all the unit is skipped rather than started:
+.B ConditionPathExists=/etc/kerbridge/main.toml
+guards it, so an installed-but-unconfigured host is quiet and
+.B systemctl start
+still exits 0.
+.PP
+No credential is ever written in the configuration set. Secrets are files under
+.IR /etc/kerbridge.secrets/ ,
+named in the set as paths.
+.SH FILES
+.TP
+.I /etc/kerbridge/issuerd.toml
+This daemon's own configuration.
+.TP
+.I /var/log/kerbridge/issuerd/audit.log
+The append-only record of every ticket issued. Rotated by
+.IR /etc/logrotate.d/kerbridge-issuerd ,
+which signals the daemon to reopen the file rather than truncating it under
+its feet. One directory per daemon, so no other KerBridge service can rewrite
+this one.
+.TP
+.I /var/lib/kerbridge/issuerd/
+Durable state: the operator-notification conditions currently outstanding.
+.TP
+.I /etc/krb5.conf.d/kerbridge.conf
+The Kerberos client configuration
+.B kbsetup realm
+generates from the configuration set. It is read because this package's
+installation added an
+.B includedir
+line to
+.IR /etc/krb5.conf ;
+purging the package removes both, in that order.
+.SH SIGNALS
+.TP
+.B SIGUSR1
+Reopen the audit log. Sent by
+.BR logrotate (8)
+after it has rotated the file, so that the daemon writes to the successor
+rather than to the rotated inode. A
+.B REOPEN
+record in the new file says where the trail continues.
+.SH "EXIT STATUS"
+Nonzero on any startup failure, with the reason on the console. A name in the
+configuration set that does not resolve to a local unix user or group is one of
+those: the daemon refuses rather than falling back to a number, because a
+silent disagreement about that identity costs every login.
+.SH OPTIONS
+issuerd takes a small and stable set of options, and this page deliberately
+names none of them: a hand-written list is a copy, and a copy is what goes
+stale the first time an option changes. Run
+.B issuerd --help
+for the set this build has. An argument it does not recognise is refused rather
+than ignored, and the refusal prints the same usage line.
+.SH "SEE ALSO"
+.BR kbconfig (1),
+.BR kbsetup (8),
+.BR kerbridge-broker (8),
+.BR kerbridge-sync (8),
+.BR samba (8),
+.BR systemd.exec (5)
+.PP
+.I /usr/share/doc/kerbridge-issuerd/
+holds the firewall examples for the ports a domain controller serves.
+.SH AUTHOR
+Jarno Elonen.

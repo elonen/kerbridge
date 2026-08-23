@@ -1,0 +1,24 @@
+{
+  "note": "User soft-deleted in Entra (30-day recycle bin). Sync: disable + retention marker. Permanent purge arrives later as reason \"deleted\".",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/users/delta?$deltatoken=tok-U2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/users/delta?$deltatoken=tok-U3",
+      "value": [
+        {
+          "id": "ca201005-aaaa-bbbb-cccc-000000000005",
+          "@removed": {
+            "reason": "changed"
+          }
+        }
+      ]
+    }
+  }
+}

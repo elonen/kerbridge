@@ -1,0 +1,217 @@
+#!/bin/sh
+# Create every directory and placeholder file that a deployment needs before a
+# daemon starts. Both deployments run this one program.
+#
+# Internal, at /usr/libexec/kerbridge/prepare-state; no interface is promised
+# outside this repo. The kerbridge-config postinst runs `prepare-state native`.
+# Compose runs the same bytes in a throwaway root container, reached through
+# `--entrypoint`: the carrying image has an entrypoint of its own, and a command
+# would go to that instead.
+#
+# ONE PROGRAM, TWO CALLERS. A bind mount hides what a postinst made below it. On
+# Compose each path here is a host bind-mount source, and dockerd creates an
+# absent source as an empty root-owned directory that no unprivileged account
+# can then remove.
+#
+# THE CALLER MUST KEEP THE DEFAULT CAPABILITIES. Measured: root in a
+# `cap_drop: [ALL]` container has no power over a file it does not own. So this
+# cannot run inside a hardened service's entrypoint.
+#
+# IDEMPOTENT BY CONSTRUCTION. Every step creates an absent path or sets a value
+# to what it must be, and no step empties a file: each placeholder below is one
+# that a later step fills with a credential.
+#
+# Needs GNU `stat` and GNU `chown`. Both deployments run it on Debian.
+set -eu
+
+me=prepare-state
+
+usage() {
+  cat >&2 <<'USAGE'
+usage:
+  prepare-state native [<source>...]
+      The packaged tree: /etc/kerbridge, /etc/kerbridge.secrets,
+      /var/lib/kerbridge and /var/log/kerbridge. The group is _kerbridge,
+      resolved by name.
+
+  prepare-state compose <state-dir> <secrets-dir> <host-uid> <daemon-gid> [<source>...]
+      The Compose tree, as mounted in this container. <host-uid> owns the
+      directories: they belong to the operator, and check-secrets.sh walks them
+      unprivileged. <daemon-gid> is BROKER_GID. The broker and sync read their
+      own secrets through that group.
+
+Each <source> is an IdP source name, as `kbconfig sources` lists them. This
+creates a directory for each source under both halves of the secrets tree.
+USAGE
+  exit 2
+}
+
+warn() { echo "[$me] warning: $*" >&2; }
+say() { echo "[$me] $*"; }
+
+# The group that a daemon reads its own secret through, as a number.
+#
+# Resolve a name; do not assume a number. The two deployments allocate
+# differently: the deb keeps the gid that `addgroup --system` gives it, and the
+# Compose tree has no /etc/group entry at all. A bare numeric gid needs no host
+# group entry, because chgrp stores the number. Measured.
+resolve_group() { # name-or-gid
+  case "$1" in
+    [0-9]*) echo "$1"; return 0;;
+  esac
+  gid=$(getent group "$1" | cut -d: -f3)
+  [ -n "$gid" ] || {
+    echo "[$me] this host has no unix group $1. The daemons read their own" >&2
+    echo "    credentials through it, so a daemon cannot start while it is" >&2
+    echo "    absent. The kerbridge-config postinst creates it. Run that first." >&2
+    exit 1
+  }
+  echo "$gid"
+}
+
+# Create the path if it is absent. Set owner, group and mode in both cases.
+dir() { # path mode uid gid
+  [ -d "$1" ] || mkdir -p "$1"
+  owns "$1" "$3" "$4"
+  chmod "$2" "$1"
+}
+
+# An empty file at a path that something else fills later. A Compose secret is a
+# bind mount of one file, and with the host path absent dockerd creates a
+# directory there instead -- the refusal below. Empty is also the "not generated
+# yet" signal, which every reader here tests with -s.
+placeholder() { # path mode uid gid note
+  if [ -d "$1" ]; then
+    echo "[$me] $1 is a directory, not a file. dockerd creates a directory at" >&2
+    echo "    a bind mount target when the host path is absent, and it is" >&2
+    echo "    root-owned -- so the credential meant for that path has nowhere" >&2
+    echo "    to go. Remove the directory and run this again. It leaves an" >&2
+    echo "    empty file, which is what works." >&2
+    exit 1
+  fi
+  if [ -e "$1" ]; then
+    return 0
+  fi
+  : > "$1"
+  owns "$1" "$3" "$4"
+  chmod "$2" "$1"
+  say "$1 created empty ($5)"
+}
+
+# Never fatal: not for a chown that failed, and not for one that "succeeded" and
+# did nothing. On a FUSE-backed or virtiofs bind source `chgrp` exits 0 with no
+# effect while `chmod` holds, and the remap applies to reads too, so an
+# in-container `stat` cannot see the true owner either (measured). Nothing here
+# takes a mode as proof that an owner was set. The condition is unrepairable
+# from in here, so this warns and names the consequence instead of refusing.
+owns() { # path uid gid
+  chown "$2:$3" "$1" 2>/dev/null || true
+  got=$(stat -c '%u:%g' "$1")
+  [ "$got" = "$2:$3" ] || warn "$1 has owner $got, not $2:$3 -- a service that reads it through the group gets a denial. This host's bind source does not carry ownership (FUSE, or Docker Desktop); you cannot correct it from in here."
+}
+
+[ $# -ge 1 ] || usage
+[ "$(id -u)" = 0 ] || {
+  echo "[$me] you must run this as root. It sets the owner and the group of" >&2
+  echo "    every path it creates, and that is the whole of the access" >&2
+  echo "    control around them." >&2
+  exit 1
+}
+mode=$1
+shift
+
+case $mode in
+  native)
+    # /etc/kerbridge is 0755 and its files are 0644. The set holds decisions and
+    # paths, never a secret, and a tighter mode stops `kbconfig get` and
+    # `kbmanage` for the unprivileged operator who must run them. The secrets
+    # tree is 0750 root:_kerbridge. Group *read* is the whole of the access
+    # control, so no group write bit occurs below.
+    gid=$(resolve_group _kerbridge)
+    dir /etc/kerbridge                       0755 0 0
+    dir /etc/kerbridge/certs                 0755 0 0
+    dir /etc/kerbridge.secrets               0750 0 "$gid"
+    dir /etc/kerbridge.secrets/generated     0750 0 "$gid"
+    dir /etc/kerbridge.secrets/generated/idp 0750 0 "$gid"
+    dir /etc/kerbridge.secrets/idp           0750 0 "$gid"
+    for s in "$@"; do
+      dir "/etc/kerbridge.secrets/idp/$s"           0750 0 "$gid"
+      dir "/etc/kerbridge.secrets/generated/idp/$s" 0750 0 "$gid"
+    done
+    # The parents only. Each unit's StateDirectory=kerbridge/<daemon> and
+    # LogsDirectory=kerbridge/<daemon> creates its own child, gives it to that
+    # unit's user, and opens the hole in ProtectSystem=strict. Two mechanisms
+    # that create one directory come to disagree about its mode.
+    dir /var/lib/kerbridge 0755 0 0
+    dir /var/log/kerbridge 0755 0 0
+    # No placeholder files. They are a Compose artefact, and there is no bind
+    # mount here: `kbsetup realm` creates its own file for the Administrator
+    # password, and an absent notify_url means notification is switched off.
+    say "the packaged directories are in place"
+    ;;
+
+  compose)
+    [ $# -ge 4 ] || usage
+    state=$1 secrets=$2 uid=$3 gid=$(resolve_group "$4")
+    shift 4
+
+    # The directories belong to the operator, not to root. check-secrets.sh
+    # globs this tree unprivileged, and a root-owned 0711 directory would hide
+    # every file from that walk instead of failing it -- the quietest way to
+    # lose a gate. The bench tree also comes down with an unprivileged `rm -rf`,
+    # which a root-owned directory refuses. Only the *files* below are root's.
+    #
+    # 0711, not 0755 and not 0700. A bare mkdir takes the umask and lets any
+    # host account list the secret names; check-secrets.sh refuses any file in
+    # here that a passer-by could read, so the names are the whole exposure.
+    # 0700 would deny the traversal a host-run kbmanage needs to reach the realm
+    # CA at generated/realm-ca.pem, which is 0644 on purpose.
+    dir "$secrets"                  0711 "$uid" "$gid"
+    dir "$secrets/tls"              0711 "$uid" "$gid"
+    dir "$secrets/generated"        0711 "$uid" "$gid"
+    dir "$secrets/generated/idp"    0711 "$uid" "$gid"
+    dir "$secrets/idp"              0711 "$uid" "$gid"
+    for s in "$@"; do
+      dir "$secrets/idp/$s"           0711 "$uid" "$gid"
+      dir "$secrets/generated/idp/$s" 0711 "$uid" "$gid"
+    done
+
+    # The Compose tree keeps its own names here: they are the bench's layout,
+    # not the deployment's. compose.yaml binds each one at the path that a
+    # Debian deployment has (./state/issuer -> /var/lib/kerbridge/issuerd,
+    # ./state/issuer-audit -> /var/log/kerbridge/issuerd).
+    #
+    # 0770 and group ${BROKER_GID}: the broker and sync write as unprivileged
+    # uids that share only that group, and the realm container's root reaches
+    # its audit directory through the same group, because it has no
+    # DAC_OVERRIDE either (compose.yaml gives it group_add).
+    for d in issuer broker sync issuer-audit broker-audit sync-audit; do
+      dir "$state/$d" 0770 "$uid" "$gid"
+    done
+
+    # 0600 root:root, an exception to the 0640 that the rest of the tree takes.
+    # The realm Administrator password has no unprivileged consumer: `kbsetup
+    # realm` sets it, a member server joins with it, and a human reads it to
+    # break glass. Of two decisions the stricter one wins. `kbsetup realm` fills
+    # the file on the first provision, and only while it is still empty.
+    placeholder "$secrets/generated/realm_admin_password" 0600 0 0 \
+      "kbsetup realm generates the value on first provision"
+    # 0640 root:${BROKER_GID}, because the broker binds with it. `kbsetup
+    # directory` writes it, and that command tests -s, so it reads this empty
+    # file as a value that does not exist yet.
+    placeholder "$secrets/generated/svc_kerbridge_broker_password" 0640 0 "$gid" \
+      "kbsetup directory generates the value with the account"
+    # Not a secret that this program can generate. An empty notify_url means
+    # notification is off and operator events stay in the logs, which is a
+    # supported deployment. The file exists to give the compose secret a bind
+    # source. It is group-readable because both readers open it at every start:
+    # kerbridge-notify calls EACCES a fault rather than "not configured", or a
+    # deployment would send no events and say nothing.
+    placeholder "$secrets/notify_url" 0640 0 "$gid" \
+      "put a webhook URL here, then point notify.url_file at this file"
+
+    say "the Compose tree is prepared under $state and $secrets"
+    ;;
+
+  *) usage;;
+esac

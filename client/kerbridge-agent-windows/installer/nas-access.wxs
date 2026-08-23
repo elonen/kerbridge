@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NAS Access MSI. Client design: ../../DESIGN.md.
+
+  Built by wixl (msitools), WiX v3 schema. WiX v4/v5 require Windows API; wixl builds
+  MSI format natively on Linux.
+
+  No custom actions, no service, no COM. Installer places files only; never touches
+  Kerberos state. Realm enrollment is runtime, user-consented, tray-owned.
+
+  Inserted post-build (Dockerfile):
+    * REMOVESETTINGS cleanup rows — wixl lacks RemoveFile, ignores RemoveFolder/@Property
+    * completion dialog — wixl rejects <UI>/<Dialog>/<UIRef>; imported as ui/*.idt
+
+  Preprocessor vars from Dockerfile `wixl -D`.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <!-- UpgradeCode permanent; never change. Version from Cargo.toml. Id="*" generates
+       fresh ProductCode per build. -->
+  <Product Id="*"
+           Name="NAS Access"
+           Manufacturer="KerBridge"
+           Version="$(var.Version)"
+           UpgradeCode="3C8DECA9-E1E4-4009-9110-E9258D45999F"
+           Language="1033">
+
+    <Package InstallerVersion="200"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="NAS Access - cloud sign-in for your network drives" />
+
+    <Media Id="1" Cabinet="nasauth.cab" EmbedCab="yes" />
+
+    <!-- AllowSameVersionUpgrades required: without it, Upgrade rows exclude this version,
+         so same-version reinstall (normal: ProductVersion = crate version) creates second
+         Add/Remove entry with shared GUIDs → removing one leaves exe. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+    <Icon Id="AppIcon.ico" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+
+    <!-- AUTOSTART=1 → HKLM Run (machine-wide, launches in user token). Not remembered;
+         omitting it on upgrade removes Run value → fleet commands must carry it.
+         Value name matches tray's per-user HKCU key; tray shows checkbox disabled when this exists. -->
+    <Property Id="AUTOSTART" Value="0" />
+
+    <!-- REMOVESETTINGS=1 removes %APPDATA%\KerBridge\{config.toml,kerbridge.log} (agent-written,
+         not MSI-owned). No secrets (refresh token memory-only). Default: keep.
+         Registry: removes only HKLM Run (component-owned). HKCU Run (tray's "Start at login"),
+         MDM/GPO policy, LSA registration not touched — MSI cannot remove value at uninstall
+         (would delete whole key). -->
+    <Property Id="REMOVESETTINGS" Value="0" />
+
+    <!-- Gated by SETTINGSFOLDER property set at uninstall, not component condition (component
+         condition=false at install → nothing to remove at uninstall). Type-51 custom action
+         (MSI table data only, no binary) preserves Linux build. -->
+    <CustomAction Id="SetSettingsFolder"
+                  Property="SETTINGSFOLDER"
+                  Value="[AppDataFolder]KerBridge" />
+    <InstallExecuteSequence>
+      <Custom Action="SetSettingsFolder" Before="RemoveFiles">REMOVESETTINGS = "1"</Custom>
+    </InstallExecuteSequence>
+
+    <!-- @completion dialog. InstallUISequence row -1 (success only, full UI only). Two body
+         texts switched on REMOVE (ui/ControlCondition.idt). Authored in ui/*.idt; wixl cannot
+         author UI. DefaultUIFont required for TextStyle. -->
+    <Property Id="DefaultUIFont" Value="DlgFont8" />
+
+    <!-- @files in use. Restart Manager closes running tray (open handle to exe). Needs
+         MsiRMFilesInUse dialog (ui/*.idt); without it, silent reboot path. CloseRestart default;
+         tray calls sys::register_for_restart → RM revives it. DontClose = reboot path.
+         Silent installs: Windows Installer drives RM. -->
+    <Property Id="MsiRestartManagerOption" Value="CloseRestart" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <!-- %ProgramFiles%\KerBridge\ — product name, not component name. -->
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="KerBridge">
+
+          <Component Id="TrayExe" Guid="977DB31D-CA7D-4A39-9D39-1871F8D3B6C5" Win64="yes">
+            <File Id="TrayExeFile" Source="$(var.TrayExe)" KeyPath="yes">
+              <!-- Icon explicit; wixl writes advertised shortcuts only. -->
+              <Shortcut Id="TrayStartMenuShortcut"
+                        Directory="ProgramMenuFolder"
+                        Name="NAS Access"
+                        Description="Cloud sign-in for your network drives"
+                        Icon="AppIcon.ico" />
+            </File>
+          </Component>
+
+          <Component Id="CliExe" Guid="3793960F-DD13-45F2-B8C8-9DCC9C949849" Win64="yes">
+            <File Id="CliExeFile" Source="$(var.CliExe)" KeyPath="yes" />
+          </Component>
+
+          <!-- GPL compliance. .txt for Notepad. -->
+          <Component Id="LicenseDoc" Guid="205D005A-2131-46B8-A0AC-D23ECC1829DC" Win64="yes">
+            <File Id="LicenseDocFile" Source="$(var.LicenseDoc)" Name="LICENSE.txt" KeyPath="yes" />
+          </Component>
+
+          <!-- Win64="yes" → 64-bit registry view, not WOW6432Node. Condition compares strings
+               (MSI properties are strings; string-to-int comparison = false). -->
+          <Component Id="MachineAutostart" Guid="497C8D4A-4211-4C7D-898C-E902BC345E71" Win64="yes">
+            <Condition>AUTOSTART = "1"</Condition>
+            <RegistryValue Root="HKLM"
+                           Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                           Name="KerBridge NAS Access"
+                           Value="&quot;[INSTALLFOLDER]kerbridge-agent.exe&quot;"
+                           Type="string"
+                           KeyPath="yes" />
+          </Component>
+
+          <!-- Uninstall cleanup. Always installed → rows live at uninstall; SETTINGSFOLDER decides
+               whether they run. Rows inserted by Dockerfile (wixl lacks RemoveFile, ignores
+               RemoveFolder/@Property). CreateFolder = keypath. -->
+          <Component Id="SettingsCleanup" Guid="108248A7-7384-4E39-AF0C-44A7FE49CBE2" Win64="yes">
+            <CreateFolder />
+          </Component>
+
+        </Directory>
+      </Directory>
+
+      <Directory Id="ProgramMenuFolder" />
+    </Directory>
+
+    <Feature Id="Main" Title="NAS Access" Level="1">
+      <ComponentRef Id="TrayExe" />
+      <ComponentRef Id="CliExe" />
+      <ComponentRef Id="LicenseDoc" />
+      <ComponentRef Id="MachineAutostart" />
+      <ComponentRef Id="SettingsCleanup" />
+    </Feature>
+  </Product>
+</Wix>

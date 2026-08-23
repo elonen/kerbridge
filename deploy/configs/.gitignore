@@ -1,0 +1,15 @@
+# A deployment's own configuration. The templates are generated from the parser
+# and committed, so a reader on GitHub sees every setting; the filled-in files
+# are this host's and never leave it.
+*.toml
+!*.toml.example
+!.gitignore
+
+# What `kbconfig upgrade` keeps of the file it replaced. The same host's
+# configuration under another name, and `*.toml` above does not match it.
+*.toml.bak
+
+# `kbconfig schema configs` writes an editor's view of the same structs: the
+# documents into schema/, and the .taplo.toml above that maps one to each file.
+# This host's copy of something the binary already carries, and worth no diff.
+/schema/

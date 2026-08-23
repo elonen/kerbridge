@@ -1,0 +1,10 @@
+.local-tmp/
+.DS_Store
+target/
+dist/
+CLAUDE.md
+
+# Byte-compiled Python, which importing or running any script here leaves beside
+# it. The scripts are the artifact; a .pyc is a copy of one for the interpreter
+# that happened to read it.
+__pycache__/

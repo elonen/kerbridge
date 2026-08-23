@@ -1,0 +1,611 @@
+# KerBridge stack. `kerbridge-broker`, `issuerd` and `caddy` join as they are
+# built; the `realm` service is the foundation everything else needs.
+#
+# This file is the macOS development shape: a bridge network with published
+# ports, and named volumes for Samba state. Production uses host networking and
+# bind mounts under KERBRIDGE_STATE_DIR -- see deploy/README.md for why the two
+# differ and what that leaves unverified here.
+name: kerbridge
+
+# What bounds the container logs. Docker's json-file driver keeps everything by
+# default, and the realm container alone writes two `Auth:` lines per Kerberos
+# authentication (the KDC's audit class, deploy/realm/entrypoint.sh) -- on a
+# working deployment that is the largest stream here and it never stops growing.
+#
+# Rotation only. It is not where the audit trail lives and cannot be: the driver
+# has no path option, and each container instance owns its own log file, so any
+# recreate discards the history whatever is set here. That is what
+# audit_log_file and the state/*-audit mounts are for.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  # Not a container. `replicas: 0` is what keeps `up` from creating one; this
+  # exists so that the `additional_contexts` below can name it, which is how
+  # compose knows to build the six .deb files before the images that install
+  # them. A `profiles:` key would say it better and does not work -- compose
+  # then refuses the reference with "declares unknown service".
+  #
+  # KB_VERSION has no default on purpose. debian/Dockerfile carries no `.git`
+  # and can derive nothing, so the value has to arrive from a caller that can:
+  # `make up` and `ci-stack.sh` both export it from
+  # `debian/make-changelog --print-version`.
+  debs:
+    build:
+      context: ..
+      dockerfile: debian/Dockerfile
+      target: runtime
+      args:
+        KB_VERSION: "${KB_VERSION:?run this through make; it derives the package version}"
+      # Empty on a developer's machine, who already has a warm BuildKit cache,
+      # and set by CI, where every runner starts cold and would otherwise compile
+      # the six crates from scratch on each run. Compose accepts an empty entry
+      # and ignores it -- measured, not assumed. Only this service carries them:
+      # it holds the expensive layer, and the images above it are an apt install
+      # apiece.
+      #
+      # `mode=max` in the caller, and it has to be: `min` exports only the final
+      # image's layers, and the layer worth keeping is in the build stage that
+      # never ships. It costs about 1 GB per key, against a 10 GB budget for the
+      # whole repository, so keep the number of distinct keys small.
+      cache_from: ["${KB_CACHE_FROM:-}"]
+      cache_to: ["${KB_CACHE_TO:-}"]
+    image: kerbridge-debs
+    deploy:
+      replicas: 0
+    # Never joined, because nothing here starts. Named anyway so compose does not
+    # invent a `default` network for the one service that omits it.
+    networks: [kerbridge]
+
+  realm:
+    # Context is the repository root, and the .deb files come from the `debs`
+    # context: the image installs `kerbridge-issuerd` -- `issuerd` and `kbsetup`
+    # -- over a Samba layer apt resolves from that package's own Depends.
+    build:
+      context: ..
+      dockerfile: deploy/realm/Dockerfile
+      # The .deb files this image installs; see the `debs` service.
+      additional_contexts:
+        debs: "service:debs"
+    image: kerbridge-realm
+    container_name: kerbridge-realm
+    hostname: ${AD_DC_HOSTNAME}
+    init: true
+    restart: unless-stopped
+    logging: *logging
+    stop_grace_period: 30s
+    # The DC resolves the realm through its own DNS, so the issuer path stays
+    # local. Nothing outside the container asks it -- the Windows VM and macOS
+    # use the LAN resolver, which is a split horizon over the same zone.
+    dns: [127.0.0.1]
+    # No environment at all. The realm identity, the RPC port range and the DNS
+    # forwarder are realm.toml's `[provision]` group, which `kbsetup realm` reads
+    # from the config set mounted below -- the same file every binary here reads,
+    # so the two sides cannot drift. `issuerd` reads that set and no environment
+    # variable either.
+    #
+    # The example-realm decision reaches kbsetup as argv rather than as
+    # environment: a `KB_*` key in an `environment:` block is a component reading
+    # its configuration from somewhere `kbconfig check` cannot see it, which
+    # scripts/compose/check-compose-env.py refuses outright. A flag is not that --
+    # it is what an operator types on a native DC, so both deployments pass the
+    # same one. Unset or empty interpolates to no arguments at all.
+    command: ${KB_ALLOW_EXAMPLE_REALM:+--allow-example-realm}
+    # Not a compose secret here, and this is the one service where that is
+    # true. `kbsetup realm` generates the Administrator password iff the file is
+    # still empty -- the same code path a Debian install takes, where the
+    # secrets tree is a plain writable directory -- and a compose secret is
+    # mounted **read-only**, so through one the write fails with `Read-only file
+    # system` and provisioning dies at its first step. A single-file bind mount
+    # is what `secrets::write` was measured against: it writes in place, never
+    # write-and-rename, precisely so a mount of one file carries the value back
+    # to the host.
+    #
+    # It is one file, not the tree. A writable mount of the whole secrets tree
+    # into the container that holds KDC authority is refused; this is that
+    # container's own credential, which it already had read access to, and
+    # prepare-state has already created it 0600 root:root -- so root here writes
+    # what it owns and reaches nothing else. Every other reader of this file
+    # (nas1) keeps the read-only compose secret, in the long form the rest of
+    # this file uses -- every secret named by the absolute path it is mounted at,
+    # all of them under /etc/kerbridge.secrets/ on both deployments.
+    # No group_add: this container writes only what root owns. The audit mount
+    # and the issuer socket, which are the two BROKER_GID objects, both belong
+    # to the `issuer` service.
+    cap_drop: [ALL]
+    # Measured minimum (research spike `container-runtime-boundaries`): steady state
+    # needs only NET_BIND_SERVICE, SETUID and SETGID. SYS_ADMIN is for
+    # security.NTACL xattr writes, which happen during provisioning and
+    # sysvolreset. On a bridge network ip_unprivileged_port_start=0 masks the
+    # need for NET_BIND_SERVICE, but host networking does not.
+    #
+    # CHOWN is provisioning's, not the issuer socket's -- measured by removing
+    # it: `samba-tool domain provision` exits 1 partway through, leaving a
+    # sam.ldb that exists and a domain that has no machine account. The `issuer`
+    # service needs CHOWN too, for the socket, and has its own.
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, CHOWN, SYS_ADMIN]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    volumes:
+      - samba:/var/lib/samba      # durable: domain SID, KDC keys, directory, SYSVOL, TLS
+      - etc-samba:/etc/samba      # durable: smb.conf
+      # Not only the issuer's. `kbsetup realm` publishes the realm CA to
+      # realm.ldap_ca_file, which on Compose is /run/kerbridge/realm-ca.pem --
+      # so this container writes the file that broker and sync mount read-only
+      # to verify LDAPS. The issuer socket beside it belongs to the other
+      # container.
+      - sock:/run/kerbridge
+      # The whole config set, at the path the binaries compile in. Read-only:
+      # nothing here writes its own configuration. `kbsetup realm` needs
+      # realm.toml, and loads the rest only to cross-check it -- the same load
+      # `kbconfig check` runs.
+      - ./configs:/etc/kerbridge:ro
+      # The credential this container generates on first provision and reads on
+      # every start after. Writable for that reason alone -- see the note above
+      # the volumes list.
+      - ./secrets/generated/realm_admin_password:/etc/kerbridge.secrets/generated/realm_admin_password
+    tmpfs:
+      - /run/samba:rw,mode=0755,size=16m
+      - /var/cache/samba:rw,mode=0755,size=64m
+      - /var/log/samba:rw,mode=0755,size=64m
+      - /tmp:rw,size=16m
+    ports:
+      # The Windows VM reaches the KDC at ${BENCH_HOST_IP}:88. TCP is the one
+      # that matters: a PAC-bearing TGS-REP exceeds the UDP reply limit, and
+      # Windows only retries over TCP once the realm carries `tcpsupported`.
+      #
+      # The only port here whose default is every interface and stays that way:
+      # a KDC every client can reach is the product. KDC_BIND narrows it to one
+      # address anyway -- a host with a management NIC it has no business
+      # answering Kerberos on has no other way to say so, and the variable costs
+      # nothing until someone needs it.
+      - "${KDC_BIND:-0.0.0.0}:88:88/tcp"
+      - "${KDC_BIND:-0.0.0.0}:88:88/udp"
+      # LDAPS, for host-run directory tooling (kbmanage) and remote
+      # administration. Loopback by default: a DC's LDAP on every interface is
+      # not something to opt out of after the fact. Set LDAPS_BIND=0.0.0.0 to
+      # administer the realm from another host, and firewall it there.
+      - "${LDAPS_BIND:-127.0.0.1}:636:636"
+      # What a domain member joins over, and the reason these are open while
+      # LDAPS above is not: a DC nobody can join is not a DC. `net ads join`
+      # picks a DC with a CLDAP probe on 389/udp, then does the join itself over
+      # LDAP and SMB. No credential crosses :389 in the clear -- Samba's
+      # `ldap server require strong auth` defaults to yes, so a simple bind
+      # without TLS is refused and a SASL bind is signed.
+      #
+      # Narrow with MEMBER_BIND, and firewall these to the file server
+      # (docs/setup/dns-and-firewall.md @ Firewall). 135 and the dynamic RPC
+      # range stay unpublished: a Samba member does its join RPCs over named
+      # pipes on :445 and never needs them. RSAT does need them, and does not
+      # need host networking to get them: `rpc server dynamic port range` is
+      # effective (the spike moved the listeners by setting it) and only ~3
+      # ports are used in steady state with one DC, so narrow
+      # `rpc_port_range` in configs/realm.toml @ [provision] to something like
+      # 49152-49161 and publish 135 plus that range here. It is read once, when
+      # the realm is created. docs/rsat-and-kerbridge-management.md is the day-2
+      # story.
+      #
+      # compose.nas.yaml takes :445 back for `nas1`. The
+      # fixture and a real file server cannot both hold it.
+      - "${MEMBER_BIND:-0.0.0.0}:389:389/udp"
+      - "${MEMBER_BIND:-0.0.0.0}:389:389/tcp"
+      - "${MEMBER_BIND:-0.0.0.0}:445:445/tcp"
+      # The DC's own DNS stays unpublished: :53 collides with whatever already
+      # serves DNS on the host, and losing that fight fails the whole `up`.
+      # Uncomment (here and in compose.nas.yaml) only to point an off-host
+      # member's resolv.conf at the DC, and set `dns_forwarder` in
+      # configs/realm.toml @ [provision] with it.
+      # - "0.0.0.0:53:53/udp"
+      # - "0.0.0.0:53:53/tcp"
+    # Samba resolves its own name while provisioning, before its DNS is
+    # listening. A read-only root filesystem makes /etc/hosts read-only too, so
+    # the mapping has to come from Compose, which needs the address to be
+    # static.
+    #
+    # Not because the embedded resolver is absent: `dns: [127.0.0.1]` sets that
+    # resolver's *upstream*, and resolv.conf in every container here -- realm
+    # included -- still reads 127.0.0.11. The alias below is resolvable through
+    # it. Whether that makes this redundant is untested: what provisioning
+    # registers is the container's single address (spike
+    # `host-networking-and-dns` Q5), and self-resolution timing through the alias
+    # has not been measured against it.
+    extra_hosts:
+      - "${AD_DC_HOSTNAME}.${AD_DNS_DOMAIN}:${REALM_IPV4}"
+      - "${AD_DC_HOSTNAME}:${REALM_IPV4}"
+    networks:
+      kerbridge:
+        ipv4_address: ${REALM_IPV4}
+        aliases: ["${AD_DC_HOSTNAME}.${AD_DNS_DOMAIN}"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 10s
+      timeout: 8s
+      retries: 3
+      # Provisioning a fresh domain takes minutes on a small host, and LDAP does
+      # not listen until it finishes. Without a start
+      # period the three retries are spent 30s in and the container is marked
+      # unhealthy while it is still doing exactly what it should -- which fails
+      # `up --wait`, the form both `make up` and the stack test use. Probes that
+      # fail inside the period do not count against the retries, and the first
+      # one that answers turns it healthy, so this costs a fast host nothing.
+      start_period: 240s
+
+  issuer:
+    # The realm image, with a different `command:`. Same bytes as `realm`, one
+    # process each: `kerbridge-issuerd.service` and Debian's `samba-ad-dc.service`
+    # are two units on a native DC, so this is two containers here.
+    build:
+      context: ..
+      dockerfile: deploy/realm/Dockerfile
+      # The .deb files this image installs; see the `debs` service.
+      additional_contexts:
+        debs: "service:debs"
+    image: kerbridge-realm
+    container_name: kerbridge-issuer
+    init: true
+    restart: unless-stopped
+    logging: *logging
+    # The whole argv, replacing the image's entrypoint -- the realm's provisioning
+    # script -- with the string kerbridge-issuerd.service gives ExecStart=.
+    # debian/check-manifests compares the two. An entrypoint and not a `command:`,
+    # so `docker compose run issuer <args>` appends to it.
+    entrypoint: [/usr/sbin/issuerd]
+    depends_on:
+      realm:
+        condition: service_healthy
+    # The realm's network namespace, not a second address on the same bridge.
+    # issuerd runs `kinit` against the KDC and reaches it at 127.0.0.1, which is
+    # what it also has on a native DC, where both programs are on one host. A
+    # namespace of its own would need the DC's name to resolve and its ports to
+    # be reachable, and neither is a property this container should depend on.
+    #
+    # It publishes nothing and listens on no port: the issuer socket is a unix
+    # socket on the shared `sock` volume.
+    network_mode: "service:realm"
+    # For the audit bind mount and for the socket it creates. This container is
+    # root with cap_drop: ALL -- root without DAC_OVERRIDE, which can write only
+    # what its uid or one of its gids may -- and prepare-state gives BROKER_GID
+    # to every state directory it creates, because it is the one group the
+    # unprivileged daemons share.
+    group_add: ["${BROKER_GID:-10002}"]
+    cap_drop: [ALL]
+    # CHOWN alone, and it is for one object: the issuer socket, which is chowned
+    # to the broker's group so that the broker and nothing else may open it.
+    # issuerd binds no port and changes no uid.
+    cap_add: [CHOWN]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    volumes:
+      # The directory, read and written through the local Samba tools. Writable
+      # because ldb takes a lock to read.
+      - samba:/var/lib/samba
+      # smb.conf, read-only: this container drives the tools, never configures
+      # them.
+      - etc-samba:/etc/samba:ro
+      - sock:/run/kerbridge       # the socket this creates, beside realm's CA
+      # The whole config set, at the path the binaries compile in. Read-only:
+      # nothing here writes its own configuration. issuerd needs issuerd.toml
+      # and realm.toml, and loads the rest only to cross-check them -- the same
+      # load `kbconfig check` runs.
+      - ./configs:/etc/kerbridge:ro
+      # The audit file, and the one thing this container writes outside its own
+      # state. A bind mount because it is the operator's to retain, rotate and
+      # ship; its own directory rather than the broker's, so a compromised broker
+      # cannot unlink the issuer-side record of what it asked for. The container
+      # path is one directory per daemon under /var/log, which is what a Debian
+      # deployment gets from systemd's LogsDirectory= -- the host side keeps its own
+      # names, being this bench's layout rather than the deployment's.
+      - ./state/issuer-audit:/var/log/kerbridge/issuerd
+      # One JSON file per open condition, for a monitoring agent. Separate from
+      # the audit mount above: that one is a record the operator retains, this
+      # one is state the process rewrites as conditions clear.
+      #
+      # notify.state_dir is /var/lib/kerbridge and each daemon appends its own
+      # name, so the mount is that subdirectory rather than the parent.
+      - ./state/issuer:/var/lib/kerbridge/issuerd
+    tmpfs:
+      # Request-scoped keytabs and ccaches. Never durable: they are key
+      # material with a lifetime of one request, and a container restart must
+      # take any that leaked with it.
+      - /run/issuer:rw,mode=0700,size=16m
+      - /tmp:rw,size=16m
+    healthcheck:
+      # The daemon answers its own probe: a framed ping on the socket it serves.
+      test: ["CMD", "/usr/sbin/issuerd", "ping"]
+      interval: 10s
+      timeout: 8s
+      retries: 3
+      # Short, unlike realm's. Provisioning is over by the time this starts --
+      # `depends_on` waits for realm to be healthy, which is LDAP listening.
+      start_period: 30s
+
+  broker:
+    build:
+      context: ..
+      dockerfile: deploy/broker/Dockerfile
+      # The base, not a stage to copy from: deploy/broker/Dockerfile is
+      # `FROM debs`. Naming the service rather than an image tag is what makes
+      # compose build the packages first.
+      additional_contexts:
+        debs: "service:debs"
+    image: kerbridge-broker
+    container_name: kerbridge-broker
+    restart: unless-stopped
+    logging: *logging
+    # The whole argv, and the string kerbridge-broker.service gives ExecStart=;
+    # debian/check-manifests compares the two. The image's ENTRYPOINT is the same
+    # path -- stated here as well because the gate reads this file, and because
+    # `docker compose run broker <args>` appends to an entrypoint.
+    entrypoint: [/usr/sbin/kerbridge-broker]
+    depends_on:
+      issuer:
+        condition: service_healthy
+    # The uid/gid the issuer socket contract is written for: the socket
+    # directory is 0710 root:${BROKER_GID} and the socket 0660, so this gid is
+    # the whole of the broker's access to the issuer -- and, because a compose
+    # secret is a bind mount that keeps the host file's owner and mode, the
+    # whole of its access to svc_kerbridge_broker_password too.
+    #
+    # issuerd is the other end of the contract: it chowns the socket to
+    # socket_gid and refuses any peer that is not broker_uid. Its defaults for
+    # those two are the same two numbers, so configs/issuerd.toml leaves both
+    # lines commented out. Change either number here and you must uncomment the
+    # matching line there. A disagreement is a refused connection on every
+    # ticket.
+    user: "${BROKER_UID:-10001}:${BROKER_GID:-10002}"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    secrets:
+      - source: svc_kerbridge_broker_password
+        target: /etc/kerbridge.secrets/generated/svc_kerbridge_broker_password
+      - source: notify_url
+        target: /etc/kerbridge.secrets/notify_url
+    volumes:
+      # Read-only is sufficient: connect() needs no write permission, and the
+      # broker has no business creating or unlinking the socket.
+      - sock:/run/kerbridge:ro
+      # The whole config set, at the path the binary compiles in. Read-only:
+      # nothing here writes its own configuration.
+      - ./configs:/etc/kerbridge:ro
+      # The last-notified record, and the one thing this container writes. A bind
+      # mount rather than a named volume because it has to be writable by an
+      # unprivileged uid: a fresh named volume is created root-owned, which the
+      # broker cannot write, whereas prepare-state gives this directory group
+      # BROKER_GID and mode 0770 before anything mounts it. Losing it costs one
+      # repeat of the outstanding events, never a login.
+      - ./state/broker:/var/lib/kerbridge/broker
+      # The audit file. Same bind-mount reasoning as above, and separate from it
+      # because the two have opposite retention: the notify record is scratch the
+      # broker rewrites, this one is append-only and the operator's to keep.
+      - ./state/broker-audit:/var/log/kerbridge/broker
+    ports:
+      # Published here rather than on caddy, because caddy shares this
+      # service's network namespace and therefore cannot declare its own.
+      - "443:443"
+    networks: [kerbridge]
+
+  caddy:
+    # Built rather than pulled, because TLS_STRATEGY=acme-dns needs a DNS
+    # provider module linked into Caddy and plugins are compile-time in Go. For
+    # the other strategies the build is a retag of the same pinned image and
+    # never pulls the Go builder -- see deploy/caddy/Dockerfile. Compose does not
+    # rebuild when these change: `docker compose build caddy` after editing them.
+    build:
+      context: ./caddy
+      args:
+        TLS_STRATEGY: ${TLS_STRATEGY:-external}
+        CADDY_DNS_MODULE: ${CADDY_DNS_MODULE:-}
+    image: kerbridge-caddy
+    container_name: kerbridge-caddy
+    restart: unless-stopped
+    logging: *logging
+    depends_on: [broker]
+    # Sharing the broker's namespace puts them on one loopback, which is what
+    # host networking gives them in production. The broker's listener stays
+    # unreachable from anywhere else either way.
+    network_mode: service:broker
+    cap_drop: [ALL]
+    # The caddy binary ships file capabilities, and exec fails under
+    # cap_drop:ALL + no-new-privileges without this one back.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    environment:
+      BROKER_FQDN: ${BROKER_FQDN}
+      BROKER_UPSTREAM: ${BROKER_LISTEN:-127.0.0.1:8080}
+      # Every strategy. DEBUG makes the ACME client say what it is actually
+      # doing; see .env.example. Defaulted here as well as in .env because an
+      # empty value beats the Caddyfile's own default and leaves `level` with no
+      # argument, which is a parse error -- Caddy then never starts at all.
+      CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-INFO}
+      # Both acme strategies; unread under external. Defaulted here as well as in
+      # .env so an older .env cannot expand it to empty, which `ca` rejects.
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+      # acme-dns only, both unread otherwise. The provider argument is the whole
+      # `dns` directive text -- a name, or a name plus `{env.KEY}` naming a
+      # variable from secrets/acme-dns.env below.
+      ACME_DNS_PROVIDER: ${ACME_DNS_PROVIDER:-}
+      ACME_DNS_RESOLVERS: ${ACME_DNS_RESOLVERS:-1.1.1.1 9.9.9.9}
+    # acme-dns only: the DNS API credential, as KEY=value lines. It arrives as
+    # environment rather than as a Docker secret because Caddy's provider modules
+    # read credentials through the {env.*} placeholder and cannot read a file.
+    env_file:
+      - path: ./secrets/acme-dns.env
+        required: false
+    volumes:
+      # TLS_STRATEGY (.env) picks the strategy Caddyfile: `external` (operator
+      # supplies the cert in secrets/tls/, refreshed out of band by
+      # scripts/compose/reload-caddy.sh), `acme` (Caddy issues it over an
+      # inbound challenge) or `acme-dns` (Caddy issues it over DNS-01, needing
+      # nothing inbound). All three import the same routes and the same
+      # connection deadlines, and differ only in the certificate's source --
+      # see deploy/README.md.
+      - ./caddy/Caddyfile.${TLS_STRATEGY:-external}:/etc/caddy/Caddyfile:ro
+      - ./caddy/routes.caddyfile:/etc/caddy/routes.caddyfile:ro
+      - ./caddy/timeouts.caddyfile:/etc/caddy/timeouts.caddyfile:ro
+      # The one static page, served at `/` by routes.caddyfile: what a person who
+      # points a browser at the broker gets, instead of a 404 that reads as an
+      # outage. Read-only, and nothing else in the directory is reachable --
+      # only the exact path `/` is routed here.
+      - ./caddy/site:/etc/caddy/site:ro
+      # Supplied certs for the external strategy; empty and unread under acme*.
+      - ./secrets/tls:/etc/caddy/tls:ro
+      # Durable cert store. The acme strategies keep their issued cert and ACME
+      # account here -- on tmpfs they would re-issue every restart and trip Let's
+      # Encrypt's rate limits. External leaves it near-empty (only OCSP staples).
+      - caddy-data:/data
+    tmpfs:
+      - /config:rw,size=16m
+      # Home for the admin API's unix socket (Caddyfile.external: admin unix//...).
+      # The read-only rootfs makes /run read-only too, so the socket needs a
+      # tmpfs. Unused under acme*, which run with the admin API off.
+      - /run/caddy:rw,mode=0700,size=1m
+
+  sync:
+    # Directory synchronization, for every source main.toml lists: reads each
+    # one's cloud IdP over public TLS and writes that source's own OU over
+    # delegated LDAPS, one source after another. Static musl binary on Alpine, so
+    # the CA roots for the outbound path refresh with the base (DESIGN.md @
+    # kerbridge-broker). No published ports -- it is outbound only.
+    build:
+      context: ..
+      dockerfile: deploy/sync/Dockerfile
+      # The base, not a stage to copy from; see the broker's copy.
+      additional_contexts:
+        debs: "service:debs"
+    image: kerbridge-sync
+    container_name: kerbridge-sync
+    restart: unless-stopped
+    logging: *logging
+    # The whole argv, and the string kerbridge-sync.service gives ExecStart=;
+    # debian/check-manifests compares the two. An entrypoint and not a `command:`:
+    # `docker compose run --rm --no-deps sync --test-notification` (deploy/Makefile)
+    # appends to an entrypoint, and would replace a `command:` outright.
+    entrypoint: [/usr/sbin/kerbridge-sync]
+    # Starts unconditionally, even before the first app registration exists: a
+    # source whose credential file is empty is skipped for that cycle with a
+    # warning, and every other source still mirrors. No `profiles:` key here: a
+    # profiled service is not an orphan either, so a plain `docker compose down`
+    # leaves it running and holding the sock volume open.
+    depends_on:
+      realm:
+        condition: service_healthy
+    # Unprivileged, like the broker, and deliberately not the *same* uid: issuerd
+    # admits the broker's uid and root alone, so sync sharing the group cannot
+    # ask for a ticket. The gid is the broker's because /run/kerbridge is
+    # 0710 root:${BROKER_GID} and the realm CA that sync verifies LDAPS against
+    # lives in there -- the group buys traversal, and the peer check behind it is
+    # what makes that safe to hand out. Its secrets are group-readable by the
+    # same gid, applied by `kbsetup directory`.
+    user: "${SYNC_UID:-10003}:${BROKER_GID:-10002}"
+    # Measured minimum is none, like the broker: outbound TCP to the cloud IdP
+    # and to LDAPS needs no capability, and the binary is the only thing that
+    # runs.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    secrets:
+      - source: notify_url
+        target: /etc/kerbridge.secrets/notify_url
+    volumes:
+      # The config set, read-only. It names every secret below by the path it is
+      # mounted at, and the source files in it are the same ones the broker
+      # reads -- which is what stops the two from disagreeing about a tenant.
+      - ./configs:/etc/kerbridge:ro
+      # Every source's two secrets. Two directories and not one, because they
+      # have different writers -- the operator's `credential` under idp/, what
+      # `kbsetup directory` generates under generated/idp/ -- which is what lets
+      # the setup service be given the second alone. Do not merge them.
+      #
+      # Mounted directories rather than a Docker secret each, so that adding a
+      # source never means editing this tracked file. Nothing else may go under
+      # either: this process reads every source, so the two are the whole of what
+      # it is trusted with.
+      - ./secrets/idp:/etc/kerbridge.secrets/idp:ro
+      - ./secrets/generated/idp:/etc/kerbridge.secrets/generated/idp:ro
+      - sock:/run/kerbridge:ro
+      # The last-notified record; see the broker's copy for why it is a bind
+      # mount. Its own directory, not one shared with the broker: the two run as
+      # different uids and each owns its file.
+      - ./state/sync:/var/lib/kerbridge/sync
+      # The audit file: what each cycle changed in the directory, and the object
+      # every write touched. Same bind-mount reasoning as the broker's, and its
+      # own directory for the same reason -- an account created here owns files
+      # and is a principal until somebody retires it, and nothing else in the
+      # deployment says who was given one.
+      - ./state/sync-audit:/var/log/kerbridge/sync
+    networks: [kerbridge]
+
+  # `kbsetup`, run as `docker compose run --rm setup directory`. `profiles:`
+  # keeps it out of `up`. A service and not a script of its own, so the work runs
+  # on the shipped bytes.
+  #
+  # Default capabilities, on purpose: writing a credential at 0640
+  # root:<daemon group> needs CHOWN, and a container that can act on files it
+  # does not own is not hardened. **Do not mount the secrets tree into `realm`
+  # instead.** CAP_CHOWN is "arbitrary changes to file UIDs and GIDs"
+  # (capabilities(7)), so realm's own cap_add list already defeats its cap_drop
+  # for any file it can traverse to -- and permanently, not for one command.
+  setup:
+    # `build:` beside `image:` so that `compose run` on a host that has never
+    # built realm builds this rather than trying to pull kerbridge-realm.
+    build:
+      context: ..
+      dockerfile: deploy/realm/Dockerfile
+      # The .deb files this image installs; see the `debs` service.
+      additional_contexts:
+        debs: "service:debs"
+    image: kerbridge-realm
+    profiles: [setup]
+    entrypoint: [/usr/sbin/kbsetup]
+    volumes:
+      # Must match issuerd.sam_db: `kbsetup` names the database with -H on
+      # every call, from the config set rather than from smb.conf.
+      - samba:/var/lib/samba
+      # smb.conf, for `kbsetup verify`: it drives testparm.
+      - etc-samba:/etc/samba:ro
+      - ./configs:/etc/kerbridge:ro
+      # The whole of what kbsetup writes, and nothing else: secrets/idp/,
+      # secrets/tls/ and acme-dns.env are authorities outside this realm, and
+      # this container holds the realm's.
+      - ./secrets/generated:/etc/kerbridge.secrets/generated
+    networks: [kerbridge]
+
+secrets:
+  realm_admin_password:
+    file: ./secrets/generated/realm_admin_password
+  svc_kerbridge_broker_password:
+    file: ./secrets/generated/svc_kerbridge_broker_password
+  # The webhook URL. A secret and not a .env value, because for common chat
+  # receivers the URL *is* the authentication: anyone holding it can post into
+  # the operator's channel. prepare-state creates it empty, because a compose
+  # secret is a bind mount whose source must exist; empty means notification is
+  # off.
+  notify_url:
+    file: ./secrets/notify_url
+
+volumes:
+  # Named volumes, not bind mounts: /var/lib/samba needs a filesystem that
+  # carries extended attributes, and security.NTACL writes fail on a macOS bind
+  # mount. Production bind-mounts them from KERBRIDGE_STATE_DIR on ext4.
+  samba:
+  etc-samba:
+  # Runtime state, recreatable by whichever container writes each half: the
+  # realm CA, republished by `kbsetup realm` on every start, and the issuer
+  # socket, rebuilt by issuerd on every start.
+  sock:
+  # The example member's durable state lives in compose.nas.yaml, which declares
+  # m1-samba and m1-share alongside the service that uses them.
+  # Caddy's certificate store. Durable for the acme TLS strategies (issued cert +
+  # ACME account); near-empty under external (only OCSP staples).
+  caddy-data:
+
+networks:
+  kerbridge:
+    ipam:
+      config:
+        - subnet: ${KERBRIDGE_SUBNET}

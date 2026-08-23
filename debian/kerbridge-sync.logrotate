@@ -1,0 +1,15 @@
+# Same shape as the issuer's and the broker's, and safe for the same reason:
+# kerbridge-sync installs the SIGUSR1 reopen its siblings do.
+/var/log/kerbridge/sync/*.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    notifempty
+    missingok
+    su _kerbridge-sync _kerbridge
+    create 0640 _kerbridge-sync _kerbridge
+    postrotate
+        systemctl kill -s USR1 kerbridge-sync.service
+    endscript
+}

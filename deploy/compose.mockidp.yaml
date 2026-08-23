@@ -1,0 +1,98 @@
+# Overlay: run testbench/mock-idp, and verify tokens against it instead of a tenant.
+#
+#   make up MOCKIDP=1
+#   COMPOSE_FILE=compose.yaml:compose.mockidp.yaml docker compose up -d
+#
+# For a bench that needs a client to complete a real sign-in without an Entra
+# tenant. It changes two things: what serves the authorization and token
+# endpoints, and where the broker's trusted keys come from. It pairs with
+# OIDC_AUTHORITY in .env, which is what tells clients to go to the mock in
+# the first place -- this file serves that address, it does not advertise it.
+#
+# It is deliberately NOT in compose.yaml. A production broker verifies against
+# the tenant's published document, and one that silently accepted whatever
+# happened to be on disk would be worse than one that cannot start.
+#
+# `/authorize` here approves everyone who asks, with no credential of any kind.
+# Bench networks only -- testbench/mock-idp/README.md says what else it is not.
+
+services:
+  mockidp:
+    build:
+      context: ..
+      dockerfile: deploy/mockidp/Dockerfile
+    image: kerbridge-mockidp
+    container_name: kerbridge-mockidp
+    init: true
+    restart: unless-stopped
+    environment:
+      # What it puts in its own discovery document, so a client that fetches
+      # /.well-known/openid-configuration is sent back to an address it can
+      # reach. Defaults to the broker's name on this port, because that is the
+      # certificate it presents.
+      IDP_EXTERNAL_URL: ${OIDC_AUTHORITY:-https://${BROKER_FQDN}:8443}
+      # The `iss` the broker accepts is built from this tenant id, not from the
+      # address above -- two separate strings, and this is the one that has to
+      # match. Compose cannot read TOML, so it is stated here and has to be the
+      # same value as configs/idp_<source>.toml's provider_config.tenant_id.
+      IDP_TENANT_ID: ${MOCK_IDP_TENANT_ID:?set it to the tenant_id your source file states}
+      IDP_TLS_CERT: /etc/mockidp/tls/broker.crt
+      IDP_TLS_KEY: /etc/mockidp/tls/broker.key
+      # Who /authorize issues for until something selects otherwise. All three
+      # seeded users work; `POST /select?user=bob` switches it at run time.
+      IDP_DEFAULT_USER: ${MOCK_IDP_USER:-alice}
+    volumes:
+      # The broker's own certificate, because the mock answers on the broker's
+      # name. A client that trusts one trusts the other, and there is no second
+      # name to get into a SAN.
+      - ./secrets/tls:/etc/mockidp/tls:ro
+      - mockidp-state:/state
+    ports:
+      # Not the broker's :443 -- caddy has that. Two servers, one name.
+      - "${MOCK_IDP_BIND:-0.0.0.0}:8443:8443/tcp"
+    networks: [kerbridge]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    healthcheck:
+      # python3 rather than curl: the image has one and not the other. Unverified
+      # on purpose -- this is the server checking itself over loopback, which the
+      # certificate's SAN does not cover and does not need to.
+      test:
+        - CMD
+        - python3
+        - -c
+        - |
+          import ssl, urllib.request
+          urllib.request.urlopen(
+              "https://127.0.0.1:8443/.well-known/openid-configuration",
+              context=ssl._create_unverified_context(), timeout=3)
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  broker:
+    # The mock generates a signing key at every start and writes the matching
+    # JWKS into the shared volume. Waiting for healthy is what puts that file
+    # there before the broker opens it; the broker still refuses to start
+    # without it, which is the behavior worth keeping.
+    depends_on:
+      mockidp:
+        condition: service_healthy
+    # A bench on this overlay must set, in its source file:
+    #
+    #     jwks_file = "/etc/jwks/jwks.json"
+    #
+    # Compose cannot state it: the config set is one read-only mount, and an
+    # overlay that wrote into it would be editing the operator's files. Its own
+    # mount point, because /etc/kerbridge and /run/kerbridge are both read-only
+    # binds and nothing can be mounted inside one.
+    volumes:
+      - mockidp-state:/etc/jwks:ro
+
+volumes:
+  # The signing key never lands here -- only its public half, as a JWKS. A fresh
+  # key per container start is fine: the broker re-reads this file when it meets
+  # a `kid` it does not know, so a restarted mock is adopted without one.
+  mockidp-state:

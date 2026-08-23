@@ -1,0 +1,17 @@
+# Terraform working files and, crucially, anything that carries a real identifier
+# or a secret. State can hold the sync secret under create_sync_secret=true;
+# terraform.tfvars holds the real tenant id (CLAUDE.md: never commit one). The
+# checked-in files are the .tf sources and terraform.tfvars.example only.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

@@ -1,0 +1,108 @@
+.\" Hand-written on purpose, and it names no flag but --help -- see the note at
+.\" the top of issuerd.8 for why, and `make test` for what holds it there.
+.TH KERBRIDGE-BROKER 8 "KerBridge" "KerBridge" "System Manager's Manual"
+.SH NAME
+kerbridge-broker \- KerBridge broker daemon
+.SH DESCRIPTION
+.B kerbridge-broker
+is the only KerBridge component a workstation talks to. It takes a proof of
+cloud identity, decides whether that identity is admitted to this realm, and
+asks
+.BR issuerd (8)
+for a Kerberos ticket-granting ticket on its behalf. The credential cache it
+gets back is what the workstation agent injects locally, so the user reaches a
+Samba share with no password and no domain join.
+.PP
+It holds no KDC authority of its own. Everything it can do, it can do because
+the issuer agreed to it: the two are separate processes under separate
+accounts, and the issuer checks the broker's identity on every connection.
+.PP
+The proof is validated against the signing keys the cloud identity provider
+publishes, fetched over HTTPS and cached. Admission is a group membership in
+that provider's directory, not a local decision.
+.SH "THE LOOPBACK RULE"
+.B kerbridge-broker
+serves plain HTTP and is refused any listen address that is not on the loopback
+interface. That is enforced in the program, not by configuration, so a
+deployment terminates TLS in front of it
+.I on the same host \-
+terminating on another machine is not possible without a code change.
+.PP
+Tested Caddy and nginx configurations are in
+.IR /usr/share/doc/kerbridge-broker/examples/ .
+Both proxy an explicit allowlist of paths rather than everything, so a route
+the broker does not serve never reaches it.
+.SH CONFIGURATION
+.B kerbridge-broker
+reads the KerBridge configuration set, a directory of TOML files whose default
+location is
+.IR /etc/kerbridge .
+Its own file there is
+.IR broker.toml ,
+and it reads
+.IR realm.toml ,
+.I main.toml
+and one
+.I idp_<source>.toml
+per identity provider beside it.
+.PP
+The set is validated before the daemon starts, by
+.B kbconfig check
+as
+.B ExecStartPre
+of the unit below. A set that does not check out keeps this one service from
+starting, and affects nothing else; systemd retries five times and then leaves
+the unit
+.BR failed ,
+so the reason stays in
+.B systemctl status
+instead of scrolling past in the journal.
+.PP
+With no configuration set at all the unit is skipped rather than started:
+.B ConditionPathExists=/etc/kerbridge/main.toml
+guards it, so an installed-but-unconfigured host is quiet and
+.B systemctl start
+still exits 0.
+.PP
+No credential is ever written in the configuration set. Secrets are files under
+.IR /etc/kerbridge.secrets/ ,
+named in the set as paths and read through the
+.B _kerbridge
+group.
+.SH FILES
+.TP
+.I /etc/kerbridge/broker.toml
+This daemon's own configuration.
+.TP
+.I /var/log/kerbridge/broker/audit.log
+The append-only record of every ticket request and its outcome. Rotated by
+.IR /etc/logrotate.d/kerbridge-broker ,
+which signals the daemon to reopen the file rather than truncating it under its
+feet.
+.TP
+.I /var/lib/kerbridge/broker/
+Durable state: the operator-notification conditions currently outstanding.
+.TP
+.I /run/kerbridge/issuer.sock
+The issuer's socket, opened per request rather than held.
+.SH SIGNALS
+.TP
+.B SIGUSR1
+Reopen the audit log. Sent by
+.BR logrotate (8)
+after it has rotated the file.
+.SH OPTIONS
+kerbridge-broker takes a small and stable set of options, and this page deliberately
+names none of them: a hand-written list is a copy, and a copy is what goes
+stale the first time an option changes. Run
+.B kerbridge-broker --help
+for the set this build has. An argument it does not recognise is refused rather
+than ignored, and the refusal prints the same usage line.
+.SH "SEE ALSO"
+.BR kbconfig (1),
+.BR kbmanage (1),
+.BR issuerd (8),
+.BR kerbridge-sync (8),
+.BR systemd.exec (5)
+.SH AUTHOR
+Jarno Elonen.

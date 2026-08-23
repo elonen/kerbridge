@@ -1,0 +1,64 @@
+# issuerd: the only process holding KDC authority. It binds no network socket
+# and reads sam.ldb locally, so all of this is about the one Unix socket the
+# broker reaches it on.
+#
+# A commented-out line sets nothing. `#some_option = 8` means that KerBridge
+# uses 8, the default for that option. `#some_option =`, with no value, means
+# that the option has no default: the comment above the line says what
+# KerBridge does instead, and shows an example. main.toml gives the full rule.
+
+# Which unix group owns the socket and which unix user may speak on it, not a
+# preference either way. The socket directory is 0710 root:<group> and the
+# socket 0660, so that group is the whole of the broker's access to the issuer.
+#
+# The numbers are the Docker Compose deployment's contract: compose.yaml states the
+# same two again as the broker's user:, and a disagreement is a refused peer on
+# every ticket. The names below are what a package uses, where adduser
+# allocates the numbers and nobody can write them down in advance. State one
+# form or the other for an identity, never both -- `kbconfig check` refuses a
+# file that states both, because only one of the two would be read.
+#socket = "/run/kerbridge/issuer.sock"
+#socket_gid = 10002
+#broker_uid = 10001
+
+# The unix group owning the socket directory, resolved to its gid at startup
+# and used in place of socket_gid. State a name where the number is allocated
+# rather than chosen: a package's `adduser --system` takes whatever is free, so
+# nothing can write the number down in advance. It is read out of /etc/group
+# alone -- issuerd is a static musl binary, which consults no nsswitch.conf, so
+# a group that exists only in LDAP, SSSD or winbind will not resolve. One that
+# does not resolve stops issuerd; it never falls back to the number.
+# Example: "_kerbridge"
+#socket_group =
+
+# The unix user the broker runs as, resolved to its uid at startup and used in
+# place of broker_uid. Same terms as socket_group, and read the same way.
+# Example: "_kerbridge-broker"
+#broker_user =
+
+# Request-scoped keytabs and ccaches, 0700 and removed with the request. Put it
+# on tmpfs: key material written here must not reach a disk.
+#tmp_dir = "/run/issuer"
+
+# Requests admitted at once; the rest are refused immediately rather than
+# queued. Each one costs three forked root subprocesses on the DC, whose ceiling
+# is what this defends -- and it sits below the broker's, because a request that
+# reached the issuer has already spent its LDAPS bind.
+#
+# Raise it only if legitimate sign-ins are being refused. A morning where
+# everyone arrives at once is a few requests a second, not tens in flight.
+#max_inflight = 8
+
+#sam_db = "/var/lib/samba/private/sam.ldb"
+
+# Deadline on one samba-tool or kinit subprocess.
+#command_timeout_seconds = 20
+
+# Every ticket this process issued, appended. A file rather than the container
+# log, which lasts only until the next recreate. Its own directory under
+# `/var/log/kerbridge`, never the broker's: one directory per writing service,
+# owned by that service, is what keeps a compromised broker from unlinking the
+# issuer's record -- and what still lets `logrotate` create the successor file.
+# `none` keeps the console line and nothing else, which survives only until the
+# next recreate.
+#audit_log_file = "/var/log/kerbridge/issuerd/audit.log"

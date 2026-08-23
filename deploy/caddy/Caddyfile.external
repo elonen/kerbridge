@@ -1,0 +1,29 @@
+# TLS strategy: external (TLS_STRATEGY=external, the default). The operator
+# supplies the certificate; an external renewal flow refreshes it in secrets/tls/
+# and runs reload-caddy.sh. This is the default because it keeps issuance
+# credentials -- and, with DNS-01, the authority to alter DNS -- off the host
+# entirely. The alternatives are Caddyfile.acme and Caddyfile.acme-dns, which
+# differ from this file only in where the certificate comes from; the routing is
+# imported by all three.
+{
+	# Log level, from CADDY_LOG_LEVEL. DEBUG adds handshake and proxy detail; it
+	# earns its keep under the acme strategies, and is here so one knob means the
+	# same thing whichever of the three is loaded.
+	log {
+		level {$CADDY_LOG_LEVEL:INFO}
+	}
+	# Admin API on a unix socket, not the default localhost:2019. Caddy shares
+	# the broker's network namespace, so a TCP admin port would be reachable from
+	# the broker; the socket lives in Caddy's own (unshared) mount namespace, so
+	# only a `caddy reload` exec'd into this container can drive it. reload-caddy.sh
+	# uses it to load a renewed cert from secrets/tls/ without a restart.
+	admin unix//run/caddy/admin.sock
+	# Nothing here is automatic: the cert is a file and there is no ACME account.
+	auto_https off
+	import /etc/caddy/timeouts.caddyfile
+}
+
+https://{$BROKER_FQDN}:443 {
+	tls /etc/caddy/tls/broker.crt /etc/caddy/tls/broker.key
+	import /etc/caddy/routes.caddyfile
+}

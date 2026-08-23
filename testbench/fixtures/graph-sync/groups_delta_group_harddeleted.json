@@ -1,0 +1,24 @@
+{
+  "note": "reason \"deleted\" = permanently deleted, not restorable.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA4"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA5",
+      "value": [
+        {
+          "id": "77770001-aaaa-bbbb-cccc-000000000001",
+          "@removed": {
+            "reason": "deleted"
+          }
+        }
+      ]
+    }
+  }
+}

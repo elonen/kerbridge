@@ -1,0 +1,6 @@
+Dialog_	Control_	Event	Argument	Condition	Ordering
+s72	s50	s50	s255	S255	I2
+ControlEvent	Dialog_	Control_	Event	Argument	Condition
+ExitDialog	Finish	EndDialog	Return	1	1
+MsiRMFilesInUse	OK	EndDialog	Return	1	1
+MsiRMFilesInUse	Cancel	EndDialog	Exit	1	1

@@ -1,0 +1,36 @@
+[package]
+name = "kerbridge-issuerd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# The binary keeps the short name. `issuerd` is what /usr/sbin/issuerd,
+# issuerd(8), the Compose `entrypoint:` and every ExecStart= already say, and
+# the crate is renamed for consistency with its siblings, not to move the
+# program. Same split as kerbridge-setup -> kbsetup.
+[[bin]]
+name = "issuerd"
+path = "src/main.rs"
+
+[dependencies]
+kerbridge-core.workspace = true
+anyhow.workspace = true
+base64.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# SO_PEERCRED -- the connecting process's uid, which is the difference between
+# authenticating the broker and trusting a group -- and the two
+# `/etc/{passwd,group}` name lookups. Safe wrappers over both; raw libc here
+# would cost `main.rs` its `forbid(unsafe_code)`.
+#
+# `signal` is the audit file's rotation half: SIGUSR1 blocked process-wide and
+# waited for on one thread, which is what keeps `main.rs`'s `forbid(unsafe_code)`
+# -- installing a handler would need `sigaction`, which is unsafe by nature.
+nix = { version = "0.31", features = ["socket", "user", "signal"] }
+
+[dev-dependencies]
+# `pthread`, and only here: the rotation test aims SIGUSR1 at the waiting thread
+# rather than at the process, whose other threads under `cargo test` do not block
+# it and would die of it. The daemon sends no signals of its own.
+nix = { version = "0.31", features = ["pthread", "signal"] }

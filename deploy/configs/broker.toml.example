@@ -1,0 +1,39 @@
+# The broker: the internet-facing half, and the only part a client talks to.
+#
+# A commented-out line sets nothing. `#some_option = 8` means that KerBridge
+# uses 8, the default for that option. `#some_option =`, with no value, means
+# that the option has no default: the comment above the line says what
+# KerBridge does instead, and shows an example. main.toml gives the full rule.
+
+# Loopback, and a non-loopback address is refused. This process speaks plain
+# HTTP and Caddy terminates TLS in the network namespace they share, so binding
+# wider serves POST /ticket in the clear on every interface of the host. The
+# port is free to move; nothing publishes it.
+#listen = "127.0.0.1:8080"
+
+# Ticket exchanges in flight at once; the rest get 429 without touching the
+# directory, and the client backs off. A valid token is not a budget -- each
+# ticket costs an LDAPS bind plus three forked root subprocesses on the DC.
+# Above issuerd's cap on purpose: this number also has to cover the requests
+# still in verification.
+#max_inflight = 16
+
+# The broker's own directory identity, read-only. It resolves identities and
+# reads the admission group; every write goes through issuerd, so there is
+# nothing here to confine and one account serves every source.
+#
+# There is no search base setting. Each source's OU is derived from
+# realm.idp_parent_ou and the source name, so the broker searches the OU
+# belonging to whichever source the request arrived for.
+bind_dn = "CN=svc-kerbridge-broker,CN=Users,DC=example,DC=site"
+bind_password_file = "/etc/kerbridge.secrets/generated/svc_kerbridge_broker_password"
+
+#issuer_socket = "/run/kerbridge/issuer.sock"
+
+# Deadline on one issuer request.
+#timeout_seconds = 30
+
+# Who was granted which machine, and when it was taken back. A separate file on
+# a separate mount from issuerd.audit_log_file -- see the reason there. `none`
+# keeps the console line and nothing else.
+#audit_log_file = "/var/log/kerbridge/broker/audit.log"

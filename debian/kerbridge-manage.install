@@ -1,0 +1,8 @@
+usr/bin/kbmanage
+usr/share/man/man1/kbmanage.1
+usr/share/man/man1/kbmanage-group.1
+usr/share/man/man1/kbmanage-cloud.1
+usr/share/man/man1/kbmanage-device.1
+usr/share/man/man1/kbmanage-doctor.1
+usr/share/man/man1/kbmanage-endpoint.1
+usr/share/man/man1/kbmanage-config.1

@@ -1,0 +1,25 @@
+{
+  "note": "Honor Retry-After seconds, then retry SAME request (throttling doc). The interrupted read is INCOMPLETE until it finishes; no plan may be produced from it.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA1"
+  },
+  "response": {
+    "status": 429,
+    "headers": {
+      "Content-Type": "application/json",
+      "Retry-After": "10"
+    },
+    "body": {
+      "error": {
+        "code": "TooManyRequests",
+        "message": "Too many requests. Please retry after some time.",
+        "innerError": {
+          "date": "2026-07-21T12:00:00",
+          "request-id": "0f9a-fixture",
+          "client-request-id": "0f9a-fixture"
+        }
+      }
+    }
+  }
+}

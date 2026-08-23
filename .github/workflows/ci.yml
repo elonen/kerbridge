@@ -1,0 +1,196 @@
+# Everything here is `make` underneath, so a green run means the same
+# commands pass on a developer's machine.
+#
+#   fast     Fast checks without Docker.
+#   windows  The cross-build gate for the client.
+#   build    Main, manual. Every shipping artifact still builds.
+#   stack    Main, manual. A realm provisioned from scratch, a TGT issued
+#            against it, and a file read over SMB with that ticket.
+#   deb      Main, manual. Debian packages built and lintian-clean, then
+#            installed, purged or refused on each release the docs claim.
+#            Once per architecture, on a runner of that architecture.
+#   audit    Manual. Advisories against the tree's dependencies.
+#
+# No job needs a secret. `stack` mocks Entra with a locally generated key document.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fast:
+    name: fast (fmt, tests, clippy, shell, docs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: test tools
+        run: |
+          command -v shellcheck >/dev/null && command -v zstd >/dev/null || {
+            sudo apt-get update && sudo apt-get install -y shellcheck zstd
+          }
+      - run: make test-fast
+
+  windows:
+    name: windows client (cross-build, clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+          components: clippy
+      - name: mingw-w64
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client -> target
+      - run: make test-win
+
+  build:
+    name: artifacts (images, exes, MSI)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/buildx-cache
+          key: buildx-compose-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
+          restore-keys: buildx-compose-
+      - run: make test-build
+        env:
+          KB_CACHE_FROM: type=local,src=/tmp/buildx-cache
+          KB_CACHE_TO: type=local,dest=/tmp/buildx-cache-new,mode=max
+      - name: rotate the layer cache
+        if: always()
+        run: |
+          if [ -d /tmp/buildx-cache-new ]; then
+            rm -rf /tmp/buildx-cache
+            mv /tmp/buildx-cache-new /tmp/buildx-cache
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kerbridge-artifacts
+          path: |
+            dist/*.exe
+            dist/*.msi
+            dist/kbmanage
+            dist/kbconfig
+          if-no-files-found: error
+
+  stack:
+    name: stack (provision, issue, SMB)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # Provisioning a fresh domain and joining a member to it is the slow part;
+    # the default 360 would let a hung KDC burn an hour.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Everything else it needs -- docker, rsync, openssl, curl, python3 -- is
+      # on the runner image, and ci-stack.sh checks for each before it starts.
+      #
+      # No `if: failure()` log step here: it would run after ci-stack.sh's own
+      # trap had torn the stack down, and read nothing. The script dumps
+      # `compose ps` and the logs itself, before it removes anything, so a
+      # developer watching a local run sees the same thing this job does.
+      # The compose `debs` service holds the six-crate compile that every service
+      # image is built on, so one cache serves this whole job. Shared with the
+      # other amd64 compose job: whichever runs first populates it, and a second
+      # write under the same key is dropped rather than duplicated.
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/buildx-cache
+          key: buildx-compose-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
+          restore-keys: buildx-compose-
+      - run: make test-stack
+        env:
+          KB_CACHE_FROM: type=local,src=/tmp/buildx-cache
+          KB_CACHE_TO: type=local,dest=/tmp/buildx-cache-new,mode=max
+      - name: rotate the layer cache
+        if: always()
+        run: |
+          if [ -d /tmp/buildx-cache-new ]; then
+            rm -rf /tmp/buildx-cache
+            mv /tmp/buildx-cache-new /tmp/buildx-cache
+          fi
+
+  deb:
+    name: debs (${{ matrix.arch }})
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # The default 360 would let a stalled mirror burn six hours.
+    timeout-minutes: 60
+    steps:
+      # fetch-depth: 0, alone among the jobs. `make` derives the package version
+      # on the runner with `debian/make-changelog --print-version`, which reads
+      # `git describe`, and a shallow checkout reaches no tag -- the build then
+      # refuses rather than producing a package nothing can order.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/buildx-cache
+          key: buildx-deb-${{ matrix.arch }}-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
+          restore-keys: buildx-deb-${{ matrix.arch }}-
+      - run: >
+          make test-deb
+          DOCKER_CACHE="--cache-from type=local,src=/tmp/buildx-cache
+          --cache-to type=local,dest=/tmp/buildx-cache-new,mode=max"
+      - name: rotate the layer cache
+        if: always()
+        run: |
+          if [ -d /tmp/buildx-cache-new ]; then
+            rm -rf /tmp/buildx-cache
+            mv /tmp/buildx-cache-new /tmp/buildx-cache
+          fi
+      # The debs themselves, so a failure on one release can be reproduced
+      # against the exact bytes that failed rather than a rebuild of them.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kerbridge-debs-${{ matrix.arch }}
+          path: dist/debian/*.deb
+          if-no-files-found: ignore
+
+  audit:
+    name: advisories
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@cargo-audit
+      # Dependency audit. It is not a pull-request gate
+      # on purpose: an advisory published overnight is not a
+      # defect in the change somebody is trying to merge.
+      - run: cargo audit

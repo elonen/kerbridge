@@ -1,0 +1,28 @@
+KerBridge -- third-party notices
+================================
+
+The KerBridge programs are statically linked. Every crate compiled into them is
+listed below with its licence and that licence's full text, because MIT, BSD and
+Apache-2.0 each require their notice to travel with a binary copy.
+
+KerBridge's own crates appear here too, under their own terms. The
+authoritative statement of those is /usr/share/doc/<package>/copyright, which
+is the file Debian Policy scopes to a package's own contents; this file is the
+complete list of what is linked in, and makes no exception for the crates that
+came from this repository.
+
+This file is generated from Cargo.lock by cargo-about. Do not edit it.
+
+{{#each licenses}}
+--------------------------------------------------------------------------------
+{{name}}
+--------------------------------------------------------------------------------
+
+Used by:
+{{#each used_by}}
+  * {{crate.name}} {{crate.version}}{{#if crate.repository}} -- {{crate.repository}}{{/if}}
+{{/each}}
+
+{{text}}
+
+{{/each}}

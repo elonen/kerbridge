@@ -1,0 +1,6 @@
+# This host's deployment settings, filled in from .env.example.
+/.env
+
+# The notifier's last-notified record, one directory per service. Runtime state
+# of a running deployment, and never the same on two of them.
+/state/

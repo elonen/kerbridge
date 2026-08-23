@@ -1,0 +1,355 @@
+/* The help site's only stylesheet.
+ *
+ * Flattened on purpose: this began as the Modernist design system plus a page
+ * of overrides, and almost every override won. Two files where one has the last
+ * word on nearly every token is two places to read before knowing a colour.
+ * Retune here.
+ *
+ * Noto Sans is self-hosted and covers Latin, Greek and Cyrillic. It is not asked
+ * to cover CJK -- CSS falls back per glyph, so ja/ko/zh text lands on the OS UI
+ * font, which is designed for it and already installed. A reader whose network
+ * blocks a font CDN still gets the page, which matters when the page is about
+ * network trouble.
+ */
+
+@font-face {
+  font-family: "Noto Sans"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url(fonts/noto-sans-latin.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Noto Sans"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url(fonts/noto-sans-latin-ext.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113,
+    U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Noto Sans"; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url(fonts/noto-sans-cyrillic.woff2) format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+/* ── tokens ──────────────────────────────────────────────────────────────── */
+
+:root {
+  --font: "Noto Sans", system-ui, sans-serif;
+  --heading-weight: 800;
+
+  --bg: #f3f2f2;
+  --surface: #eae9e9;
+  --text: #201e1d;
+  --divider: color-mix(in srgb, #201e1d 40%, transparent);
+
+  --n100: #f8f4f4; --n200: #eae7e7; --n300: #d7d3d3; --n400: #bab6b6; --n500: #9b9797;
+  --n600: #7d7979; --n700: #605d5d; --n800: #444141; --n900: #2d2b2b;
+
+  --accent: #1f7cc6;
+  --accent-600: #1a6db0; --accent-700: #15619e;
+
+  --warn: #a8690a;
+  --stop: #b02318;
+
+  --box: #dbe6f2;
+  --box-hover: #c9daed;
+  --box-line: color-mix(in srgb, #201e1d 14%, transparent);
+
+  --s2: 8px; --s3: 12px; --s4: 16px;
+
+  color-scheme: light;
+}
+
+/* Two ways to be dark: the system says so and nothing overrides it, or the
+ * toggle says so outright. Both redefine only what changes. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1918;
+    --surface: #242322;
+    --text: #f0eeec;
+    --divider: color-mix(in srgb, #f0eeec 42%, transparent);
+
+    --n100: #2d2b2b; --n200: #3a3837; --n300: #4f4c4b; --n400: #6e6a69; --n500: #918d8c;
+    --n600: #aeaaa8; --n700: #cbc7c5; --n800: #e3e0de; --n900: #f8f4f4;
+
+    --accent: #5aa9e6;
+    --accent-600: #83c1ef; --accent-700: #b0d5f5;
+
+    --warn: #e0a33c;
+    --stop: #f0705f;
+
+    --box: #22282e;
+    --box-hover: #2b343d;
+    --box-line: color-mix(in srgb, #f0eeec 16%, transparent);
+
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1a1918;
+  --surface: #242322;
+  --text: #f0eeec;
+  --divider: color-mix(in srgb, #f0eeec 42%, transparent);
+
+  --n100: #2d2b2b; --n200: #3a3837; --n300: #4f4c4b; --n400: #6e6a69; --n500: #918d8c;
+  --n600: #aeaaa8; --n700: #cbc7c5; --n800: #e3e0de; --n900: #f8f4f4;
+
+  --accent: #5aa9e6;
+  --accent-600: #83c1ef; --accent-700: #b0d5f5;
+
+  --warn: #e0a33c;
+  --stop: #f0705f;
+
+  --box: #22282e;
+  --box-hover: #2b343d;
+  --box-line: color-mix(in srgb, #f0eeec 16%, transparent);
+
+  color-scheme: dark;
+}
+
+/* ── base ────────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 16px; line-height: 1.5;
+}
+h1, h2, h3, h4 { font-weight: var(--heading-weight); line-height: 1.15; }
+h1 { font-size: clamp(34px, 6vw, 64px); line-height: 1.02; margin: 0 0 20px; }
+h2 { font-size: clamp(26px, 4vw, 38px); margin: 0; }
+h3 { font-size: 20px; margin: 32px 0 10px; }
+h4 { font-size: 15px; margin: 24px 0 6px; }
+p, ul { max-width: 68ch; }
+ul { padding-left: 20px; }
+li { margin-bottom: 6px; }
+img { max-width: 100%; height: auto; }
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .9em; background: var(--n200); padding: 1px 5px;
+}
+a {
+  color: var(--accent-700); text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: background .12s, color .12s, border-color .12s;
+}
+a:hover { color: var(--accent); border-bottom-color: var(--accent); background: var(--box-hover); }
+a:active { color: var(--accent-600); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+.kicker {
+  font-weight: var(--heading-weight); font-size: 12px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--n600);
+}
+
+/* ── header ──────────────────────────────────────────────────────────────── */
+
+header {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--bg); border-bottom: 2px solid var(--divider);
+}
+header .wrap { display: flex; align-items: center; gap: 24px; padding-block: 12px; }
+.brand { display: flex; align-items: center; gap: 12px; border: 0; color: var(--text); }
+.brand:hover { background: none; }
+.brand img { width: 30px; height: 30px; }
+.brand b { font-weight: var(--heading-weight); font-size: 17px; letter-spacing: -.01em; }
+.brand span { color: var(--n600); font-weight: 500; }
+
+.search { flex: 1; min-width: 0; max-width: 420px; position: relative; display: flex; align-items: center; }
+.search svg { position: absolute; left: 10px; width: 16px; height: 16px; color: var(--n600); pointer-events: none; }
+.search input {
+  width: 100%; min-height: 36px; padding: 6px 10px 6px 34px; font: inherit; font-size: 14px;
+  color: var(--text); caret-color: var(--accent);
+  background: var(--surface); border: 1px solid var(--divider); border-radius: 0;
+}
+.search input:hover { border-color: color-mix(in srgb, var(--text) 45%, transparent); }
+.search input:focus-visible { border-color: var(--accent); outline-offset: 0; }
+
+.switch { display: flex; border: 2px solid var(--divider); }
+.switch button, .themebtn {
+  font: inherit; font-weight: var(--heading-weight); font-size: 12px;
+  letter-spacing: .04em; text-transform: uppercase;
+  padding: 8px 14px; border: 0; background: transparent; color: var(--text); cursor: pointer;
+}
+.switch button + button { border-left: 2px solid var(--divider); }
+.switch button:hover:not([aria-pressed="true"]), .themebtn:hover { background: var(--box-hover); color: var(--accent-700); }
+.switch button[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
+.themebtn {
+  display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; padding: 0; border: 2px solid var(--divider); flex: none;
+}
+.themebtn svg { width: 17px; height: 17px; }
+/* Shows the theme currently in force, as the design does. `aria-pressed` is the
+ * script's one output, and it means "dark" -- set from the stamped choice, or
+ * from the system when nothing is stamped. */
+.themebtn .i-moon, .themebtn[aria-pressed="true"] .i-sun { display: none; }
+.themebtn[aria-pressed="true"] .i-moon { display: block; }
+.langs { position: relative; }
+.langs select {
+  font: inherit; font-size: 12px; font-weight: var(--heading-weight);
+  text-transform: uppercase; letter-spacing: .04em;
+  padding: 8px 10px; border: 2px solid var(--divider);
+  background: transparent; color: var(--text); cursor: pointer; border-radius: 0;
+}
+
+/* ── hero and topic grid ─────────────────────────────────────────────────── */
+
+.hero { padding-top: 56px; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 64px; align-items: end; }
+.hero-kicker { color: var(--accent-700); letter-spacing: .12em; margin-bottom: 16px; }
+.hero-lead { font-size: 17px; margin: 0 0 8px; padding-bottom: 8px; }
+
+.goals { margin-top: 44px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.goal { background: var(--box); padding: 18px; border: 0; color: var(--text); display: block; }
+.goal:hover { background: var(--box-hover); color: var(--text); }
+.goal:hover .goal-num, .goal:hover svg { color: var(--accent); }
+.goal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
+.goal-head svg { width: 22px; height: 22px; color: var(--n600); transition: color .12s; }
+.goal-num { font-weight: var(--heading-weight); font-size: 12px; color: var(--n600); transition: color .12s; }
+.goal-title { font-weight: var(--heading-weight); font-size: 17px; margin-bottom: 6px; }
+.goal-sub { font-size: 13px; color: var(--n700); line-height: 1.35; }
+
+/* ── body: sticky contents beside the sections ───────────────────────────── */
+
+.body { padding-top: 56px; padding-bottom: 96px; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 56px; align-items: start; }
+.toc { position: sticky; top: 80px; }
+.toc-title { margin-bottom: 12px; letter-spacing: .1em; }
+.toc nav { display: flex; flex-direction: column; }
+.toc a {
+  border-left: 2px solid var(--divider); border-bottom: 0;
+  padding: 7px 12px; font-size: 13.5px; line-height: 1.25; color: var(--text);
+}
+.toc a:hover { background: var(--box-hover); color: var(--accent-700); border-left-color: var(--accent); }
+.toc a[aria-current="true"] { color: var(--accent-700); border-left-color: var(--accent); background: var(--box); }
+
+main { min-width: 0; }
+.helpsec { scroll-margin-top: 84px; }
+.helpsec + .helpsec { margin-top: 64px; }
+.sec-head {
+  border-top: 2px solid var(--divider); padding-top: 12px; margin-bottom: 28px;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+}
+.empty { display: none; border: 2px solid var(--divider); padding: 24px; font-size: 15px; }
+
+/* ── content pieces ──────────────────────────────────────────────────────── */
+
+.box { background: var(--box); padding: 18px; }
+.figure { float: right; width: 320px; margin: 0 0 20px 28px; }
+.figure.mac { width: 236px; }
+.figure img { width: 100%; background: var(--box); padding: 8px; }
+.figure figcaption { margin-top: 6px; font-size: 13.5px; color: var(--n700); }
+
+.note {
+  margin: 16px 0; max-width: 66ch;
+  border-left: 2px solid var(--accent); padding: 2px 0 2px 16px;
+}
+.after-table { margin-top: 16px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 4px; }
+th {
+  text-align: left; font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--text) 60%, transparent);
+  padding: var(--s2); border-bottom: 2px solid var(--divider); white-space: nowrap;
+}
+td { padding: var(--s2); border-bottom: 1px solid var(--divider); vertical-align: top; }
+tbody tr:hover { background: var(--box); }
+.yes, .no { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.yes { color: var(--stop); font-weight: 600; }
+.no { color: var(--n600); }
+.yes svg, .no svg { width: 15px; height: 15px; flex: none; }
+.ink-ok { color: var(--accent-700); }
+.ink-warn { color: var(--warn); }
+.ink-stop { color: var(--stop); }
+.ink-off { color: var(--n700); }
+.muted { color: var(--n700); }
+
+.grid { display: grid; gap: 10px; margin: 24px 0; }
+.grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.grid .box { padding: 20px; }
+.card-title { font-weight: var(--heading-weight); font-size: 15px; margin-bottom: 6px; }
+.card-body { font-size: 14px; line-height: 1.5; }
+.step-num { font-weight: var(--heading-weight); font-size: 22px; color: var(--accent); margin-bottom: 14px; }
+.step-sub { font-size: 13px; color: var(--n700); }
+
+.iconcard .trayicon { margin-bottom: 18px; }
+.iconcard-name { font-weight: var(--heading-weight); font-size: 15px; }
+.iconcard-means { font-size: 14px; margin: 4px 0 10px; }
+.iconcard-do { font-size: 12.5px; color: var(--n600); }
+.iconcard-do.warn { color: var(--warn); font-weight: 600; }
+.iconcard-do.stop { color: var(--stop); font-weight: 600; }
+
+/* The tray icon takes the surface's ink -- the taskbar's in the product, the
+ * page's here -- which is what `currentColor` in the generated SVG is for. It
+ * only works because the SVG is inlined; through an `<img>` it would resolve
+ * against the image's own document and come out black in both themes. */
+.trayicon { display: block; width: 40px; height: 40px; color: var(--text); }
+
+.msg { background: var(--box); padding: 18px; margin: 16px 0; max-width: 66ch; }
+.msg-line { font-size: 15px; line-height: 1.5; }
+.msg-key {
+  display: grid; grid-template-columns: auto 1fr; gap: 8px 12px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--box-line);
+  font-size: 12.5px; color: var(--n700);
+}
+.msg-key b { font-weight: var(--heading-weight); }
+
+/* ── the "Technically" disclosures ───────────────────────────────────────── */
+
+details.tech { background: var(--box); margin: 24px 0; }
+details.tech summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center;
+  gap: 10px; padding: 11px 16px;
+}
+details.tech summary::-webkit-details-marker { display: none; }
+details.tech summary:hover { background: var(--box-hover); }
+.chev { display: inline-block; transition: transform .12s; color: var(--accent); font-size: 11px; }
+details.tech[open] .chev { transform: rotate(90deg); }
+.tech-label {
+  font-weight: var(--heading-weight); font-size: 11px;
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.tech-hint { font-size: 13px; color: var(--n600); }
+.tech-body {
+  border-top: 1px solid var(--box-line); padding: 14px 16px 4px;
+  font-size: 14px; line-height: 1.55;
+}
+.tech-body p { max-width: 74ch; }
+
+/* ── platform split ──────────────────────────────────────────────────────── */
+
+.os-win [data-os="mac"], .os-mac [data-os="win"] { display: none; }
+
+footer { border-top: 2px solid var(--divider); }
+footer .wrap {
+  display: flex; justify-content: space-between; gap: 24px;
+  padding-block: 24px; font-size: 12.5px; color: var(--n700);
+}
+
+/* ── narrow ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 1040px) {
+  .hero { grid-template-columns: 1fr; gap: 24px; }
+  .goals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .body { grid-template-columns: 1fr; gap: 32px; }
+  .toc { position: static; }
+  .toc nav { display: none; }
+  .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  /* Only here: `display:block` makes a table shrink-wrap instead of filling its
+   * column, so at desktop widths it would leave every table a different width. */
+  table { display: block; overflow-x: auto; }
+  .wrap { padding: 0 20px; }
+  header .wrap { flex-wrap: wrap; gap: 12px; }
+  .search { order: 3; max-width: none; flex-basis: 100%; }
+  .goals, .grid-2, .grid-4 { grid-template-columns: 1fr; }
+  .figure, .figure.mac { float: none; width: 100%; margin: 0 0 20px; }
+}
+
+@media print {
+  header, .toc, .goals, .themebtn, .switch, .search { display: none; }
+  .os-win [data-os="mac"], .os-mac [data-os="win"] { display: revert; }
+  details.tech[open] .tech-body { display: block; }
+}

@@ -1,0 +1,28 @@
+{
+  "note": "Same immutable id, new displayName. Sync matches on id (identity attr), renames Samba object, role marker + SID unchanged.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA3",
+      "value": [
+        {
+          "id": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
+          "displayName": "corp-realm-gate",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null
+        }
+      ]
+    }
+  }
+}

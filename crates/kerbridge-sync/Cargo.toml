@@ -1,0 +1,28 @@
+[package]
+name = "kerbridge-sync"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kerbridge-core = { workspace = true, features = ["tls", "password"] }
+# The subject encoding, so what sync writes is what the broker's verifier emits.
+kerbridge-idp.workspace = true
+kerbridge-notify.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+tokio.workspace = true
+reqwest.workspace = true
+ldap3.workspace = true
+
+# Graph URLs are parsed rather than pattern-matched: every one after the first is
+# a string the *server* chose.
+url.workspace = true
+rustls.workspace = true
+
+# sync is the only writer of `sAMAccountName`, so it is the only component that
+# needs Unicode normalization
+unicode-normalization.workspace = true

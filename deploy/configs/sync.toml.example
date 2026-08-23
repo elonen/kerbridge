@@ -1,0 +1,78 @@
+# Sync: what the mirror does, and how it names what it creates. Which cloud IdP
+# it reads, and with which credentials, is per source -- idp_<source>.toml.
+#
+# A commented-out line sets nothing. `#some_option = 8` means that KerBridge
+# uses 8, the default for that option. `#some_option =`, with no value, means
+# that the option has no default: the comment above the line says what
+# KerBridge does instead, and shows an example. main.toml gives the full rule.
+
+# The deadline bounds one cycle: a read that overruns it is discarded rather
+# than planned from, so keep it below the interval.
+#interval_seconds = 300
+#cycle_deadline_seconds = 240
+
+# Which cloud-IdP attribute a *newly created* account's login name
+# (sAMAccountName) is minted from. Existing accounts are never renamed by a
+# change here.
+#
+#   displayname     every whitespace token of the display name, joined by dots
+#                   ("Jane Doe" -> jane.doe) -- what users see as
+#                   REALM\jane.doe in Explorer, on file ownership and in ACL
+#                   dialogs. Not unique, so colliding names get a short
+#                   object-id suffix. Supports Unicode names.
+#
+#   email_username  the part of the mail address before the @. Usually
+#                   hand-made, already ASCII, and what the person answers to.
+#                   Reads Email, then Other emails, then the UPN -- an account
+#                   invited from another tenant has its address in Other emails,
+#                   not Email.
+#
+#   upn             the part of the UPN before the @. Unique tenant-wide, so it
+#                   collides least. Least readable, and see the caveat below.
+#
+# Each falls back to the others when its attribute yields no usable name --
+# absent, or holding nothing a sAMAccountName may keep ("...", "!!!").
+#
+# Why displayname and not upn by default? An invited Entra account's UPN carries
+# the source domain in its local part (alice.anderson_gmail.com#EXT#@...). The
+# #EXT# is stripped, but nothing distinguishes anderson_gmail.com from a
+# surname, so that account becomes EXAMPLE\alice.anderson_gmail.
+#sam_source = "displayname"
+
+# Whether a live account's login name follows a rename in the cloud IdP.
+#
+#   true (default)  a rename there renames the account here on the next cycle,
+#                   so someone who changes their name stops finding the old one
+#                   on their files. The cost: the login name is their Kerberos
+#                   principal, so the renamed user signs out and back in once.
+#
+#   false           login names are set once, at creation, and never move again.
+#                   Rename by hand with `kbmanage cloud rename`, which lets you
+#                   choose when it happens.
+#
+# `kbmanage cloud rename <user> --to <name>` pins a name against either setting,
+# for the case where the derived name is legal but wrong; `kbmanage cloud unpin
+# <user>` hands it back. More: docs/setup/rough-edges.md.
+#automatic_sam_renames = true
+
+# Log the plan every cycle and apply nothing. The safe way to watch a new
+# deployment before letting it write the directory.
+#dry_run = false
+
+# How far ahead of a device grant's effective deadline to warn: `off`, or a
+# number of days. Off by default because the event names machine labels, and an
+# operator should choose to send those to whatever channel they wired up rather
+# than discover afterwards that they did.
+#device_grant_notify = "off"
+
+# How far ahead of a source's stated Graph credential expiry to start warning.
+# Local policy, not a portal value -- the expiry date itself is per source, in
+# idp_<source>.toml.
+#credential_warn_before_days = 30
+
+# What each cycle changed in the directory: the tally, and the object every
+# applied write touched. A separate file on a separate mount from the other two
+# audit logs -- see the reason in issuerd.toml. An account created here outlives
+# any ticket or grant, and nothing else says who was given one. `none` keeps the
+# console line and nothing else.
+#audit_log_file = "/var/log/kerbridge/sync/audit.log"

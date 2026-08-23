@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = [
+    "kerbridge-client",
+    "kerbridge-agent-macos",
+    "kerbridge-agent-windows",
+]
+
+default-members = ["kerbridge-client"]
+
+# Cargo honors profiles only at a workspace root, so the release settings for
+# the agents and the CLI have to live here.
+[profile.release]
+strip = "symbols"
+lto = "thin"

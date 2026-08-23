@@ -1,0 +1,64 @@
+#!/bin/sh
+# The drop-in, then the marked include line, then the directory -- and that
+# order is mandatory. A dangling `includedir` breaks every krb5
+# binary on the host, so the directory may only go after the line that names
+# it, and the line may only go after the file it points at.
+set -e
+
+KRB5_CONF=/etc/krb5.conf
+KRB5_CONF_D=/etc/krb5.conf.d
+MARKER='# Added by kerbridge-issuerd. Removed again when this package is purged.'
+INCLUDE="includedir $KRB5_CONF_D/"
+
+case "$1" in
+    purge)
+        # 1. the drop-in `kbsetup realm` generated
+        rm -f "$KRB5_CONF_D/kerbridge.conf"
+
+        # 2. the marked line, and the marker comment above it. Written by this
+        #    package and greppable, so an operator's own include line -- or one
+        #    a later version of krb5-config starts shipping -- is left alone.
+        if [ -f "$KRB5_CONF" ] && grep -qxF "$INCLUDE" "$KRB5_CONF"; then
+            tmp=$(mktemp "$KRB5_CONF.XXXXXX")
+            awk -v marker="$MARKER" -v include="$INCLUDE" '
+                $0 == marker { held = $0; next }
+                $0 == include && held != "" { held = ""; next }
+                held != "" { print held; held = "" }
+                { print }
+                END { if (held != "") print held }
+            ' "$KRB5_CONF" > "$tmp"
+            chmod 0644 "$tmp"
+            mv "$tmp" "$KRB5_CONF"
+            # A file that now holds nothing but the blank line the append put
+            # there is a file this package created. Leaving an empty
+            # /etc/krb5.conf behind would be a leftover; leaving one with an
+            # operator's own content in it is the whole point of the grep.
+            if [ ! -s "$KRB5_CONF" ] || ! grep -q '[^[:space:]]' "$KRB5_CONF"; then
+                rm -f "$KRB5_CONF"
+            fi
+        fi
+
+        # 3. the directory, only now, and only if nothing else put anything in
+        #    it. No release owns it, so nothing else is expected to -- but a
+        #    second tool's drop-in is exactly what must not be deleted.
+        [ -d "$KRB5_CONF_D" ] && rmdir "$KRB5_CONF_D" 2>/dev/null || true
+
+        # This daemon's own halves of the two shared parents. The parents
+        # themselves are kerbridge-config's, and dpkg configures it first and
+        # therefore purges it last.
+        [ -d /var/log/kerbridge/issuerd ] && rmdir /var/log/kerbridge/issuerd 2>/dev/null || true
+        [ -d /var/lib/kerbridge/issuerd ] && rmdir /var/lib/kerbridge/issuerd 2>/dev/null || true
+        ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

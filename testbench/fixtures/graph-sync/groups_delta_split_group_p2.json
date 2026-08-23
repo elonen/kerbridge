@@ -1,0 +1,38 @@
+{
+  "note": "Large group slice 2 of 2.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$skiptoken=split-2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-SPLIT",
+      "value": [
+        {
+          "id": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
+          "displayName": "onprem-realm-users",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null,
+          "members@delta": [
+            {
+              "@odata.type": "#microsoft.graph.group",
+              "id": "a1d00007-aaaa-bbbb-cccc-000000000007"
+            },
+            {
+              "@odata.type": "#microsoft.graph.group",
+              "id": "c1c00008-aaaa-bbbb-cccc-000000000008"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

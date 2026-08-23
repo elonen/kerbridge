@@ -1,0 +1,60 @@
+# Caddy in front of kerbridge-broker, on the broker's own host.
+#
+# The broker serves plain HTTP and refuses any listen address that is not on
+# the loopback interface -- that is enforced in the program, so TLS terminates
+# here, on this machine, and cannot terminate on another one.
+#
+# This is the Docker Compose deployment's own site body with the upstream written out
+# rather than interpolated. Both come from deploy/caddy/, which is what the
+# stack test exercises end to end.
+#
+# Copy to /etc/caddy/Caddyfile, or import it from one, and replace the address.
+
+kerbridge.example.site {
+	# Only the documented routes are proxied. Anything else never reaches the
+	# broker at all, so this list has to move whenever the broker's router
+	# does: a route it omits is a 404 at the edge that no test reaching the
+	# broker directly can see. The first segment is the source name, from
+	# main.toml's `sources`. `/config` without a segment is the address an SRV
+	# record can express; the broker answers it only where one source makes
+	# the answer unambiguous.
+	@api path_regexp ^(/config|/[A-Za-z0-9._-]+/(config|ticket|nonce|devices)(/[^/]+)?)$
+	handle @api {
+		# A ticket response carries a credential cache; a request carries a
+		# bearer token. Neither belongs in a log: Caddy logs no body by
+		# default, and a `log` directive added here must not start.
+		request_body {
+			max_size 16KB
+		}
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# Everything else. A person who types this address into a browser gets a
+	# 404 by default; point `root` at a page of your own if you would rather
+	# they got an explanation.
+	handle {
+		respond 404
+	}
+}
+
+# Connection deadlines. Caddy sets none of these by default -- a connection may
+# take as long as it likes to send a request, and an idle one is kept for five
+# minutes. That is reasonable for a public web server and poor here: this is
+# the deployment's only internet-facing listener, every connection costs a TLS
+# handshake, and the sole legitimate client makes a couple of requests a day.
+#
+# Put this in the global options block at the top of your Caddyfile.
+#
+#	{
+#		servers {
+#			timeouts {
+#				read_header 10s
+#				read_body 30s
+#				idle 60s
+#			}
+#		}
+#	}
+#
+# `write` is deliberately absent: the response comes from the broker, and any
+# write deadline short enough to matter against an attacker would cut off a
+# legitimate slow issuance instead.

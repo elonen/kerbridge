@@ -1,0 +1,34 @@
+{
+  "note": "Large group slice 1 of 2: same group id repeats on the next page with more members. Merge locally; never treat one slice as the full member set.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$select=id,displayName,securityEnabled,mailEnabled,groupTypes,membershipRule,membershipRuleProcessingState,onPremisesSyncEnabled,members"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.nextLink": "https://graph.microsoft.com/v1.0/groups/delta?$skiptoken=split-2",
+      "value": [
+        {
+          "id": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
+          "displayName": "onprem-realm-users",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null,
+          "members@delta": [
+            {
+              "@odata.type": "#microsoft.graph.user",
+              "id": "33334444-dddd-5555-eeee-6666ffff7777"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

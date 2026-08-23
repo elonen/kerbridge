@@ -1,0 +1,394 @@
+# Tradução de content/en.toml para o português. As chaves devem corresponder
+# a ele exatamente.
+#
+# Não traduza aqui os textos de botões ou títulos do aplicativo: eles vêm
+# direto das tabelas de strings do cliente, e portanto já estão em português
+# e já conferidos. Se você estiver prestes a escrever o nome de um botão neste
+# arquivo, use em vez disso a referência `{{ s.* }}` do modelo.
+
+language_name = "Português"
+page_title = "NAS Access — ajuda ao usuário"
+page_description = "Como o NAS Access abre suas unidades de rede do trabalho com a conta na nuvem da sua organização, e o que cada parte dele significa."
+
+# ── moldura ──────────────────────────────────────────────────────────────────
+help_word = "Ajuda"
+search_placeholder = "Pesquisar nesta página…"
+search_matches = "{n} blocos encontrados"
+search_empty = "Nada nesta página corresponde à busca. Tente uma palavra mais curta — ou o nome de um botão."
+on_this_page = "Nesta página"
+topics = "Tópicos"
+platform_group = "Escolha sua plataforma"
+language_group = "Escolha um idioma"
+theme_toggle = "Alternar entre claro e escuro"
+technically = "Tecnicamente"
+part = "PARTE {n}"
+glossary = "GLOSSÁRIO"
+finally = "POR FIM"
+yes = "Sim"
+no = "Não"
+footer_help = "ajuda ao usuário"
+
+# ── cabeçalhos das tabelas ───────────────────────────────────────────────────
+th_headline = "Título"
+th_means = "O que significa"
+th_means_here = "Significa aqui"
+th_todo = "O que fazer"
+th_line = "Linha"
+th_says = "O que diz"
+th_plain = "Em termos simples"
+th_value = "Valor"
+th_button = "Botão"
+th_item = "Item"
+th_does = "O que faz"
+th_word = "Palavra"
+th_symptom = "Sintoma"
+th_cause = "Causa provável"
+th_will_hear = "Avisa sobre"
+th_wont_hear = "Não avisa sobre"
+th_ends_access = "Encerra seu acesso às unidades"
+th_ends_grant = "Encerra a autorização deste dispositivo"
+th_ends_signin = "Encerra seu login no navegador"
+
+# ── abertura ─────────────────────────────────────────────────────────────────
+hero_kicker = "Ajuda ao usuário"
+hero_title = "Unidades de rede, sem senha."
+hero_lead = "O NAS Access conecta você com a conta na nuvem da sua organização e usa esse login para abrir suas unidades de rede do trabalho. Uma vez em execução, você abre suas unidades como sempre abriu. Não há senha separada para lembrar nem nada para digitar."
+
+# ── sumário ──────────────────────────────────────────────────────────────────
+# A ordem aqui é a ordem da página. `id` corresponde a uma seção do modelo —
+# não os altere.
+goals = [
+  { id = "purpose",       title = "Para que serve este aplicativo", sub = "Por que ele existe e o que ele faz" },
+  { id = "icon",          title = "O ícone",                        sub = "Quatro estados, num relance" },
+  { id = "panel",         title = "A tela de status",               sub = "Cada linha, explicada" },
+  { id = "buttons",       title = "Os botões",                      sub = "O que cada um faz — e o que não faz" },
+  { id = "settings",      title = "Configurações",                  sub = "Básico, Avançado, Sobre" },
+  { id = "notifications", title = "Notificações",                   sub = "O que ele avisa, e quando" },
+  { id = "trouble",       title = "Quando algo não funciona",       sub = "Sintomas, causas, soluções" },
+  { id = "answers",       title = "Respostas rápidas",              sub = "As perguntas que as pessoas fazem" },
+  { id = "words",         title = "As palavras que este aplicativo usa", sub = "Nove termos, definidos" },
+  { id = "support",       title = "Pedir ajuda",                    sub = "O que ter em mãos" },
+]
+
+# ── Parte 1 ──────────────────────────────────────────────────────────────────
+shot_alt_win = "A tela de status do NAS Access aberta acima da área de notificação do Windows, mostrando Acesso OK."
+shot_alt_mac = "O menu do NAS Access aberto na barra de menus do macOS, mostrando Acesso OK."
+shot_caption_win = "Se isto parece familiar, você está no lugar certo — ele abre a partir da área de notificação."
+shot_caption_mac = "Se isto parece familiar, você está no lugar certo — ele abre a partir da barra de menus."
+
+two_worlds_title = "Dois sistemas que não se encontram por conta própria"
+two_worlds = [
+  "<strong>Sua conta vive na nuvem.</strong> É a mesma conta que você usa para o e-mail e para entrar nos sites do trabalho. Sua organização a administra lá.",
+  "<strong>Seus arquivos vivem no seu prédio.</strong> Eles ficam em um servidor de arquivos — a máquina de onde vêm suas unidades de rede e pastas compartilhadas. Esse servidor é antiquado em matéria de segurança, de propósito, e nunca ouviu falar da nuvem.",
+  "Deixados sozinhos, os dois não conseguem concordar que você é você.",
+]
+
+gobetween_title = "O NAS Access é o intermediário"
+gobetween_lead = "O NAS Access converte seu login na nuvem em um passe que o servidor de arquivos entende e aceita."
+
+worth_knowing_title = "Três coisas que vale a pena saber"
+worth_knowing = [
+  "<strong>O passe tem prazo de validade.</strong> Normalmente, a maior parte de um dia de trabalho. Isso é normal e proposital — é o que permite à sua organização retirar o acesso quando precisa.",
+  "<strong>O NAS Access obtém discretamente um passe novo mais ou menos na metade do caminho</strong>, muito antes de o antigo vencer. Em um dia comum, você nunca vai ver isso acontecer.",
+  "<strong>Ele não pode renovar o que não tem.</strong> Se o aplicativo não conseguir um passe novo por conta própria, ele avisa <em>antes</em> de o atual vencer, para que você clique uma vez e siga em frente.",
+]
+
+tech_concepts_hint = "os termos precisos, para quem os quiser"
+tech_concepts = [
+  "Sua conta na nuvem é uma identidade <strong>OIDC</strong> em um <strong>provedor de identidade</strong> (Entra ID na maioria das implantações). A prova é um token de acesso OIDC, obtido por um fluxo authorization code com PKCE no navegador do sistema.",
+  "O <strong>broker</strong> é o serviço KerBridge que sua equipe de TI mantém. Ele valida o token e pede ao <strong>KDC</strong> que emita um <strong>Kerberos TGT</strong> genuíno (ticket-granting ticket) para a sua conta no <strong>reino</strong> local.",
+  "O \"bolso de passes\" é o <strong>cache de tickets</strong> da sua sessão de login — a sessão de logon do LSA no Windows, o cache <code>API:</code> do Heimdal no macOS. Colocar o ticket ali chama-se <strong>injeção</strong>. Depois disso, o cliente SMB comum faz Kerberos comum: usa o TGT para obter um ticket de serviço para o servidor de arquivos. Nenhuma parte do caminho de acesso aos arquivos é modificada.",
+  "O \"passe novo na metade do caminho\" é uma <strong>reinjeção</strong>, não uma renovação no nível do Kerberos. Segundo nossos testes, o Windows pede ao KDC que renove um TGT injetado pelo KerBridge e depois nunca instala o resultado, então o agente executa a troca inteira de novo e injeta um ticket novo no lugar.",
+]
+
+not_do_title = "O que ele não faz"
+not_do = [
+  "Ele não armazena sua senha. Ele nunca a vê.",
+  "Ele não lê nem altera seus arquivos, suas unidades ou suas letras de unidade.",
+  "Ele não substitui o login da sua organização. Ele o usa.",
+  "Ele não precisa estar em execução para você <em>usar</em> o computador — só para manter suas unidades de rede acessíveis.",
+]
+
+tech_at_rest_hint = "o que fica guardado, e onde"
+tech_at_rest = [
+  "<strong>Nenhum segredo em disco.</strong> O token de acesso é descartado no momento em que a troca de tickets termina. O refresh token fica apenas na memória do processo e morre com ele — nunca é gravado em disco nem no registro. O que fica em disco são a URL do broker, uma cópia em cache da configuração descoberta e o estado de autorização deste dispositivo. Ele nem sequer sabe de fato do seu NAS ou de outros serviços Kerberos; ele lida apenas com TGTs Kerberos.",
+]
+
+# ── Parte 2 ──────────────────────────────────────────────────────────────────
+icon_lead_win = "O NAS Access mora na área de notificação. O ícone é o status inteiro, num relance."
+icon_lead_mac = "O NAS Access mora na barra de menus. O ícone é o status inteiro, num relance."
+
+icon_states = [
+  { icon = "working",     headline = "cond_working",   name_win = "Sólido",                       name_mac = "Sólido",              todo = "Nada a fazer", tone = "" },
+  { icon = "not-started", headline = "cond_off",       name_win = "Esmaecido, sem marca",         name_mac = "Esmaecido, sem marca", todo = "Nada a fazer", tone = "" },
+  { icon = "will-stop",   headline = "cond_will_stop", name_win = "Esmaecido, triângulo âmbar",   name_mac = "Esmaecido, triângulo", todo = "Em breve, não agora", tone = " warn" },
+  { icon = "stopped",     headline = "cond_stopped",   name_win = "Esmaecido, círculo vermelho",  name_mac = "Esmaecido, círculo",   todo = "Sim — este precisa de você", tone = " stop" },
+]
+
+icon_notes = [
+  "<strong>Esmaecido não significa quebrado.</strong> A força total é reservada para <em>nada a ver aqui</em>, para que, quando houver algo a ver, tenha o contraste para ser visto.",
+  "As formas importam tanto quanto as cores — um triângulo e um círculo continuam diferentes para quem não distingue com facilidade o âmbar do vermelho.",
+]
+icon_mac_note = "Em um Mac, as mesmas quatro formas aparecem na cor única da barra de menus, porque é assim que a barra de menus desenha tudo."
+
+# ── Parte 3 ──────────────────────────────────────────────────────────────────
+panel_lead_win = "Clicar no ícone abre uma pequena tela. Ela mostra <strong>o que precisa de você</strong>, depois <strong>quem você é</strong>, depois <strong>por quanto tempo</strong> e, por fim, <strong>por quê</strong>, se algo estiver errado."
+panel_lead_mac = "Clicar no ícone abre o menu. Ele mostra <strong>o que precisa de você</strong>, <strong>quem você é</strong>, <strong>por quanto tempo</strong> e <strong>por que você precisa agir</strong>, se algo estiver errado."
+
+headline_title = "O título"
+headline_lead = "Uma linha, colorida, dando nome à situação."
+headlines = [
+  { headline = "cond_working",   tone = "ok",   means = "Suas unidades funcionam, e o aplicativo consegue mantê-las funcionando sozinho.", todo = "Nada." },
+  { headline = "cond_flaky",     tone = "warn", means = "Suas unidades funcionam agora. O aplicativo está com dificuldade para alcançar o servidor da sua equipe de TI.", todo = "Em geral, nada — costuma se resolver sozinho. Se persistir, mencione à TI." },
+  { headline = "cond_will_stop", tone = "warn", means = "Suas unidades funcionam, mas o acesso vai parar em um horário conhecido, e nada vai renová-lo sozinho.", todo = "Use o botão que oferece estender o acesso, quando for conveniente, antes desse horário." },
+  { headline = "cond_stopped",   tone = "stop", means = "Suas unidades não vão abrir.", todo = "Leia a explicação abaixo do título — ela diz o porquê e oferece o botão que resolve." },
+  { headline = "cond_off",       tone = "off",  means = "O aplicativo não está funcionando aqui e não é para estar — por exemplo, depois que você encerrou o acesso.", todo = "Nada, a menos que você queira o acesso de volta." },
+]
+headline_note = "<strong>Um aviso de expiração não é um defeito.</strong> Significa que o aplicativo ficou sem maneiras silenciosas de renovar — muitas vezes só porque você fechou a sessão do navegador, ou porque está chegando a hora de renovar a autorização do dispositivo. Seu acesso permanece intacto até o horário mostrado. Um clique restaura as renovações silenciosas."
+
+tech_condition_hint = "de onde o título é calculado"
+tech_condition = [
+  "O título exibe <code>Condition</code>, um entre <code>Working</code>, <code>Flaky</code>, <code>WillStop</code>, <code>Stopped</code> e <code>NotStarted</code>. É uma função pura de três fatos locais: se há um ticket <strong>utilizável</strong> em mãos, se esta máquina deveria estar funcionando aqui, e se existe uma <strong>fonte silenciosa</strong> para a próxima renovação.",
+  "Nenhum fato de rede entra no cálculo — uma queda do broker nunca move a condição. Ela aparece como um bloqueio, e como <code>Flaky</code> apenas depois de persistir.",
+]
+
+identity_title = "A linha de identidade"
+identity_signed_in = "A conta à qual pertencem o seu acesso — e tudo o que você salvar."
+identity_working_as = "Este computador foi configurado para funcionar como uma <em>conta diferente</em>."
+identity_note = "<strong>A segunda vale ler duas vezes.</strong> Em um computador assim, os arquivos que você salva nas unidades de rede ficam em nome dessa conta (muitas vezes compartilhada), não no seu. Se você entra ali, está respondendo pela máquina — não está obtendo o seu próprio acesso. Isso é normal em máquinas de build, quiosques e estações de trabalho compartilhadas, e sua equipe de TI configurou assim de propósito."
+
+tech_delegation_hint = "concessões de dispositivo"
+tech_delegation = [
+  "A máquina é <strong>delegada</strong> a obter TGTs para uma conta específica: um destino <code>grant_for</code> está configurado, então só uma concessão de dispositivo consegue obter um ticket, e os tickets carregam o principal do destino. Um login delegado <strong>autoriza o acesso como o usuário especificado</strong>, não como a pessoa que entra — o login prova quem está no teclado, não a conta com que a máquina alcança seus serviços Kerberos.",
+]
+
+# Uma locução completa: o cliente exibe os dias com `days()`, que concorda com
+# as palavras ao redor nos idiomas em que um número solto não concordaria.
+example_days = "6 dias"
+
+clocks_title = "Os relógios de expiração"
+clock_access = "Quando o passe atual vence. Em condições normais, um novo chega mais ou menos na metade, então isto é um número, não um prazo final."
+clock_grant = "A permissão deste dispositivo para dispensar o navegador está chegando ao fim. Entre uma vez pelo navegador antes disso e ela será estendida."
+clocks_note = "Os dois nunca aparecem como avisos contraditórios — se o acesso está de fato expirando, o relógio da autorização não é o que merece preocupação."
+
+explanation_title = "A explicação"
+explanation_lead = "Quando há algo a dizer, aparece em um bloco próprio, abaixo dos fatos. Estes são os que você pode ver:"
+blockers = [
+  { blocker = "blk_no_supply",            plain = "Hora de provar de novo que é você.", todo = "Entre pelo navegador. Leva poucos segundos." },
+  { blocker = "blk_network_error",        arg = "servidor", plain = "O aplicativo não consegue chegar ao servidor da sua equipe de TI.", todo = "Verifique se você está na rede ou na VPN. As unidades que você já tem abertas costumam continuar funcionando." },
+  { blocker = "blk_realm_unknown",        arg = "servidor", plain = "O aplicativo alcançou o servidor, mas ainda não recebeu a configuração dele.", todo = "Aguarde. Ele tenta de novo sozinho." },
+  { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "Uma etapa única de configuração deste computador ainda não foi feita.", todo = "Use o botão de configuração. Ele pede permissão de administrador e uma reinicialização." },
+  { blocker = "blk_ntlm_fallback",        os = "win", plain = "Um soluço conhecido do Windows depois que um passe vence. Suas unidades ficaram travadas.", todo = "Salve seu trabalho e então use o botão de reparo." },
+  { blocker = "blk_refused",              plain = "O servidor da sua organização não aceitou sua conta para estas unidades.", todo = "Não é algo que este computador possa resolver — fale com a TI." },
+  { blocker = "blk_no_grant",             arg = "conta", plain = "Uma máquina de conta compartilhada que ainda não foi autorizada.", todo = "Alguém com permissão para autorizá-la precisa entrar aqui." },
+  { blocker = "blk_grant_refused",        plain = "A política não permite que este dispositivo dispense o navegador.", todo = "Tentar de novo não vai ajudar. Fale com a TI." },
+  { blocker = "blk_no_broker_url",        plain = "Primeira execução — o aplicativo não sabe com qual servidor falar.", todo = "Digite nas Configurações o endereço que sua equipe de TI deu a você." },
+]
+
+tech_blockers_hint = "bloqueios versus ações"
+tech_blockers = [
+  "Estes são <strong>bloqueios</strong>: o que falta agora, imediato e sem inferências. São uma lista, não um ranking, porque vários podem ser verdadeiros ao mesmo tempo, e o modelo relata todos, não apenas o mais barulhento.",
+  "Bloqueios <em>explicam</em>; ações <em>resolvem</em>. Não são listas paralelas e nada se alinha entre elas. O bloqueio de servidor inalcançável funde inalcançável, TLS recusado, limite de requisições e 5xx, porque os quatro diferem na causa mas não no que você faz a respeito; a frase exata permanece na mensagem detalhada.",
+]
+
+details_lead = "Uma seção recolhida para quando alguém estiver ajudando você. Ela traz o reino, o horário de término do passe, o que a próxima renovação vai usar e quando o aplicativo vai tentar de novo."
+details_supply_lead = "A linha mais útil é a que diz o que a próxima renovação vai usar:"
+supply_grant = "Silenciosa. Este dispositivo é confiável por um número definido de dias."
+supply_wam = "Silenciosa. O próprio login do Windows faz o trabalho."
+supply_browser = "Silenciosa, enquanto o aplicativo continuar em execução."
+supply_none = "É por isso que o título avisa que o acesso está expirando."
+
+# ── Parte 4 ──────────────────────────────────────────────────────────────────
+conventions_title = "Duas convenções que vale a pena aprender"
+convention_ellipsis = "<strong>Um rótulo terminando em \"…\" significa que vem mais uma etapa</strong> — uma janela do navegador, ou uma pergunta que você terá de responder. Um botão sem as reticências apenas faz o que diz. Essa é a única diferença entre os dois botões de renovação: eles prometem o mesmo resultado, mas um deles vai abrir um navegador."
+convention_shield = "<strong>Um escudo em um botão significa que o Windows vai pedir permissão de administrador.</strong> Ele está sempre lá nesses botões, seja você administrador ou não."
+
+getting_access_title = "Obter acesso"
+getting_access = [
+  { action = "act_sign_in",        does = "Abre o navegador, conecta você e obtém um passe. A maneira comum de começar." },
+  { action = "act_sign_in_extend", does = "A mesma coisa, com outras palavras para quando você já tem acesso. Obtém um passe novo e restaura as renovações silenciosas." },
+  { action = "act_reinject",       does = "Obtém um passe novo <em>sem</em> navegador, usando o que o aplicativo já tem. Oferecido apenas quando pode realmente funcionar." },
+  { action = "act_cancel",         does = "Aparece apenas enquanto um login pelo navegador está sendo aguardado. Para de esperar por ele." },
+]
+getting_access_note = "Se a renovação sem navegador for oferecida, prefira-a — é a mais barata, e só é oferecida quando vai funcionar."
+
+doors_title = "Ir embora — as três portas separadas"
+doors_lead = "Elas soam parecidas, mas têm efeitos diferentes. Esta é a única tabela desta página que vale a pena marcar."
+tech_doors_hint = "o que cada porta realmente faz"
+tech_doors = [
+  "<strong>Sair do provedor de identidade</strong> encerra a sessão SSO na autoridade e descarta o refresh token em memória. Não pode desconectar você do próprio Windows; um aplicativo só consegue liberar a própria sessão.",
+  "<strong>Remover a autorização</strong> exclui <em>primeiro</em> a chave ECDSA P-256 não exportável da concessão de dispositivo do TPM deste dispositivo, e só então a revoga no broker — essa ordem é o que a faz funcionar offline.",
+  "<strong>Encerrar o acesso</strong> é uma limpeza do cache de tickets restrita ao reino — o TGT e os tickets de serviço deste reino apenas. Tickets de outros reinos ficam intactos, e é isso que a torna segura em um tenant com cloud trust. Uma sessão SMB já estabelecida continua servindo arquivos sobre um cache vazio, sem tráfego Kerberos, então nenhuma ação restrita a tickets pode prometer honestamente que as conexões terminam.",
+]
+
+fixing_title = "Consertar as coisas"
+fixing = [
+  { action = "act_enroll",              does = "Uma vez só, por computador. Ensina ao Windows o reino da sua organização. Precisa de permissão de administrador e de uma reinicialização depois." },
+  { action = "act_restart_workstation", does = "Destrava um estado de unidade de rede emperrado. <strong>Salve seu trabalho primeiro</strong> — todas as unidades de rede do computador se desconectam, não só estas." },
+  { action = "act_reenroll",            does = "A mesma configuração, aplicada por cima de uma parcial ou desatualizada. Em Configurações ▸ Avançado." },
+  { action = "act_unenroll",            does = "Remove a configuração por completo. Em Configurações ▸ Avançado." },
+]
+fixing_note = "Tudo o que não pode ser desfeito pergunta antes, diz exatamente o que vai fazer, e o padrão é cancelar. Você pode fechar essa janela e deixar o trabalho seguir — ele conta como foi."
+fixing_mac = "<strong>O macOS não precisa de nada disto.</strong> Ele encontra o reino sozinho, então não há etapa de configuração, nenhum pedido de administrador em lugar algum do produto e nenhum reparo — uma conexão que caiu simplesmente reconecta."
+
+authorizing_title = "Autorizar este dispositivo"
+authorizing = [
+  { action = "act_create_grant",       does = "Permite que este dispositivo obtenha passes sem login pelo navegador, por um número definido de dias." },
+  { action = "act_create_grant_again", does = "O mesmo, quando a autorização já existe — a maneira de estendê-la." },
+]
+authorizing_notes = [
+  "O que acontece de fato: uma chave é criada dentro do chip de segurança deste dispositivo. Ela não pode ser copiada para fora do dispositivo, cobre a sua conta apenas neste dispositivo, e sua equipe de TI pode revogá-la a qualquer momento.",
+  "Você vai receber um lembrete antes de ela expirar. Entrar uma vez pelo navegador a estende.",
+]
+
+tech_grant_hint = "a concessão de dispositivo"
+tech_grant = [
+  "Esta é uma <strong>concessão de dispositivo</strong> do KerBridge — uma chave ECDSA P-256 não exportável no TPM, criada pelo platform crypto provider do CNG no escopo do usuário, então não precisa de elevação e morre com o perfil. O broker guarda a chave pública correspondente e impõe seu próprio teto de dias, então baixar esse teto encurta todas as concessões em vigor.",
+]
+
+everything_else_title = "Todo o resto"
+everything_else = [
+  { action = "menu_open_status", does = "Traz a tela de status para a frente." },
+  { action = "menu_settings",    does = "Veja a seção de Configurações abaixo." },
+  { action = "menu_help",        does = "Esta página." },
+  { action = "act_open_log",     does = "Um registro técnico do que o aplicativo fez, para quando alguém estiver ajudando você. Aparece quando algo deu errado, e sempre em Configurações ▸ Avançado ▸ Solução de problemas." },
+  { action = "menu_quit",        does = "Para o aplicativo. Seu passe atual continua válido até vencer, e nada o renova depois disso." },
+]
+
+# ── Parte 5 ──────────────────────────────────────────────────────────────────
+settings_basic = [
+  "<strong>URL do broker</strong> — o servidor que sua equipe de TI deu a você. É a única coisa que o aplicativo precisa saber; todo o resto ele pergunta a esse servidor.",
+  "Se ele disser que a URL foi definida pela sua equipe de TI e não pode ser alterado aqui, foi definido centralmente, o que é normal em um computador gerenciado.",
+  "<strong>Abrir ao iniciar sessão</strong> — conecta você automaticamente depois do login, para que suas unidades estejam prontas quando você estiver. Recomendado.",
+]
+settings_wam = "<strong>Usar o login do Windows quando possível</strong> pula o navegador quando o próprio login do Windows pode responder por você em silêncio. Deixe ligado; se não puder ajudar, o aplicativo recorre ao navegador e nada se perde."
+settings_advanced = [
+  "<strong>Autorização</strong> — mostra como este dispositivo está autorizado e traz os botões que criam e removem a autorização. O campo para autorizar este dispositivo em nome de outra conta é para máquinas de conta compartilhada: deixe-o vazio para a sua própria conta.",
+  "Alterar esse campo decide para quem é a <em>próxima</em> autorização. Não muda nada na que já existe.",
+  "<strong>Configuração do Windows</strong> — se este computador conhece o reino da sua organização, mais os botões para refazer ou remover a configuração.",
+  "<strong>Solução de problemas</strong> — abre a pasta do registro.",
+]
+settings_mac_title = "No macOS"
+settings_mac = "Configurações é uma única folha com a URL do broker e a opção de abrir ao iniciar sessão, mais o par OK / Cancelar — as outras seções descrevem coisas que o macOS não tem."
+settings_about = "Versão e licença."
+
+# ── Parte 6 ──────────────────────────────────────────────────────────────────
+notify_lead = "O aplicativo fala raramente, e só sobre o que importa."
+notify = [
+  ["A restauração do acesso depois de um problema", "Renovações de rotina que funcionaram"],
+  ["O acesso prestes a parar, com cerca de vinte minutos de antecedência", "O relógio do passe correndo normalmente"],
+  ["O acesso ter parado", "Um problema breve de rede que se resolveu sozinho"],
+  ["A autorização do seu dispositivo perto da hora de renovar", "Uma máquina que está simplesmente desligada"],
+]
+notify_notes = [
+  "<strong>Nada se perde se um aviso passar despercebido.</strong> Uma notificação é uma interrupção, nunca um histórico — a tela de status sempre tem a verdade atual, e nada se degrada. Não há selo de não lidos nem lista do que você perdeu.",
+  "O lembrete de renovação espera até você estar de fato no teclado, em vez de disparar às três da manhã.",
+]
+
+# ── Parte 7 ──────────────────────────────────────────────────────────────────
+trouble_lead = "Comece pelo ícone, depois pela tela. Ela quase sempre dá nome ao problema e põe a solução em um botão."
+trouble = [
+  { symptom = "Uma unidade pede senha", cause = "O passe venceu ou nunca foi obtido", todo = "Abra a tela de status. Ela vai dizer que não há acesso, ou que o acesso está expirando." },
+  { symptom = "As unidades funcionavam e pararam no meio da sessão", os = "win", cause = "O soluço de NTLM do Windows", todo = "Use o botão de reparo, depois de salvar seu trabalho" },
+  { symptom = "A tela diz que não consegue alcançar o servidor", cause = "Fora da rede, ou VPN caída", todo = "Reconecte. Ele tenta de novo sozinho e se recupera." },
+  { symptom = "A TI acabou de dar acesso a uma pasta, e ela ainda não abre", cause = "Seu passe foi emitido antes da mudança", todo = "Renove — um passe carrega um retrato dos seus grupos, então é preciso um novo" },
+  { symptom = "Tudo parece bem, mas uma pasta é negada", cause = "As permissões daquela pasta", todo = "Não é problema do NAS Access — pergunte a quem é dono da pasta" },
+  { symptom = "A tela diz que um administrador precisa resolver", cause = "E precisa mesmo", todo = "Envie a mensagem à TI, exatamente como está escrita" },
+]
+
+error_title = "Como ler uma mensagem de erro"
+error_lead = "Toda mensagem detalhada é escrita em duas metades:"
+error_example_handle = "TLS untrusted:"
+error_before = "Antes dos dois-pontos"
+error_before_means = "um identificador técnico, posto ali de propósito para quem for ajudar você"
+error_after = "Depois deles"
+error_after_means = "o que aquilo significa para você"
+error_note = "Ao relatar um problema, cite a linha inteira — o identificador costuma ser tudo de que sua equipe de TI precisa."
+
+# ── Parte 8 ──────────────────────────────────────────────────────────────────
+answers = [
+  { q = "Preciso deixar o aplicativo sempre em execução?", a = "Sim, para manter as unidades acessíveis. Ele consome quase nada quando ocioso, e abrir ao iniciar sessão significa que você nunca pensa nele." },
+  { q = "Por que uma janela do navegador abre quando eu entro?", a = "Porque o seu login pertence à sua organização, não a este aplicativo. O aplicativo nunca vê sua senha — o navegador cuida dela, exatamente como faz nos seus outros sites de trabalho." },
+  { q = "Por que ele não me pediu nada hoje de manhã?", a = "Porque não precisou. Essa é a experiência pretendida." },
+  { q = "Fechei a tampa na hora do almoço.", a = "Tudo bem. Ele retoma de onde parou e obtém um passe novo se for preciso." },
+  { q = "Estou trabalhando de casa.", a = "O que normalmente alcança o seu servidor de arquivos — VPN ou outro meio — é o que o NAS Access também precisa. Se suas unidades funcionam em casa hoje, vão funcionar com o NAS Access." },
+  { q = "Minha senha fica armazenada em algum lugar?", a = "Não. O aplicativo nunca a recebe. Nada do que ele guarda em disco serve para entrar como você." },
+  { q = "A TI consegue ver o que eu abro?", a = "O NAS Access não observa seus arquivos. Seu servidor de arquivos mantém os próprios registros, como sempre manteve." },
+  { q = "Encerrei o acesso, mas uma unidade continua aberta.", a = "Seu sistema operacional está segurando uma conexão que já tinha. Feche a janela, desconecte a unidade ou reinicie. Nada de novo pode ser aberto." },
+]
+
+# ── Glossário ────────────────────────────────────────────────────────────────
+words = [
+  { word = "Acesso",            means = "Conseguir se autenticar no seu servidor de arquivos da rede" },
+  { word = "Entrar",            means = "Provar quem você é, no navegador" },
+  { label = "act_drop_ticket", means = "Jogar fora o passe atual das unidades de rede" },
+  { word = "Autorização",       means = "A permissão deste dispositivo para dispensar o navegador por um tempo, opcionalmente como outro usuário" },
+  { word = "Renovar",           means = "Obter um passe novo sem incomodar você" },
+  { word = "Reino",             means = "O nome do sistema local ao qual suas unidades pertencem, como <code>EXAMPLE.SITE</code>" },
+  { word = "Broker",            means = "O servidor da sua equipe de TI — aquele a quem o NAS Access pede um passe" },
+  { word = "Ticket",            means = "O próprio passe. Um termo técnico; só aparece nos detalhes do Kerberos" },
+  { word = "Este dispositivo",  means = "O computador à sua frente" },
+]
+
+# ── Pedir ajuda ──────────────────────────────────────────────────────────────
+support_lead = "Tenha isto em mãos — o aplicativo mostra tudo:"
+support_steps = [
+  { what = "O título", detail = "A linha colorida no topo da tela" },
+  { what = "A mensagem completa", detail = "Incluindo a parte antes dos dois-pontos" },
+  { what = "O reino", detail = "Nos detalhes do Kerberos — a primeira coisa que qualquer um vai perguntar" },
+  { what = "O registro", detail = "Configurações ▸ Avançado ▸ Solução de problemas ▸ abrir a pasta do registro" },
+]
+support_note = "Isso costuma bastar para resolver sem que ninguém toque no seu computador."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Daqui para baixo usa-se a sintaxe de tabelas do TOML, e um cabeçalho de
+# tabela captura toda chave solta que vier depois — então isto tem de ficar
+# por último. Acrescente chaves simples novas acima desta linha, não abaixo.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# As três portas. `access`/`grant`/`signin` alimentam a tabela de Sim/Não, e a
+# ordem aqui é a ordem da tabela e das explicações abaixo dela.
+[[doors]]
+action = "act_sign_out_idp"
+arg = "Entra"
+access = false
+grant  = false
+signin = true
+detail = "Fecha a sessão de login que este aplicativo deixou no seu navegador. É boa higiene em um computador compartilhado. Não toca nas suas unidades."
+
+[[doors]]
+action = "act_give_up_grant"
+access = false
+grant  = true
+signin = false
+detail = "Abre mão da permissão deste dispositivo de alcançar suas unidades <em>sem navegador</em>. Seu acesso de agora fica intacto — você só volta a entrar pelo navegador a cada vez. Não pode ser desfeito: autorizar de novo cria uma permissão nova em vez de restaurar a antiga."
+caveat = """
+Em uma máquina de conta compartilhada — uma cuja tela diz que ela funciona \
+como outra conta — não existe \"voltar ao navegador\". A autorização é a única \
+maneira de uma máquina dessas obter acesso, então removê-la significa que o \
+acesso vence e para. A confirmação diz exatamente quanto tempo você tem."""
+
+[[doors]]
+action = "act_drop_ticket"
+access = true
+grant  = false
+signin = false
+detail = "Joga fora o passe deste computador. É a porta do dia a dia — o que fazer quando você terminou por hoje, ou quando não precisa mais do acesso às unidades compartilhadas."
+caveat = """
+Uma ressalva honesta: <strong>as unidades de rede que você já tem abertas \
+podem continuar funcionando</strong> até que você as feche ou reinicie. É o \
+seu sistema operacional segurando uma conexão aberta, e nenhum aplicativo \
+pode prometer o contrário. Mas nada de novo pode ser aberto."""
+
+# Lucide paths, keyed by section. Not translated -- they are drawings.
+[goal_icons]
+purpose = '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>'
+icon = '<rect x="2" y="3" width="20" height="14"/><path d="M8 21h8"/><path d="M12 17v4"/>'
+panel = '<rect x="3" y="3" width="18" height="18"/><path d="M3 9h18"/><path d="M7 13h7"/>'
+buttons = '<path d="M9 9l5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 8-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/>'
+settings = '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>'
+notifications = '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'
+trouble = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'
+answers = '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
+words = '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+support = '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>'

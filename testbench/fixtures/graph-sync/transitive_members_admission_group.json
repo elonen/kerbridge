@@ -1,0 +1,62 @@
+{
+  "note": "transitiveMembers returns nested groups AS OBJECTS plus flattened users. Used as the admission cross-check; costs 5 resource units vs 3 for /members (throttling-limits).",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/4e8a1c9d-5f6b-4d7e-b8a9-001122334455/transitiveMembers?$select=id,displayName,userPrincipalName,accountEnabled,userType"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#directoryObjects",
+      "value": [
+        {
+          "@odata.type": "#microsoft.graph.user",
+          "id": "33334444-dddd-5555-eeee-6666ffff7777",
+          "displayName": "Alice Anderson",
+          "userPrincipalName": "alice.anderson@contoso.example",
+          "accountEnabled": true,
+          "userType": "Member"
+        },
+        {
+          "@odata.type": "#microsoft.graph.user",
+          "id": "b0b00004-aaaa-bbbb-cccc-000000000004",
+          "displayName": "Bob Nested",
+          "userPrincipalName": "bob.nested@contoso.example",
+          "accountEnabled": true,
+          "userType": "Member"
+        },
+        {
+          "@odata.type": "#microsoft.graph.user",
+          "id": "ca201005-aaaa-bbbb-cccc-000000000005",
+          "displayName": "Carol Cycle",
+          "userPrincipalName": "carol.cycle@contoso.example",
+          "accountEnabled": true,
+          "userType": "Member"
+        },
+        {
+          "@odata.type": "#microsoft.graph.group",
+          "id": "a1d00007-aaaa-bbbb-cccc-000000000007",
+          "displayName": "mid-group"
+        },
+        {
+          "@odata.type": "#microsoft.graph.group",
+          "id": "61000006-aaaa-bbbb-cccc-000000000006",
+          "displayName": "inner-devs"
+        },
+        {
+          "@odata.type": "#microsoft.graph.group",
+          "id": "c1c00008-aaaa-bbbb-cccc-000000000008",
+          "displayName": "cyc-a"
+        },
+        {
+          "@odata.type": "#microsoft.graph.group",
+          "id": "c1c00009-aaaa-bbbb-cccc-000000000009",
+          "displayName": "cyc-b"
+        }
+      ]
+    }
+  }
+}

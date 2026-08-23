@@ -1,0 +1,48 @@
+[package]
+name = "kerbridge-agent-windows"
+version = "0.9.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "kerbridge-agent"
+path = "src/main.rs"
+
+[dependencies]
+kerbridge-client = { path = "../kerbridge-client" }
+
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Controls",
+    "Win32_UI_Shell",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Recovery",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+] }
+
+# Rasterize app icon svg
+resvg = "0.47"
+
+# WinRT, for WAM (`wam.rs`): the "Use Windows sign-in" toggle needs
+# WebAuthenticationCoreManager, which windows-sys does not cover.
+windows = { version = "0.61", features = [
+    "Foundation",
+    "Security_Authentication_Web_Core",
+    "Security_Credentials",
+    "Win32_Foundation",
+    "Win32_System_Com",  # CoIncrementMTAUsage: WinRT needs an apartment
+    "Win32_System_WinRT", # IWebAuthenticationCoreManagerInterop: a desktop app has no CoreWindow
+] }
+windows-future = "0.2"
+
+[build-dependencies]
+# Embeds the app manifest (Common-Controls v6 for themed controls + PerMonitorV2 DPI)
+# via windres on the gnu target.
+embed-resource = "2"

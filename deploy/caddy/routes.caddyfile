@@ -1,0 +1,43 @@
+# The site body, shared by every TLS strategy and imported into each
+# Caddyfile.<strategy>. One copy: the strategies differ only in where the
+# certificate comes from, and routing is not theirs to vary.
+#
+# Caddy is the only public HTTP service and it terminates TLS, nothing more. It
+# does not validate tokens and does not synthesize identity headers, so no proxy
+# header setting is an authorization boundary here.
+
+# Only the documented routes are proxied. Anything else never reaches the broker
+# at all, so this list has to move whenever the broker's router does: a route it
+# omits is a 404 at the edge, in every deployment, that no test reaching the
+# broker directly can see. The first segment is the source name (main.toml's
+# `sources`, `[A-Za-z0-9._-]+`); `path` cannot express "one segment, then one of
+# these names", so this is a regexp. `/{source}/devices/*` is
+# `DELETE /{source}/devices/{id}`; a deeper path reaches the broker and is
+# refused there.
+# `/config` without a segment is the address an SRV record can express; the
+# broker answers it only where one source makes the answer unambiguous.
+@api path_regexp ^(/config|/[A-Za-z0-9._-]+/(config|ticket|nonce|devices)(/[^/]+)?)$
+handle @api {
+	# A ticket response carries a ccache; a request carries a bearer token.
+	# Neither belongs in a log.
+	request_body {
+		max_size 16KB
+	}
+	reverse_proxy {$BROKER_UPSTREAM}
+}
+
+# One static page, for the person who types this address into a browser -- an
+# address they saw in a dialog, or in a helper that is not working. A 404 there
+# reads as "the service is broken"; caddy/site/index.html says what the address
+# is for and what to do instead. Served by Caddy from a read-only mount, so it
+# reaches neither the broker nor any identity: exactly `/` matches, and every
+# other path still 404s.
+@root path /
+handle @root {
+	root * /etc/caddy/site
+	file_server
+}
+
+handle {
+	respond 404
+}

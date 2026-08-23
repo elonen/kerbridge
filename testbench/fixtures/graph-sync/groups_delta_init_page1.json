@@ -1,0 +1,67 @@
+{
+  "note": "Initial delta page 1. members@delta carries only {@odata.type,id} per docs. The two John Does are admission-group members because an account exists only for a user a selected group holds; they are the colliding-display-name pair, and holding them is what keeps that collision in the corpus. Gary Guest is deliberately in no group at all: he is the syncable-but-unheld case.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$select=id,displayName,securityEnabled,mailEnabled,groupTypes,membershipRule,membershipRuleProcessingState,onPremisesSyncEnabled,members"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#groups",
+      "@odata.nextLink": "https://graph.microsoft.com/v1.0/groups/delta?$skiptoken=ppqq-init-2",
+      "value": [
+        {
+          "id": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
+          "displayName": "onprem-realm-users",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null,
+          "members@delta": [
+            {
+              "@odata.type": "#microsoft.graph.user",
+              "id": "33334444-dddd-5555-eeee-6666ffff7777"
+            },
+            {
+              "@odata.type": "#microsoft.graph.user",
+              "id": "9f3a0002-aaaa-bbbb-cccc-000000000002"
+            },
+            {
+              "@odata.type": "#microsoft.graph.user",
+              "id": "8b210003-aaaa-bbbb-cccc-000000000003"
+            },
+            {
+              "@odata.type": "#microsoft.graph.group",
+              "id": "a1d00007-aaaa-bbbb-cccc-000000000007"
+            },
+            {
+              "@odata.type": "#microsoft.graph.group",
+              "id": "c1c00008-aaaa-bbbb-cccc-000000000008"
+            }
+          ]
+        },
+        {
+          "id": "a1d00007-aaaa-bbbb-cccc-000000000007",
+          "displayName": "mid-group",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null,
+          "members@delta": [
+            {
+              "@odata.type": "#microsoft.graph.group",
+              "id": "61000006-aaaa-bbbb-cccc-000000000006"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

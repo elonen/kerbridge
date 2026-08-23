@@ -1,0 +1,52 @@
+[package]
+name = "kerbridge-setup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "kbsetup"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+
+# `password` for the accounts this creates -- one generator with `kerbridge-sync`
+# rather than the shell one it used to share with nothing. No `tls` and no
+# `schema`: this drives the local Samba tools against `sam.ldb` and never opens
+# an LDAPS connection, and it asks the config structs for values rather than for
+# their shape.
+kerbridge-core = { workspace = true, features = ["password"] }
+
+# NO ldap3, deliberately, and it is worth stating rather than noticing. Everything
+# here runs as root on the domain controller against the database directly --
+# which is the one context in which `samba-tool` can write the schema partition
+# at all, and the context both of the measurements this depends on were taken in.
+# A crate that could open an LDAPS connection would invite half of this to be
+# done remotely, and the half that cannot be would then fail on a different host
+# than the half that can.
+
+# The `schemaIDGUID` the deny needs arrives base64-encoded, like every value
+# `ldbsearch` cannot print safely.
+base64.workspace = true
+
+# One `getgrnam_r`: the unix group through which an unprivileged daemon reads the
+# credential this writes. Same crate and same version `issuerd` resolves its own
+# two identities with; raw libc here would cost `main.rs` its `forbid(unsafe_code)`.
+nix = { version = "0.31", features = ["user"] }
+
+[build-dependencies]
+clap.workspace = true
+# `kbsetup.8` is generated from the command definition at build time, with no
+# committed copy -- so it cannot go stale, and it carries the full subcommand
+# detail a hand-written page would summarize and then stop matching.
+clap_mangen = "0.3"
+
+[dev-dependencies]
+# The fixture config sets are TOML documents, and two of the tests parse a
+# `Realm` on its own rather than a whole set. Already in the tree through
+# `kerbridge-core`.
+toml.workspace = true

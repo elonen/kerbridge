@@ -1,0 +1,119 @@
+# `nas1`, the bench file server -- almost certainly not the one you want.
+#
+# This is a joined Samba member in a container. It exists so the repository can
+# demonstrate and test the whole path -- Entra sign-in to a file opening over SMB
+# -- on one machine, with one command. It is a *demonstration*, not a product,
+# and KerBridge does not operate NAS boxes: see DESIGN.md @ Non-goals.
+#
+#   For anything real, build your own file server and join it to the realm.
+#   docs/setup/file-server.md is the procedure, and SETUP.md section 5 is the
+#   short version. A VM (or a physical box) running smbd on a normal
+#   filesystem is what production looks like. This container cuts corners
+#   that a real member must not: it regenerates smb.conf from environment on
+#   every start, rewrites nsswitch.conf with an unguarded sed that is only
+#   safe because the base image is bare, joins non-interactively from a
+#   password file, and lacks the realm container's read-only rootfs.
+#
+# It is deliberately NOT in compose.yaml, so a production deployment neither
+# runs it nor has to explain it. To bring it up alongside the stack, put both
+# files in COMPOSE_FILE -- `make up NAS=1` does exactly that, and so does:
+#
+#   COMPOSE_FILE=compose.yaml:compose.nas.yaml docker compose up -d
+#
+# Setting it that way rather than passing -f matters: every script here calls
+# plain `docker compose`, and the environment variable reaches all of them, so
+# seeding and teardown see the same file list the `up` did.
+#
+# Teardown: `docker compose down` WITHOUT this file in COMPOSE_FILE leaves the
+# container running and the network undeletable ("resource is still in use").
+# Measured on Compose 5.1.4. Either keep the variable set, or add
+# --remove-orphans, which does clean it up.
+
+services:
+  # The fixture takes the DC's published :445 for itself. Only one service can
+  # hold that port, and SMB clients cannot be pointed at another one -- so a
+  # deployment running nas1 is a deployment no external file server can join.
+  # That is the fixture's trade, not an oversight: it exists so the whole path
+  # works on one machine with one command, and a real member replaces it rather
+  # than joining it.
+  #
+  # `!override` because Compose otherwise *merges* published ports by key: a
+  # shorter list here adds nothing and leaves the DC's :445 in place, which then
+  # collides with nas1's at `up` -- measured, not assumed. The tag replaces the
+  # list outright, so compose.yaml's other publishes are repeated here. Keep the
+  # two in step.
+  realm:
+    ports: !override
+      - "${KDC_BIND:-0.0.0.0}:88:88/tcp"
+      - "${KDC_BIND:-0.0.0.0}:88:88/udp"
+      - "${LDAPS_BIND:-127.0.0.1}:636:636"
+      - "${MEMBER_BIND:-0.0.0.0}:389:389/udp"
+      - "${MEMBER_BIND:-0.0.0.0}:389:389/tcp"
+      # - "0.0.0.0:53:53/udp"   # see compose.yaml
+      # - "0.0.0.0:53:53/tcp"
+
+  nas1:
+    # A joined Samba member. The Windows client, holding the injected TGT, asks
+    # the DC (:88) for a cifs/nas1 ticket and presents it here (:445). The join
+    # and PAC traffic to the DC ride the bridge internally, so :445 is all this
+    # container needs published -- and it is the DC's own that it displaces.
+    build:
+      context: ..
+      dockerfile: deploy/member/Dockerfile
+    image: kerbridge-member
+    container_name: kerbridge-nas1
+    hostname: ${NAS_HOSTNAME:-nas1}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      realm:
+        condition: service_healthy
+    # nas1 resolves the DC (and its _ldap._tcp / _kerberos._tcp SRV
+    # records, needed to join) through the DC's own Samba DNS.
+    dns: ["${REALM_IPV4}"]
+    environment:
+      AD_REALM: ${AD_REALM}
+      AD_DNS_DOMAIN: ${AD_DNS_DOMAIN}
+      AD_NETBIOS_DOMAIN: ${AD_NETBIOS_DOMAIN}
+      NAS_HOSTNAME: ${NAS_HOSTNAME:-nas1}
+    secrets:
+      - source: realm_admin_password
+        target: /etc/kerbridge.secrets/generated/realm_admin_password
+    cap_drop: [ALL]
+    # Mirrors the realm container's measured minimum. SYS_ADMIN is for the
+    # security.NTACL xattr writes smbd makes on the share; the rest are for
+    # binding :445 and for smbd/winbindd switching uid per connection.
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, CHOWN, SYS_ADMIN]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - m1-samba:/var/lib/samba   # durable: machine account (secrets.tdb), idmap, winbind cache
+      - m1-share:/srv/share       # durable: the share contents
+    ports:
+      - "445:445/tcp"
+    networks:
+      kerbridge:
+        # Static for the same reason the DC's is: the container resolves its own
+        # name from an /etc/hosts entry Compose writes at creation time. The
+        # default assumes compose.yaml's default KERBRIDGE_SUBNET, and bench.env
+        # states NAS_IPV4 to match it -- a changed subnet moves both.
+        ipv4_address: ${NAS_IPV4:-172.28.0.20}
+        aliases: ["${NAS_HOSTNAME:-nas1}.${AD_DNS_DOMAIN}"]
+    healthcheck:
+      test: ["CMD", "net", "ads", "testjoin"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+volumes:
+  # nas1's durable state: its machine account and idmap tables.
+  #
+  # SET NAS_HOSTNAME ONCE, BEFORE THE FIRST JOIN. It becomes nas1's NetBIOS
+  # name and its machine account in m1-samba. Nothing refuses to start on a
+  # mismatch: change it afterwards and `net ads testjoin` simply fails, so the
+  # entrypoint rejoins under the new name and leaves the old machine account and
+  # its SPNs stranded in the directory. To rename, delete that account and wipe
+  # m1-samba.
+  m1-samba:
+  m1-share:

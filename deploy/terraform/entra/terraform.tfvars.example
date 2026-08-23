@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored, because
+# tenant_id is a real tenant identifier and CLAUDE.md forbids committing one.
+
+tenant_id = "aaaabbbb-0000-cccc-1111-dddd2222eeee"
+
+# The rest default to the KerBridge conventions. Uncomment only to change one.
+# scope_name                  = "access_as_user"
+# admission_group_name        = "KerBridge Allowed On-prem Users"
+# name_prefix                 = "KerBridge"
+# public_client_redirect_uris = ["http://localhost"]
+
+# Leave the sync secret out of Terraform state (recommended). Create it out of
+# band instead -- see README.md @ The sync credential. Set this true only if you
+# accept a sensitive state file in exchange for one fewer manual step.
+# create_sync_secret            = false
+# sync_secret_end_date_relative = "17520h"

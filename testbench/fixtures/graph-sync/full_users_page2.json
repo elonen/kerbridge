@@ -1,0 +1,42 @@
+{
+  "note": "Final page: no @odata.nextLink. A read is COMPLETE only when the last page arrived.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/users?$select=id,displayName,userPrincipalName,accountEnabled,userType,onPremisesSyncEnabled&$skiptoken=RFDU-page2-opaque"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users(id,displayName,userPrincipalName,accountEnabled,userType,onPremisesSyncEnabled)",
+      "value": [
+        {
+          "id": "b0b00004-aaaa-bbbb-cccc-000000000004",
+          "displayName": "Bob Nested",
+          "userPrincipalName": "bob.nested@contoso.example",
+          "accountEnabled": true,
+          "userType": "Member",
+          "onPremisesSyncEnabled": null
+        },
+        {
+          "id": "ca201005-aaaa-bbbb-cccc-000000000005",
+          "displayName": "Carol Cycle",
+          "userPrincipalName": "carol.cycle@contoso.example",
+          "accountEnabled": true,
+          "userType": "Member",
+          "onPremisesSyncEnabled": null
+        },
+        {
+          "id": "9e570010-aaaa-bbbb-cccc-000000000010",
+          "displayName": "Gary Guest",
+          "userPrincipalName": "gary_partner.example#EXT#@contoso.onmicrosoft.com",
+          "accountEnabled": true,
+          "userType": "Guest",
+          "onPremisesSyncEnabled": null
+        }
+      ]
+    }
+  }
+}

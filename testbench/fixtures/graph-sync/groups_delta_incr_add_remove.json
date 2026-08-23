@@ -1,0 +1,42 @@
+{
+  "note": "Removed membership uses \"@removed\":{\"reason\":\"deleted\"} INSIDE members@delta even though the user object still exists (delta-query-groups doc). Caveat: removal via deletion of the member object itself is NOT reported here - track user deletions from users delta.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#groups",
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA2",
+      "value": [
+        {
+          "id": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
+          "displayName": "onprem-realm-users",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null,
+          "members@delta": [
+            {
+              "@odata.type": "#microsoft.graph.user",
+              "id": "9f3a0002-aaaa-bbbb-cccc-000000000002"
+            },
+            {
+              "@odata.type": "#microsoft.graph.user",
+              "id": "33334444-dddd-5555-eeee-6666ffff7777",
+              "@removed": {
+                "reason": "deleted"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

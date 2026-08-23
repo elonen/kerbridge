@@ -1,0 +1,80 @@
+# TLS strategy: acme-dns (TLS_STRATEGY=acme-dns). Caddy obtains and renews the
+# certificate itself, proving control of {$BROKER_FQDN} by writing a TXT record
+# under it (ACME DNS-01) rather than by answering a connection. Nothing inbound
+# is required and no public address has to point here, so this is the strategy
+# for the common deployment: a broker on the LAN, reached over split-horizon DNS
+# or a VPN, with a publicly delegated zone it can nonetheless edit.
+#
+# What it costs: this host holds a credential that can alter that DNS zone, which
+# is precisely what TLS_STRATEGY=external exists to avoid. Scope the token to the
+# one zone -- better, to an _acme-challenge CNAME target zone, via
+# dns_challenge_override_domain -- and treat the host accordingly.
+#
+# Requires a provider module compiled into the image: Caddy plugins are
+# compile-time in Go and the stock image ships none. deploy/caddy/Dockerfile
+# links in CADDY_DNS_MODULE for this strategy only; run on the stock binary
+# instead, this file fails to adapt with `module not registered:
+# dns.providers.<name>` and Caddy never starts.
+{
+	# Log level, from CADDY_LOG_LEVEL. DEBUG is how a failing challenge gets
+	# debugged: the DNS solver logs the name it polls, the value it expects and
+	# the nameservers it asks, none of which appear at INFO -- where a wrong zone,
+	# a stray CNAME and a provider that wrote nothing all surface identically, as
+	# `timed out waiting for record to fully propagate ... last error: <nil>`.
+	# Nothing else about the log changes: still stderr, still JSON.
+	log {
+		level {$CADDY_LOG_LEVEL:INFO}
+	}
+	# No admin API: nothing external drives Caddy in this strategy, and the
+	# default localhost:2019 would sit in the broker's shared network namespace.
+	admin off
+	# Keep certificate automation, drop the :80 redirect vhost it would otherwise
+	# add. DNS-01 never uses :80, nothing publishes it, and the only client is
+	# the KerBridge client, which refuses plain http.
+	auto_https disable_redirects
+	import /etc/caddy/timeouts.caddyfile
+}
+
+https://{$BROKER_FQDN}:443 {
+	tls {
+		# The ACME directory, from ACME_CA. Always set, never empty -- an empty
+		# `ca` is a parse error. Point it at Let's Encrypt staging while debugging
+		# a challenge: failed validations against production count against a rate
+		# limit (5 per account, per hostname, per hour) that retries burn quickly,
+		# and staging issues from an untrusted root so nothing else is affected.
+		ca {$ACME_CA}
+		# The whole argument of the `dns` directive, from ACME_DNS_PROVIDER --
+		# substitution happens before parsing, so it expands to a bare provider
+		# name, a name plus credential, or a full block, as that provider's
+		# module documents. Empty is a parse error and Caddy refuses to start:
+		# under this strategy the credential is not optional.
+		dns {$ACME_DNS_PROVIDER}
+		# Wait this long after writing the record before checking for it at all.
+		# Not a safety margin -- it is what stops the check poisoning itself. A
+		# DNS API returns as soon as it has accepted the change, not when its own
+		# nameservers serve it (Route 53 takes ~20s to reach INSYNC), and the
+		# first check would otherwise run 2s later, be answered NXDOMAIN, and have
+		# that negative answer cached by the resolver for the zone's SOA minimum
+		# -- 15 minutes for Route 53. The record appears seconds afterwards and
+		# the check cannot see it, the attempt times out, the record is deleted
+		# and the retry re-poisons. Measured against Route 53; long enough for any
+		# provider that is not pathological, and it is spent before the two-minute
+		# check window opens rather than out of it.
+		propagation_delay 60s
+		# Propagation is checked against these resolvers rather than the host's.
+		# They must be public: an internal resolver serving a split horizon of
+		# this zone answers from the internal copy, never sees the challenge TXT
+		# record, and every renewal then fails the check it cannot pass.
+		#
+		# Setting this at all also switches the check's mode, which is not
+		# apparent from the name: with no `resolvers`, certmagic resolves the
+		# zone's authoritative nameservers and asks *them*, which cannot answer
+		# from a cache; with `resolvers`, it trusts these and skips that step
+		# (solvers.go, `checkAuthoritativeServers := len(m.Resolvers) == 0`). It is
+		# still the right setting here -- the fallback reads the host's resolver,
+		# which is the split-horizon one -- but it is why propagation_delay above
+		# is necessary rather than a nicety.
+		resolvers {$ACME_DNS_RESOLVERS}
+	}
+	import /etc/caddy/routes.caddyfile
+}

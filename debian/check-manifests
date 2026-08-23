@@ -1,0 +1,172 @@
+#!/bin/sh
+# Compare what the packaging says about itself with the tree that fills it.
+# `make test-fast` runs this. It needs no Docker, no network and no build, so a
+# defect that stops the deb build ten minutes in stops this in milliseconds.
+#
+# Six things. Two files must agree about each one, and nothing derives it.
+set -eu
+
+cd "$(dirname "$0")/.."
+
+fail() { echo "check-manifests: $*" >&2; exit 1; }
+
+# 1. Every program the workspace builds, shipped by exactly one package.
+#
+# `debian/rules` runs `dh_missing --fail-missing`, which refuses a file that the
+# build staged and no manifest claims. That check needs the build, and it looks
+# in one direction. This one also refuses a manifest that names a program the
+# workspace does not build.
+bins=$(cargo metadata --no-deps --format-version 1 | python3 -c '
+import json, sys
+names = sorted(
+    t["name"]
+    for p in json.load(sys.stdin)["packages"]
+    for t in p["targets"]
+    if "bin" in t["kind"]
+)
+print("\n".join(names))
+')
+[ -n "$bins" ] || fail "cargo metadata named no binary targets"
+
+for b in $bins; do
+    owners=$(grep -lxE "usr/s?bin/$b" debian/*.install || true)
+    count=$(echo "$owners" | grep -c . || true)
+    if [ "$count" = 0 ]; then
+        fail "the workspace builds $b, and no package ships it.
+    Add usr/sbin/$b (a daemon) or usr/bin/$b (a command) to one debian/*.install."
+    elif [ "$count" != 1 ]; then
+        fail "$count packages ship $b, and one must: $(echo "$owners" | tr '\n' ' ')"
+    fi
+done
+
+# The other direction. usr/libexec/ is not searched: prepare-state lives there,
+# and it is a shell program that no crate builds.
+for path in $(grep -hxE 'usr/s?bin/.*' debian/*.install || true); do
+    name=${path##*/}
+    echo "$bins" | grep -qx "$name" \
+        || fail "a manifest ships $path, and the workspace builds no $name"
+done
+
+# 2. The six binary packages. A name here is in the apt archive, in every
+# manifest, in the maintainer scripts and in the operator's own `apt purge`
+# line, so a rename must be deliberate.
+want="kerbridge kerbridge-broker kerbridge-config kerbridge-issuerd kerbridge-manage kerbridge-sync"
+got=$(sed -n 's/^Package: //p' debian/control | sort | tr '\n' ' ' | sed 's/ $//')
+[ "$got" = "$want" ] || fail "debian/control declares different packages:
+    want: $want
+    got:  $got"
+
+# 3. debhelper 13, and not 14. Compat 14 puts dh_installsysusers in the default
+# sequence, and this tree creates its unix accounts in the postinst instead.
+grep -qF 'debhelper-compat (= 13)' debian/control \
+    || fail "debian/control does not build against debhelper-compat (= 13)"
+
+# 4. One version, five manifests. Each one carries the string by hand: the
+# server workspace, the three client crates and the website. Nothing derives it
+# from another, and nothing else compares them.
+manifests="Cargo.toml
+client/kerbridge-client/Cargo.toml
+client/kerbridge-agent-windows/Cargo.toml
+client/kerbridge-agent-macos/Cargo.toml
+website/Cargo.toml"
+
+first=""
+for m in $manifests; do
+    v=$(sed -n 's/^version = "\(.*\)"/\1/p' "$m" | head -n 1)
+    [ -n "$v" ] || fail "$m states no version"
+    if [ -z "$first" ]; then
+        first=$v
+    elif [ "$v" != "$first" ]; then
+        fail "the manifests disagree about the version: Cargo.toml says $first, $m says $v"
+    fi
+done
+
+# 5. CHANGELOG.md, which a build turns into debian/changelog.
+#
+# The version of a package comes from `git describe`, never from a manifest, so
+# the newest section is not compared with the manifests above. It is compared
+# with the tag, and only where HEAD carries one -- a shallow checkout reaches no
+# tag and this then checks the grammar alone.
+newest=$(sed -n 's/^## //p' CHANGELOG.md | head -n 1)
+[ -n "$newest" ] || fail "CHANGELOG.md has no '## ' section"
+
+case $newest in
+    Unreleased) ;;
+    [0-9]*)
+        echo "$newest" | grep -qxE '[0-9][A-Za-z0-9.+~]*' \
+            || fail "CHANGELOG.md's newest section is '$newest', which dpkg refuses as a version" ;;
+    *) fail "CHANGELOG.md's newest section is '$newest'. Write a version, or 'Unreleased'." ;;
+esac
+
+if tag=$(git describe --tags --exact-match 2>/dev/null); then
+    [ "$newest" = "${tag#v}" ] \
+        || fail "HEAD is tagged $tag, and CHANGELOG.md's newest section is '$newest'.
+    A tagged build takes its notes from the section that names the version, and
+    finds none. Rename the section to ${tag#v}."
+fi
+
+# A `###` heading inside a section reaches debian/changelog unchanged, and that
+# file has no grammar for it.
+if sed -n '/^## /,$p' CHANGELOG.md | grep -q '^###'; then
+    fail "CHANGELOG.md holds a '###' heading inside a section. Below the preamble only '## ' and '- ' occur."
+fi
+
+# lintian refuses a changelog line longer than 80 columns. A bullet gains two
+# columns when it becomes '  * ', so the limit here is 78. make-changelog makes
+# the same check on the file it writes, which is the file lintian reads. This
+# check applies to the file a person edits.
+long=$(sed -n '/^## /,$p' CHANGELOG.md | awk 'length > 78 { printf "    %s\n", $0 }')
+[ -z "$long" ] || fail "CHANGELOG.md has lines over 78 columns, which lintian refuses once two more are added:
+$long"
+
+# 6. Each daemon starts the same program in both deployment methods.
+#
+# A unit's ExecStart= and its Compose counterpart's `entrypoint:` are the whole
+# argv on each side -- one absolute path, no flags and no wrapper -- so the two
+# must be the same string. A `command:` beside the entrypoint would append
+# arguments the unit does not have, so there must not be one.
+compose_field() { # <service> <key>, from the 4-space block under `services:`
+    awk -v svc="$1" -v key="$2" '
+        /^[^ #]/ { top = $0; sub(/:.*/, "", top); in_s = (top == "services"); cur = ""; next }
+        !in_s || /^[ ]*#/ || /^[ ]*$/ { next }
+        /^  [^ ]/ { cur = $1; sub(/:$/, "", cur); next }
+        cur == svc && index($0, "    " key ":") == 1 {
+            v = substr($0, length("    " key ":") + 1); sub(/^[ \t]+/, "", v); print v; exit
+        }
+    ' deploy/compose.yaml
+}
+
+for pair in issuer:kerbridge-issuerd broker:kerbridge-broker sync:kerbridge-sync; do
+    svc=${pair%%:*}
+    unit=debian/${pair#*:}.service
+
+    start=$(sed -n 's/^ExecStart=//p' "$unit")
+    [ -n "$start" ] || fail "$unit states no ExecStart="
+    echo "$start" | grep -qxE '/[^ ]+' \
+        || fail "$unit's ExecStart= is '$start'. This gate compares it with a
+    compose \`entrypoint:\` verbatim, so both sides must stay one absolute path."
+
+    entry=$(compose_field "$svc" entrypoint)
+    argv=${entry#[}
+    argv=${argv%]}
+    [ -n "$entry" ] && [ "$argv" != "$entry" ] \
+        || fail "compose.yaml declares no \`$svc\` service whose \`entrypoint:\` is a
+    one-element list. That service is $unit's counterpart, and this compares the two."
+
+    [ "$argv" = "$start" ] || fail "the two deployments start $svc differently:
+    $unit says $start
+    compose.yaml @ $svc.entrypoint says $argv"
+
+    [ -z "$(compose_field "$svc" command)" ] \
+        || fail "compose.yaml's \`$svc\` states a \`command:\` beside its entrypoint,
+    which appends arguments $unit's ExecStart= does not have."
+
+    # The unit's side alone. A compose service naming a path its image does not
+    # carry fails `make test-stack` at once; a unit naming one fails on an
+    # operator's host and nowhere else.
+    grep -qxF "${start#/}" debian/*.install \
+        || fail "$unit runs $start, and no debian/*.install ships that path."
+done
+
+echo "check-manifests: binaries, package names, compat, versions, CHANGELOG.md
+    and the two deployments' unit/entrypoint pairs all agree"

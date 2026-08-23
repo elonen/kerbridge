@@ -1,0 +1,87 @@
+{
+  "note": "Final init page: deltaLink replaces nextLink; a page never carries both.",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$skiptoken=ppqq-init-2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#groups",
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA1",
+      "value": [
+        {
+          "id": "61000006-aaaa-bbbb-cccc-000000000006",
+          "displayName": "inner-devs",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null,
+          "members@delta": [
+            {
+              "@odata.type": "#microsoft.graph.user",
+              "id": "b0b00004-aaaa-bbbb-cccc-000000000004"
+            }
+          ]
+        },
+        {
+          "id": "c1c00008-aaaa-bbbb-cccc-000000000008",
+          "displayName": "cyc-a",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null,
+          "members@delta": [
+            {
+              "@odata.type": "#microsoft.graph.group",
+              "id": "c1c00009-aaaa-bbbb-cccc-000000000009"
+            }
+          ]
+        },
+        {
+          "id": "c1c00009-aaaa-bbbb-cccc-000000000009",
+          "displayName": "cyc-b",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null,
+          "members@delta": [
+            {
+              "@odata.type": "#microsoft.graph.group",
+              "id": "c1c00008-aaaa-bbbb-cccc-000000000008"
+            },
+            {
+              "@odata.type": "#microsoft.graph.user",
+              "id": "ca201005-aaaa-bbbb-cccc-000000000005"
+            }
+          ]
+        },
+        {
+          "id": "77770001-aaaa-bbbb-cccc-000000000001",
+          "displayName": "proj-x",
+          "securityEnabled": true,
+          "mailEnabled": false,
+          "groupTypes": [],
+          "membershipRule": null,
+          "membershipRuleProcessingState": null,
+          "onPremisesSyncEnabled": null,
+          "members@delta": [
+            {
+              "@odata.type": "#microsoft.graph.user",
+              "id": "33334444-dddd-5555-eeee-6666ffff7777"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

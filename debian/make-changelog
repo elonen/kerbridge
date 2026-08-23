@@ -1,0 +1,159 @@
+#!/bin/sh
+# Write debian/changelog, and stamp debian/kerbridge-config.NEWS, before the
+# build starts.
+#
+# WHY THIS IS NOT IN GIT. dpkg reads the package version out of
+# debian/changelog, so whatever writes that file is the release process. This
+# repository keeps release notes in CHANGELOG.md, hand-written and reviewed in
+# the pull request that prepares a release, and reformats them here into
+# Debian's grammar. Not `gbp dch`: that wants a packaging-branch
+# layout and the full history in the container, and what is needed is one entry
+# rather than a reconstruction.
+#
+# THE VERSION. `3.0 (native)` permits no Debian revision, and with no revision,
+# no hyphen anywhere.
+#
+#   release   the tag minus its `v`.        v0.10.0 -> 0.10.0
+#   snapshot  <last tag>+git<date>.<sha>.   0.10.0+git20260821.3d16d29
+#
+# `+` and not `~`, deliberately: a tilde sorts *below* its anchor, which is
+# right only if you know the *next* version, and this repository encodes that
+# nowhere. `+` anchored on the last tag always sorts after that release and
+# before the next. The date precedes the hash because git hashes do not sort.
+#
+# It is derived from `git describe`, never from Cargo.toml, which sidesteps the
+# five-manifest version drift for release purposes entirely. That needs tags in
+# the checkout -- `fetch-depth: 0` in CI. A tree with no `.git` at all, an export
+# or a release tarball, passes KB_VERSION= instead and needs no git.
+#
+# `--print-version` runs the derivation, prints it and writes nothing. It is how
+# a caller that has the tags hands the version to one that does not: the
+# Makefile computes it on the host and passes KB_VERSION into the container, so
+# no image build needs `.git` in its context. One derivation, two callers.
+set -eu
+
+print_only=0
+case ${1:-} in
+    --print-version) print_only=1 ;;
+    "") ;;
+    *) echo "usage: make-changelog [--print-version]" >&2; exit 1 ;;
+esac
+
+cd "$(dirname "$0")/.."
+
+SOURCE=kerbridge
+CHANGELOG_MD=CHANGELOG.md
+OUT=debian/changelog
+NEWS_IN=debian/kerbridge-config.NEWS.in
+NEWS_OUT=debian/kerbridge-config.NEWS
+
+# One maintainer identity, read from the file that already has to carry it, so
+# the changelog trailer and debian/control cannot disagree.
+maintainer=$(sed -n 's/^Maintainer: //p' debian/control | head -n 1)
+[ -n "$maintainer" ] || { echo "make-changelog: debian/control has no Maintainer:" >&2; exit 1; }
+
+version=${KB_VERSION:-}
+if [ -z "$version" ]; then
+    described=$(git describe --tags --long --dirty 2>/dev/null) || {
+        echo "make-changelog: no version could be derived here." >&2
+        echo "    It comes from \`git describe\`, so a shallow checkout" >&2
+        echo "    (fetch-depth: 0 fixes it), a tree with no .git, or a host" >&2
+        echo "    with no git cannot compute one." >&2
+        echo "    Pass KB_VERSION=<version> instead." >&2
+        exit 1
+    }
+    if git describe --tags --exact-match >/dev/null 2>&1; then
+        version=$(git describe --tags --exact-match | sed 's/^v//')
+    else
+        last=$(git describe --tags --abbrev=0 | sed 's/^v//')
+        # The commit's own date, not today's: two builds of one commit have to
+        # produce one version, or `dpkg` cannot tell which is newer and an
+        # upgrade silently does nothing.
+        date=$(git show -s --format=%cd --date=format:%Y%m%d HEAD)
+        sha=$(git rev-parse --short=7 HEAD)
+        version="$last+git$date.$sha"
+    fi
+    case $described in
+        *-dirty) echo "make-changelog: the tree has uncommitted changes;" \
+                      "$version names the commit, not what is being built." >&2 ;;
+    esac
+fi
+
+case $version in
+    *-*) echo "make-changelog: $version carries a hyphen, which 3.0 (native) does not permit." >&2
+         exit 1 ;;
+esac
+
+[ "$print_only" = 0 ] || { echo "$version"; exit 0; }
+
+date_rfc2822=${KB_DATE:-$(date -R)}
+
+# The body, from the one hand-written source. A tagged release has a section in
+# CHANGELOG.md; a snapshot has none and gets one line at urgency=low, because
+# only tagged releases carry prose.
+body=$(
+    if [ -f "$CHANGELOG_MD" ]; then
+        awk -v want="$version" '
+            /^## / {
+                inside = ($2 == want)
+                next
+            }
+            inside && /^[[:space:]]*[-*] / {
+                sub(/^[[:space:]]*[-*][[:space:]]*/, "")
+                print "  * " $0
+                next
+            }
+            inside && /^[[:space:]]*$/ { next }
+            # A wrapped bullet continues. The indent it arrives with is
+            # markdown, not changelog, so it is replaced rather than added to.
+            inside {
+                sub(/^[[:space:]]+/, "")
+                print "    " $0
+            }
+        ' "$CHANGELOG_MD"
+    fi
+)
+
+if [ -n "$body" ]; then
+    urgency=medium
+else
+    urgency=low
+    body="  * Snapshot build from $version. No release notes: only tagged
+    releases carry them, and CHANGELOG.md has no section for this version."
+fi
+
+{
+    printf '%s (%s) unstable; urgency=%s\n\n' "$SOURCE" "$version" "$urgency"
+    printf '%s\n\n' "$body"
+    printf ' -- %s  %s\n' "$maintainer" "$date_rfc2822"
+} > "$OUT"
+
+# lintian calls a changelog line over 80 columns a warning, and the build fails
+# on warnings -- so a long bullet in CHANGELOG.md is a trap sprung ten minutes
+# later, inside Docker, by a tag nothing connects back to the file that has to
+# change. Named here, where the file is being written.
+long=$(awk 'length > 80 { printf "    line %d: %s\n", NR, $0 }' "$OUT")
+[ -z "$long" ] || {
+    echo "make-changelog: $OUT has lines over 80 columns, which lintian refuses:" >&2
+    echo "$long" >&2
+    echo "    Shorten them in $CHANGELOG_MD -- a bullet gains two columns here." >&2
+    exit 1
+}
+
+# NEWS.Debian is hand-written and committed -- different file, different reason:
+# it is what an operator must read when a default changes, which is rarer and
+# louder than a release note. Only its version stamp is generated,
+# because lintian wants the newest entry to name a version the changelog also
+# has, and the changelog's version is only known here.
+if [ -f "$NEWS_IN" ]; then
+    # The urgency travels with the version for the same reason the version
+    # does: lintian compares the newest NEWS entry against the newest changelog
+    # entry and reports any disagreement, and only this script knows which of
+    # the two urgencies the build ended up with.
+    sed -e "s/@VERSION@/$version/" \
+        -e "s/@URGENCY@/$urgency/" \
+        -e "s/@MAINTAINER@/$maintainer/" \
+        -e "s/@DATE@/$date_rfc2822/" "$NEWS_IN" > "$NEWS_OUT"
+fi
+
+echo "make-changelog: $SOURCE $version, urgency=$urgency"

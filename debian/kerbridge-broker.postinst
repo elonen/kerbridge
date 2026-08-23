@@ -1,0 +1,53 @@
+#!/bin/sh
+# The one unix user this package needs: _kerbridge-broker, taking the shared
+# _kerbridge group as its primary group.
+#
+# Every flag earns its place, and the three below were settled by measurement
+# rather than by reading -- on trixie's adduser 3.152 and noble's 3.137.
+# Re-check any of them by running the command below in that release's container
+# and reading `getent passwd` and `ls -d /home/*` afterwards.
+#
+#   * --no-create-home is required. --system does not imply it: both targets
+#     avoid a home only because their default path is /nonexistent. --home
+#     names that path explicitly rather than inheriting it, which is what makes
+#     a release that defaults elsewhere agree about what is *recorded* as well
+#     as about what is created -- and it is what lintian's
+#     maintainer-script-lacks-home-in-adduser asks for, at error severity.
+#   * No --force-badname: both targets take the leading underscore Policy
+#     §9.2.1 asks for, unprompted, measured the same way.
+#   * --ingroup, not --group, so no per-user group is created and the daemon's
+#     primary group is the shared _kerbridge -- which is what its unit states
+#     as Group= and what grants both traversal of the 0710 socket directory and
+#     read of the 0640 files under /etc/kerbridge.secrets.
+#
+# --ingroup requires the group to exist already. It does: kerbridge-config
+# creates it, and Policy guarantees a dependency is configured before the
+# depending package's postinst runs. Depends: adduser is mandatory
+# for the same class of reason -- adduser was demoted from the essential set
+# and is absent from trixie and noble.
+#
+# The account is not removed on purge. postrm may rely only on Essential
+# packages and deluser is not one; and a uid a later adduser reallocates would
+# inherit whatever files elsewhere still carry it.
+set -e
+
+case "$1" in
+    configure)
+        if ! getent passwd _kerbridge-broker >/dev/null; then
+            adduser --system --ingroup _kerbridge --home /nonexistent \
+                    --no-create-home --disabled-password _kerbridge-broker
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

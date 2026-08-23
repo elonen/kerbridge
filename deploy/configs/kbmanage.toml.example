@@ -1,0 +1,41 @@
+# kbmanage: the operator CLI, and the only component that runs on a host rather
+# than in a container. Optional -- a deployment nobody administers from outside
+# never needs this file, and nothing else reads it.
+#
+# `make kbmanage-config` in deploy/ writes this and the ~/.config/kerbridge/
+# symlink that lets the CLI find the set at all. It holds an identity and two
+# paths, because everything else it needs is already in realm.toml and is the
+# same answer from either side of the container boundary.
+#
+# A commented-out line sets nothing. `#some_option = 8` means that KerBridge
+# uses 8, the default for that option. `#some_option =`, with no value, means
+# that the option has no default: the comment above the line says what
+# KerBridge does instead, and shows an example. main.toml gives the full rule.
+
+# Its own directory identity, created by `kbsetup directory`. Not the
+# broker's and not a source's sync account: this one may write in the resource
+# OU, which neither of those may, and may not write inside an IdP-specific OU,
+# which a sync account must.
+bind_dn = "CN=svc-kerbridge-manage,CN=Users,DC=example,DC=site"
+
+# A host path, unlike every other password file in the set: no container mounts
+# this one. `kbsetup directory` generates it under deploy/secrets/generated/.
+bind_password_file = "/home/you/.config/kerbridge/svc_kerbridge_manage_password"
+
+# Both default to realm.toml's, and both are stated here when this host reaches
+# the DC differently from the way the containers do.
+#
+# The realm's certificate carries localhost in its SAN alongside the DC's own
+# names, and compose publishes LDAPS on loopback only, so a binary on the DC's
+# own host needs no resolver entry and no split horizon to bind. Administering
+# from another host means ldaps://<the DC's name>:636, LDAPS_BIND widened, and a
+# firewall rule.
+#
+# Example: "ldaps://localhost:636"
+#ldap_url =
+
+# realm.ldap_ca_file names a path inside the realm container. This is the copy
+# `make kbmanage-config` takes out of it.
+#
+# Example: "/home/you/.config/kerbridge/realm-ca.pem"
+#ldap_ca_file =

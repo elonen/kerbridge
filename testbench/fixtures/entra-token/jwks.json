@@ -1,0 +1,76 @@
+{
+ "keys": [
+  {
+   "kty": "RSA",
+   "key_ops": [
+    "verify"
+   ],
+   "n": "nstRZxVr-XTGJiCaeM9Ozv3QhXqYKe2Adjn1UepafMkcyA4JVkJs16Q5-CKFxWytTp_RvrARx7UF-tTCI6X-4cL6WQiQtHucdPx94bj1EblVOfTXZttgmoGq7EE7jxqjzhK7K3YwV06hFmwDhAP2NF5dQNsCaN1FrW3bxyPwsxuCG-JPTmVoNFXvOD-QaIqsK1bSNQByVcA1A5AGB4e4CyE7e-ULzHMiKhhOpA0frAGNaj6i6ijT3PX7dbrAP1jJALrSiEyQu_OEwf624X8oLNrqPAHu3JC1qg_uHtATgXapQIKf2NNX1HPMZ-Mr9kpIHLApkEDX5G4xu78zwEVczw",
+   "e": "AQAB",
+   "kid": "fixture-key-2026-07",
+   "use": "sig",
+   "alg": "RS256",
+   "issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"
+  },
+  {
+   "kty": "RSA",
+   "key_ops": [
+    "verify"
+   ],
+   "n": "nstRZxVr-XTGJiCaeM9Ozv3QhXqYKe2Adjn1UepafMkcyA4JVkJs16Q5-CKFxWytTp_RvrARx7UF-tTCI6X-4cL6WQiQtHucdPx94bj1EblVOfTXZttgmoGq7EE7jxqjzhK7K3YwV06hFmwDhAP2NF5dQNsCaN1FrW3bxyPwsxuCG-JPTmVoNFXvOD-QaIqsK1bSNQByVcA1A5AGB4e4CyE7e-ULzHMiKhhOpA0frAGNaj6i6ijT3PX7dbrAP1jJALrSiEyQu_OEwf624X8oLNrqPAHu3JC1qg_uHtATgXapQIKf2NNX1HPMZ-Mr9kpIHLApkEDX5G4xu78zwEVczw",
+   "e": "AQAB",
+   "kid": "fixture-key-rs384",
+   "use": "sig",
+   "alg": "RS384",
+   "issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"
+  },
+  {
+   "kty": "RSA",
+   "key_ops": [
+    "verify"
+   ],
+   "n": "nstRZxVr-XTGJiCaeM9Ozv3QhXqYKe2Adjn1UepafMkcyA4JVkJs16Q5-CKFxWytTp_RvrARx7UF-tTCI6X-4cL6WQiQtHucdPx94bj1EblVOfTXZttgmoGq7EE7jxqjzhK7K3YwV06hFmwDhAP2NF5dQNsCaN1FrW3bxyPwsxuCG-JPTmVoNFXvOD-QaIqsK1bSNQByVcA1A5AGB4e4CyE7e-ULzHMiKhhOpA0frAGNaj6i6ijT3PX7dbrAP1jJALrSiEyQu_OEwf624X8oLNrqPAHu3JC1qg_uHtATgXapQIKf2NNX1HPMZ-Mr9kpIHLApkEDX5G4xu78zwEVczw",
+   "e": "AQAB",
+   "kid": "fixture-key-rs512",
+   "use": "sig",
+   "alg": "RS512",
+   "issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"
+  },
+  {
+   "kty": "RSA",
+   "key_ops": [
+    "verify"
+   ],
+   "n": "nstRZxVr-XTGJiCaeM9Ozv3QhXqYKe2Adjn1UepafMkcyA4JVkJs16Q5-CKFxWytTp_RvrARx7UF-tTCI6X-4cL6WQiQtHucdPx94bj1EblVOfTXZttgmoGq7EE7jxqjzhK7K3YwV06hFmwDhAP2NF5dQNsCaN1FrW3bxyPwsxuCG-JPTmVoNFXvOD-QaIqsK1bSNQByVcA1A5AGB4e4CyE7e-ULzHMiKhhOpA0frAGNaj6i6ijT3PX7dbrAP1jJALrSiEyQu_OEwf624X8oLNrqPAHu3JC1qg_uHtATgXapQIKf2NNX1HPMZ-Mr9kpIHLApkEDX5G4xu78zwEVczw",
+   "e": "AQAB",
+   "kid": "fixture-key-ps256",
+   "use": "sig",
+   "alg": "PS256",
+   "issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"
+  },
+  {
+   "kty": "RSA",
+   "key_ops": [
+    "verify"
+   ],
+   "n": "nstRZxVr-XTGJiCaeM9Ozv3QhXqYKe2Adjn1UepafMkcyA4JVkJs16Q5-CKFxWytTp_RvrARx7UF-tTCI6X-4cL6WQiQtHucdPx94bj1EblVOfTXZttgmoGq7EE7jxqjzhK7K3YwV06hFmwDhAP2NF5dQNsCaN1FrW3bxyPwsxuCG-JPTmVoNFXvOD-QaIqsK1bSNQByVcA1A5AGB4e4CyE7e-ULzHMiKhhOpA0frAGNaj6i6ijT3PX7dbrAP1jJALrSiEyQu_OEwf624X8oLNrqPAHu3JC1qg_uHtATgXapQIKf2NNX1HPMZ-Mr9kpIHLApkEDX5G4xu78zwEVczw",
+   "e": "AQAB",
+   "kid": "fixture-key-ps384",
+   "use": "sig",
+   "alg": "PS384",
+   "issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"
+  },
+  {
+   "kty": "RSA",
+   "key_ops": [
+    "verify"
+   ],
+   "n": "nstRZxVr-XTGJiCaeM9Ozv3QhXqYKe2Adjn1UepafMkcyA4JVkJs16Q5-CKFxWytTp_RvrARx7UF-tTCI6X-4cL6WQiQtHucdPx94bj1EblVOfTXZttgmoGq7EE7jxqjzhK7K3YwV06hFmwDhAP2NF5dQNsCaN1FrW3bxyPwsxuCG-JPTmVoNFXvOD-QaIqsK1bSNQByVcA1A5AGB4e4CyE7e-ULzHMiKhhOpA0frAGNaj6i6ijT3PX7dbrAP1jJALrSiEyQu_OEwf624X8oLNrqPAHu3JC1qg_uHtATgXapQIKf2NNX1HPMZ-Mr9kpIHLApkEDX5G4xu78zwEVczw",
+   "e": "AQAB",
+   "kid": "fixture-key-ps512",
+   "use": "sig",
+   "alg": "PS512",
+   "issuer": "https://login.microsoftonline.com/{tenantid}/v2.0"
+  }
+ ]
+}

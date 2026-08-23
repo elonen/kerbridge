@@ -1,0 +1,35 @@
+# ufw rules for a KerBridge domain controller, from the table in
+# docs/setup/dns-and-firewall.md.
+#
+# These are commands to run, not a file to install: ufw has no drop-in
+# directory for rules of this shape. Read them, change 192.0.2.0/24 to your own
+# LAN, and run the ones your deployment needs.
+#
+# CAUTION: do not expose port 88 to the internet. An exposed AS endpoint lets
+# an attacker use the failed-password count to lock out synchronised accounts,
+# which breaks issuance for those users. The broker endpoint on 443 is the only
+# one that may face the internet, and only if it must -- for ACME HTTP-01, for
+# instance.
+
+LAN=192.0.2.0/24
+
+# Kerberos: the workstations and the file servers. Always needed.
+ufw allow from "$LAN" to any port 88 proto tcp comment 'KerBridge: Kerberos'
+ufw allow from "$LAN" to any port 88 proto udp comment 'KerBridge: Kerberos'
+
+# The broker endpoint. On the broker's host, which is usually but not always
+# this one.
+ufw allow from "$LAN" to any port 443 proto tcp comment 'KerBridge: broker'
+
+# Only if a file server runs on another host, or you manage the directory
+# remotely with RSAT. Publishing the _ldap._tcp DNS records does not by itself
+# require these: the records say where the domain controller is, this says who
+# may reach it.
+ufw allow from "$LAN" to any port 445 proto tcp comment 'KerBridge: SMB'
+ufw allow from "$LAN" to any port 389 proto tcp comment 'KerBridge: LDAP'
+ufw allow from "$LAN" to any port 389 proto udp comment 'KerBridge: CLDAP'
+ufw allow from "$LAN" to any port 135 proto tcp comment 'KerBridge: RPC endpoint mapper'
+ufw allow from "$LAN" to any port 49152:49251 proto tcp comment 'KerBridge: RPC'
+
+# Only if you run kbmanage from another host.
+ufw allow from "$LAN" to any port 636 proto tcp comment 'KerBridge: LDAPS'

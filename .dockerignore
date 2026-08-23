@@ -1,0 +1,20 @@
+# Build context is the repository root. The server images build from the Cargo
+# workspace (crates/); client/kerbridge-agent-windows/Dockerfile cross-compiles
+# the Windows client from client/. Everything else is noise -- and target/ alone
+# is gigabytes.
+*
+!LICENSE
+!Cargo.toml
+!Cargo.lock
+!crates/
+!deploy/
+!client/
+# One file from the testbench, for deploy/mockidp/Dockerfile. Narrow on purpose:
+# the rest of testbench/ is fixture corpora that `cargo test` reads from the
+# source tree, and belongs in no image.
+!testbench/mock-idp/
+crates/**/target/
+client/target/
+**/.local-tmp/
+deploy/secrets/
+deploy/.env

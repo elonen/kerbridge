@@ -1,0 +1,65 @@
+{#-
+  The language chooser at the root of the site.
+
+  Static hosting has no content negotiation and GitHub Pages has no redirects,
+  so the choosing happens here: the agent's ?lang= wins, then the browser's own
+  preference order, then English. The list stays visible for anyone whose
+  redirect does not fire.
+-#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAS Access — user help</title>
+<link rel="icon" href="img/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/site.css">
+{% for l in langs %}
+<link rel="alternate" hreflang="{{ l[0] }}" href="{{ l[0] }}/">
+{% endfor %}
+<script>
+(function () {
+  var tags = {{ tags | tojson }};
+  var params = new URLSearchParams(location.search);
+
+  // Longest match first, so zh-Hans beats a bare zh and pt-BR finds pt.
+  function match(want) {
+    want = (want || '').toLowerCase();
+    if (!want) return null;
+    var best = null;
+    tags.forEach(function (t) {
+      var lower = t.toLowerCase();
+      if (want === lower || want.indexOf(lower + '-') === 0 || lower.indexOf(want + '-') === 0) {
+        if (!best || t.length > best.length) best = t;
+      }
+    });
+    return best;
+  }
+
+  var wanted = [params.get('lang')].concat(Array.prototype.slice.call(navigator.languages || [navigator.language]));
+  for (var i = 0; i < wanted.length; i++) {
+    var hit = match(wanted[i]) || match((wanted[i] || '').split('-')[0]);
+    if (hit) {
+      params.delete('lang');
+      var q = params.toString();
+      location.replace(hit + '/' + (q ? '?' + q : '') + location.hash);
+      return;
+    }
+  }
+})();
+</script>
+</head>
+<body>
+<div class="wrap body" style="grid-template-columns:1fr">
+  <main>
+    <h1>NAS Access — user help</h1>
+    <p>Choose a language:</p>
+    <ul>
+      {% for l in langs %}
+      <li><a href="{{ l[0] }}/" hreflang="{{ l[0] }}">{{ l[1] }}</a></li>
+      {% endfor %}
+    </ul>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,49 @@
+[package]
+name = "kerbridge-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "kbconfig"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+
+# NO ldap3, and `kerbridge-core` without its `tls` feature. The absence is the
+# privilege boundary: this binary runs during bootstrap, before the realm exists,
+# and directory reach is unavailable to it rather than merely unexercised.
+# `make test` asserts it, because a structural boundary nothing checks will not
+# hold.
+#
+# `schema` is on here and nowhere else: this is the only binary that asks the
+# config structs what their shape is.
+kerbridge-core = { workspace = true, features = ["schema"] }
+
+# The IdP is reachable and the directory is not: an IdP's OIDC endpoints are
+# public, external and unprivileged. This is what `check --online` probes with,
+# and what parses each source's `[provider_config]` offline.
+kerbridge-idp = { workspace = true, features = ["schema"] }
+tokio.workspace = true
+
+# `decisions` reads each file as a document rather than as a struct, because the
+# set it most needs to read is one the parser refuses. Already in the tree
+# through `kerbridge-core`.
+toml.workspace = true
+
+[build-dependencies]
+clap.workspace = true
+# `kbconfig.1` is generated from the command definition at build time, with no
+# committed copy -- the same arrangement `kerbridge-setup` uses for `kbsetup.8`.
+clap_mangen = "0.3"
+
+[dev-dependencies]
+# This crate is the only one that sees both halves of the schema -- core's six
+# documents and the composed source one -- so the round trip is testable here
+# and nowhere else.
+jsonschema.workspace = true

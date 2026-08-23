@@ -1,0 +1,63 @@
+/* Resource script (compiled by windres via embed-resource).
+   - The application manifest as RT_MANIFEST (type 24) under the process manifest id (1):
+     Common-Controls v6 + PerMonitor-V2 DPI.
+   - The application icon: Explorer/taskbar/Alt-Tab show the lowest-id ICON, so id 1 is
+     the exe's icon. Multi-resolution app-icon.ico (16..256) rasterized from the SVG.
+   - VERSIONINFO: the friendly name Windows shows for this process. See below. */
+1 24 "kerbridge-agent.manifest"
+1 ICON "ui/icons/app-icon.ico"
+
+/* VER_MAJOR/VER_MINOR/VER_PATCH are -D'd by build.rs from CARGO_PKG_VERSION, so the
+   crate version is still the one version number. Double expansion is what makes the
+   inner macro arguments expand before stringification; the result is one literal
+   ("0.9.0"), not adjacent literals, because windres' rc lexer does not concatenate. */
+#define STRINGIFY_(x) #x
+#define STRINGIFY(x) STRINGIFY_(x)
+#define VER_TEXT STRINGIFY(VER_MAJOR.VER_MINOR.VER_PATCH)
+
+/*
+  Without this block Windows has no friendly name for the process and falls back to
+  the image name, which is why the agent used to appear as
+  "kerbridge-agent.exe" wherever a well-behaved app shows its own name.
+  FileDescription is the string every one of those surfaces reads:
+
+    * Task Manager, Processes and Details ("Description")
+    * Task Manager > Startup apps and Settings > Apps > Startup ("Name"; "Publisher"
+      there is CompanyName)
+    * Settings > Personalization > Taskbar > "Other system tray icons"
+    * the UAC consent dialog for the two elevated one-shots ("Program name")
+
+  So FileDescription -- not ProductName, and not the tray tooltip -- is what has to
+  read like a product. The exe's own file name stays as it is: Task Manager's Details
+  tab shows image names for every process, and nothing is gained by making the file
+  name a second copy of this string.
+*/
+1 VERSIONINFO
+FILEVERSION    VER_MAJOR, VER_MINOR, VER_PATCH, 0
+PRODUCTVERSION VER_MAJOR, VER_MINOR, VER_PATCH, 0
+FILEFLAGSMASK  0x3fL
+FILEFLAGS      0x0L
+FILEOS         0x40004L /* VOS_NT_WINDOWS32 */
+FILETYPE       0x1L     /* VFT_APP */
+FILESUBTYPE    0x0L
+{
+  BLOCK "StringFileInfo"
+  {
+    /* 0409 = en-US, 04B0 = 1200 = Unicode; must match the Translation value below. */
+    BLOCK "040904B0"
+    {
+      VALUE "CompanyName",      "KerBridge"
+      VALUE "FileDescription",  "KerBridge NAS Access"
+      VALUE "FileVersion",      VER_TEXT
+      VALUE "InternalName",     "kerbridge-agent"
+      VALUE "LegalCopyright",   "GPL-3.0-or-later"
+      VALUE "OriginalFilename", "kerbridge-agent.exe"
+      VALUE "ProductName",      "KerBridge NAS Access"
+      VALUE "ProductVersion",   VER_TEXT
+    }
+  }
+  BLOCK "VarFileInfo"
+  {
+    VALUE "Translation", 0x409, 1200
+  }
+}

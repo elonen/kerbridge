@@ -1,0 +1,400 @@
+# The help page's own prose, in English. This file is the source; every other
+# content/<tag>.toml is a translation of it and must carry exactly these keys.
+#
+# What does NOT belong here: any label the agent draws. Those come from the
+# client's string tables as `{{ s.* }}` in the template, already translated and
+# already agreed with the shipped UI. If you catch yourself typing a button name
+# into this file, use the `s` key instead -- a page that spells a label itself is
+# a page that will one day teach a button that no longer exists.
+#
+# Tone: reassuring, plain, short. The reader is not a technical person and may
+# be having a bad morning. Precision lives in the "Technically" blocks.
+
+language_name = "English"
+page_title = "NAS Access — user help"
+page_description = "How NAS Access opens your work network drives with your organisation's cloud account, and what every part of it means."
+
+# ── chrome ───────────────────────────────────────────────────────────────────
+help_word = "Help"
+search_placeholder = "Search this page…"
+search_matches = "{n} matching blocks"
+search_empty = "Nothing on this page matches that. Try a shorter word — or the name of a button."
+on_this_page = "On this page"
+topics = "Topics"
+platform_group = "Choose your platform"
+language_group = "Choose a language"
+theme_toggle = "Switch between light and dark"
+technically = "Technically"
+part = "PART {n}"
+glossary = "GLOSSARY"
+finally = "FINALLY"
+yes = "Yes"
+no = "No"
+footer_help = "user help"
+
+# ── table headers ────────────────────────────────────────────────────────────
+th_headline = "Headline"
+th_means = "What it means"
+th_means_here = "Means here"
+th_todo = "What to do"
+th_line = "Line"
+th_says = "What it says"
+th_plain = "In plain terms"
+th_value = "Value"
+th_button = "Button"
+th_item = "Item"
+th_does = "What it does"
+th_word = "Word"
+th_symptom = "Symptom"
+th_cause = "Likely cause"
+th_will_hear = "You'll hear about"
+th_wont_hear = "Not about"
+th_ends_access = "Ends your access to the drives"
+th_ends_grant = "Ends this device's authorization"
+th_ends_signin = "Ends your browser sign-in"
+
+# ── hero ─────────────────────────────────────────────────────────────────────
+hero_kicker = "User help"
+hero_title = "Network drives, without a password."
+hero_lead = "NAS Access signs you in to your organisation's cloud account and uses that to open your work network drives. Once it is running, you open your drives the way you always have. There is no separate password to remember and nothing to type."
+
+# ── contents ─────────────────────────────────────────────────────────────────
+# Order here is the order of the page. `id` must match a section in the template.
+goals = [
+  { id = "purpose",       title = "What this app is for",       sub = "Why it exists, and what it does" },
+  { id = "icon",          title = "The icon",                   sub = "Four states, at a glance" },
+  { id = "panel",         title = "The status view",            sub = "Every line, explained" },
+  { id = "buttons",       title = "The buttons",                sub = "What each one does, and doesn't" },
+  { id = "settings",      title = "Settings",                   sub = "Basic, Advanced, About" },
+  { id = "notifications", title = "Notifications",              sub = "What it tells you, and when" },
+  { id = "trouble",       title = "When something isn't working", sub = "Symptoms, causes, fixes" },
+  { id = "answers",       title = "Quick answers",              sub = "The questions people ask" },
+  { id = "words",         title = "The words this app uses",    sub = "Nine terms, defined" },
+  { id = "support",       title = "Asking for help",            sub = "What to have ready" },
+]
+
+# ── Part 1: what this app is for ─────────────────────────────────────────────
+shot_alt_win = "The NAS Access status panel open above the Windows notification area, reading Access OK."
+shot_alt_mac = "The NAS Access menu open in the macOS menu bar, reading Access OK."
+shot_caption_win = "If this looks familiar, you're in the right place — it opens from the notification area."
+shot_caption_mac = "If this looks familiar, you're in the right place — it opens from the menu bar."
+
+two_worlds_title = "Two systems that don't naturally meet"
+two_worlds = [
+  "<strong>Your account lives in the cloud.</strong> It is the same account you use for email and for signing in to work websites. Your organisation manages it there.",
+  "<strong>Your files live in your building.</strong> They sit on a file server — the box your network drives and shared folders come from. That server is deliberately old-fashioned about security, and it has never heard of the cloud.",
+  "Left alone, the two cannot agree that you are you.",
+]
+
+gobetween_title = "NAS Access is the go-between"
+gobetween_lead = "NAS Access converts your cloud sign-in into a pass the file server understands and accepts."
+
+worth_knowing_title = "Three things worth knowing"
+worth_knowing = [
+  "<strong>The pass has a time limit.</strong> Typically most of a working day. This is normal and deliberate — it is what lets your organisation take access away when it needs to.",
+  "<strong>NAS Access quietly gets a fresh pass about halfway through</strong>, long before the old one runs out. On an ordinary day you will never see this happen.",
+  "<strong>It cannot renew what it does not have.</strong> If the app cannot get a fresh pass on its own, it tells you <em>before</em> the current one runs out, so you can click once and carry on.",
+]
+
+tech_concepts_hint = "the precise terms, for anyone who wants them"
+tech_concepts = [
+  "Your cloud account is an <strong>OIDC</strong> identity at an <strong>identity provider</strong> (Entra ID in most deployments). The proof is an OIDC access token, obtained through an authorization-code flow with PKCE in the system browser.",
+  "The <strong>broker</strong> is the KerBridge service your IT team runs. It validates the token and asks the <strong>KDC</strong> to issue a genuine <strong>Kerberos TGT</strong> (ticket-granting ticket) for your account in the on-premises <strong>realm</strong>.",
+  "The \"pass pocket\" is your login session's <strong>ticket cache</strong> — the LSA logon session on Windows, the Heimdal <code>API:</code> cache on macOS. Putting the ticket there is called <strong>injection</strong>. After that, the stock SMB client does ordinary Kerberos: it uses the TGT to get a service ticket for the file server. No part of the file access path is modified.",
+  "The \"fresh pass at halfway\" is <strong>re-injection</strong>, not a Kerberos-level renewal. According to our tests, Windows will ask the KDC to renew a KerBridge-injected TGT and then never install the result, so the agent runs the whole exchange again and injects a new ticket instead.",
+]
+
+not_do_title = "What it does not do"
+not_do = [
+  "It does not store your password. It never sees one.",
+  "It does not read or change your files, your drives, or your drive letters.",
+  "It does not replace your organisation's sign-in. It uses it.",
+  "It does not need to be running for you to <em>use</em> your computer — only to keep your network drives reachable.",
+]
+
+tech_at_rest_hint = "what is kept, and where"
+tech_at_rest = [
+  "<strong>No secret at rest.</strong> The access token is discarded the moment the ticket exchange completes. The refresh token is held in process memory only and dies with the process — it is never written to disk or to the log. What is stored on disk is the broker URL, a cached copy of the discovered configuration, and this device's authorization state. It does not even really know about your NAS or other Kerberos services; it only deals with Kerberos TGTs.",
+]
+
+# ── Part 2: the icon ─────────────────────────────────────────────────────────
+icon_lead_win = "NAS Access lives in the notification area. The icon is the whole status at a glance."
+icon_lead_mac = "NAS Access lives in the menu bar. The icon is the whole status at a glance."
+
+# `icon` names the generated drawing; `headline` names a field in the client's
+# string table, so the wording is the app's own. Flaky and WillStop draw the
+# same icon on purpose, so only one of them is shown.
+icon_states = [
+  { icon = "working",     headline = "cond_working",   name_win = "Solid",                name_mac = "Solid",           todo = "Nothing to do", tone = "" },
+  { icon = "not-started", headline = "cond_off",       name_win = "Faded, no mark",       name_mac = "Faded, no mark",  todo = "Nothing to do", tone = "" },
+  { icon = "will-stop",   headline = "cond_will_stop", name_win = "Faded, amber triangle", name_mac = "Faded, triangle", todo = "Soon, not now", tone = " warn" },
+  { icon = "stopped",     headline = "cond_stopped",   name_win = "Faded, red circle",    name_mac = "Faded, circle",   todo = "Yes — this one needs you", tone = " stop" },
+]
+
+icon_notes = [
+  "<strong>Faded does not mean broken.</strong> Full strength is reserved for <em>nothing to see here</em>, so that when there is something to see, it has the contrast to be seen.",
+  "The shapes matter as much as the colours — a triangle and a circle stay different for anyone who cannot easily tell amber from red.",
+]
+icon_mac_note = "On a Mac the same four shapes appear in the menu bar's single colour, because that is how the menu bar draws everything."
+
+# ── Part 3: the status view ──────────────────────────────────────────────────
+panel_lead_win = "Clicking the icon opens a small panel. It shows you <strong>what needs you</strong>, then <strong>who you are</strong>, then <strong>how long</strong>, then <strong>why</strong>, if anything is wrong."
+panel_lead_mac = "Clicking the icon opens the menu. It shows <strong>what needs you</strong>, <strong>who you are</strong>, <strong>how long</strong>, and <strong>why you need to act</strong>, if anything is wrong."
+
+headline_title = "The headline"
+headline_lead = "One line, in colour, naming the situation."
+headlines = [
+  { headline = "cond_working",   tone = "ok",   means = "Your drives work, and the app can keep them working by itself.", todo = "Nothing." },
+  { headline = "cond_flaky",     tone = "warn", means = "Your drives work now. The app is having trouble reaching your IT team's server.", todo = "Usually nothing — it often clears by itself. If it lasts, mention it to IT." },
+  { headline = "cond_will_stop", tone = "warn", means = "Your drives work, but access will stop at a known time, and nothing will renew it on its own.", todo = "Use the button that offers to extend access, whenever it suits you, before that time." },
+  { headline = "cond_stopped",   tone = "stop", means = "Your drives will not open.", todo = "Read the explanation below the headline — it says why, and offers the button that fixes it." },
+  { headline = "cond_off",       tone = "off",  means = "The app is not working here and is not expected to be — for example after you signed off.", todo = "Nothing, unless you want access back." },
+]
+headline_note = "<strong>An expiry warning is not a fault.</strong> It means the app has run out of quiet ways to renew — often simply because you closed the browser session, or the device's authorization is coming up for renewal. Your access is intact until the time shown. One click restores the quiet renewals."
+
+tech_condition_hint = "what the headline is computed from"
+tech_condition = [
+  "The headline renders <code>Condition</code>, one of <code>Working</code>, <code>Flaky</code>, <code>WillStop</code>, <code>Stopped</code> and <code>NotStarted</code>. It is a pure function of three local facts: whether a <strong>usable</strong> ticket is held, whether this machine is expected to be working here, and whether a <strong>silent supply</strong> for the next renewal exists.",
+  "No network fact enters it — a broker outage never moves the condition. It shows up as a blocker, and as <code>Flaky</code> only once it has persisted.",
+]
+
+identity_title = "The identity line"
+identity_signed_in = "The account your access — and anything you save — belongs to."
+identity_working_as = "This computer has been set up to work as a <em>different account</em>."
+identity_note = "<strong>The second one is worth reading twice.</strong> On such a computer, files you save to the network drives are saved under that (often shared) account's name, not yours. If you sign in here, you are vouching for the machine — you are not getting your own access. This is normal on build machines, kiosks and shared workstations, and your IT team set it up deliberately."
+
+tech_delegation_hint = "device grants"
+tech_delegation = [
+  "The machine is <strong>delegated</strong> to get TGTs for a specific account: a <code>grant_for</code> target is configured, so only a device grant can obtain a ticket and the tickets carry the target's principal. A delegated sign-in <strong>authorizes access as the specified user</strong>, not as the person signing in — the sign-in proves who is at the keyboard, not the account the machine reaches your Kerberos services as.",
+]
+
+# A whole noun phrase: the client renders days through `days()`, which agrees
+# with the surrounding words in languages where a bare number would not.
+example_days = "6 days"
+
+clocks_title = "The expiration clocks"
+clock_access = "When the current pass runs out. Under normal conditions a fresh one arrives around halfway, so this is a number, not a deadline."
+clock_grant = "This device's permission to skip the browser is coming to an end. Sign in once through the browser before then and it is extended."
+clocks_note = "The two never appear as contradictory warnings — if access is genuinely expiring, the authorization clock is not the thing to worry about."
+
+explanation_title = "The explanation"
+explanation_lead = "When something needs saying, it appears in its own block, below the facts. These are the ones you may see:"
+blockers = [
+  { blocker = "blk_no_supply",            plain = "Time to prove it's you again.", todo = "Sign in through the browser. Takes a few seconds." },
+  { blocker = "blk_network_error",        arg = "server", plain = "The app cannot get to your IT team's server.", todo = "Check you're on the network or VPN. Drives you already have open usually keep working." },
+  { blocker = "blk_realm_unknown",        arg = "server", plain = "The app reached the server but hasn't got its configuration yet.", todo = "Wait. It retries on its own." },
+  { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "A one-time setup step for this computer hasn't been done.", todo = "Use the setup button. It asks for administrator permission and a restart." },
+  { blocker = "blk_ntlm_fallback",        os = "win", plain = "A known Windows hiccup after a pass runs out. Your drives are stuck.", todo = "Save your work, then use the repair button." },
+  { blocker = "blk_refused",              plain = "Your organisation's server did not accept your account for these drives.", todo = "Not something this computer can fix — contact IT." },
+  { blocker = "blk_no_grant",             arg = "account", plain = "A shared-account machine that has not been authorized yet.", todo = "Someone permitted to authorize it must sign in here." },
+  { blocker = "blk_grant_refused",        plain = "Policy does not permit this device to skip the browser.", todo = "Trying again will not help. Contact IT." },
+  { blocker = "blk_no_broker_url",        plain = "First run — the app doesn't know which server to talk to.", todo = "Enter the address your IT team gave you in Settings." },
+]
+
+tech_blockers_hint = "blockers versus actions"
+tech_blockers = [
+  "These are <strong>blockers</strong>: what is missing right now, immediate and unentailed. They are a list rather than a ranking, because several can be true at once, and the model reports all of them rather than only the loudest.",
+  "Blockers <em>explain</em>; actions <em>resolve</em>. They are not parallel lists and nothing lines up between them. The unreachable-server blocker merges unreachable, TLS-refused, rate-limited and 5xx, because those four differ in cause but not in what you do about them; the exact sentence stays in the detailed message.",
+]
+
+details_lead = "A collapsed section for when someone is helping you. It carries the realm, the pass's end time, what the next renewal will use, and when the app will next try."
+details_supply_lead = "The most useful row is the one naming what the next renewal will use:"
+supply_grant = "Silent. This device is trusted for a set number of days."
+supply_wam = "Silent. Windows' own sign-in is doing the work."
+supply_browser = "Silent, for as long as the app keeps running."
+supply_none = "This is why the headline warns that access is expiring."
+
+# ── Part 4: the buttons ──────────────────────────────────────────────────────
+conventions_title = "Two conventions worth learning"
+convention_ellipsis = "<strong>A label ending in \"…\" means one more step is coming</strong> — a browser window, or a question you have to answer. A button without one just does what it says. That is the only difference between the two renewal buttons: they promise the same result, but one of them will open a browser."
+convention_shield = "<strong>A shield on a button means Windows will ask for administrator permission.</strong> It is always there on those buttons, whether or not you happen to be an administrator."
+
+getting_access_title = "Getting access"
+getting_access = [
+  { action = "act_sign_in",        does = "Opens your browser, signs you in, gets a pass. The ordinary way to start." },
+  { action = "act_sign_in_extend", does = "The same thing, worded for when you already have access. Gets a fresh pass and restores quiet renewals." },
+  { action = "act_reinject",       does = "Gets a fresh pass <em>without</em> a browser, using whatever the app already has. Offered only when it can actually work." },
+  { action = "act_cancel",         does = "Appears only while a browser sign-in is waiting. Stops waiting for it." },
+]
+getting_access_note = "If the browser-free renewal is offered, prefer it — it is the cheap one, and it is only ever offered when it will work."
+
+doors_title = "Leaving — the three separate doors"
+doors_lead = "These sound similar but have a different effect. This is the one table on this page worth bookmarking."
+tech_doors_hint = "what each door actually does"
+tech_doors = [
+  "<strong>Signing out of the identity provider</strong> ends the SSO session at the authority and drops the in-memory refresh token. It cannot sign you out of Windows itself; an application can only release its own session.",
+  "<strong>Removing the authorization</strong> deletes the device grant's non-exportable ECDSA P-256 key from this device's TPM <em>first</em>, then revokes it at the broker — that order is what makes it work offline.",
+  "<strong>Signing off</strong> is a realm-scoped purge of the ticket cache — the TGT and the service tickets for this realm only. Tickets for other realms are left alone, which is what makes it safe on a cloud-trust tenant. An SMB session already established keeps serving files off an empty cache with no Kerberos traffic, so no ticket-scoped verb can honestly promise that connections end.",
+]
+
+fixing_title = "Fixing things"
+fixing = [
+  { action = "act_enroll",              does = "One-time, per computer. Teaches Windows about your organisation's realm. Needs administrator permission and a restart afterwards." },
+  { action = "act_restart_workstation", does = "Clears a stuck network-drive state. <strong>Save your work first</strong> — every network drive on the computer disconnects, not just these ones." },
+  { action = "act_reenroll",            does = "The same setup, applied over a partial or stale one. In Settings ▸ Advanced." },
+  { action = "act_unenroll",            does = "Removes the setup entirely. In Settings ▸ Advanced." },
+]
+fixing_note = "Anything that cannot be undone asks you first, tells you exactly what it will do, and defaults to cancelling. You can close that window and let the work run — it will tell you how it went."
+fixing_mac = "<strong>macOS needs none of this.</strong> It finds the realm by itself, so there is no setup step, no administrator prompt anywhere in the product, and no repair — a dropped connection there simply reconnects."
+
+authorizing_title = "Authorizing this device"
+authorizing = [
+  { action = "act_create_grant",       does = "Lets this device get passes without a browser sign-in, for a set number of days." },
+  { action = "act_create_grant_again", does = "The same, once authorization is already held — the way to extend it." },
+]
+authorizing_notes = [
+  "What actually happens: a key is created inside this device's security chip. It cannot be copied off the device, it covers your account on this device only, and your IT team can revoke it at any time.",
+  "You will get a reminder before it expires. Signing in through the browser once extends it.",
+]
+
+tech_grant_hint = "the device grant"
+tech_grant = [
+  "This is a KerBridge <strong>device grant</strong> — a non-exportable ECDSA P-256 key in the TPM, created through CNG's platform crypto provider at user scope, so it needs no elevation and dies with the profile. The broker holds the matching public key and enforces its own day cap, so lowering that cap shortens every outstanding grant.",
+]
+
+everything_else_title = "Everything else"
+everything_else = [
+  { action = "menu_open_status", does = "Brings the status panel up." },
+  { action = "menu_settings",    does = "See the Settings section below." },
+  { action = "menu_help",        does = "This page." },
+  { action = "act_open_log",     does = "A technical record of what the app did, for when someone is helping you. Appears when something has gone wrong, and always in Settings ▸ Advanced ▸ Troubleshoot." },
+  { action = "menu_quit",        does = "Stops the app. Your current pass stays valid until it runs out, and nothing renews it after that." },
+]
+
+# ── Part 5: settings ─────────────────────────────────────────────────────────
+settings_basic = [
+  "<strong>Broker URL</strong> — the server your IT team gave you. This is the only thing the app needs to know; everything else it asks that server for.",
+  "If it says the URL was set by your IT team and cannot be changed here, it has been set centrally, which is normal on a managed computer.",
+  "<strong>Start at login</strong> — signs you in automatically after you log in, so your drives are ready when you are. Recommended.",
+]
+settings_wam = "<strong>Using the Windows sign-in when possible</strong> skips the browser when Windows' own sign-in can vouch for you silently. Leave it on; if it can't help, the app falls back to the browser and nothing is lost."
+settings_advanced = [
+  "<strong>Authorization</strong> — shows what this device is authorized as, and holds the buttons that create and remove it. The field for authorizing this device on behalf of another account is for shared-account machines: leave it empty for your own account.",
+  "Changing that field decides who the <em>next</em> authorization is for. It changes nothing about the one already held.",
+  "<strong>Windows setup</strong> — whether this computer knows about your organisation's realm, plus the buttons to redo or remove it.",
+  "<strong>Troubleshoot</strong> — opens the log folder.",
+]
+settings_mac_title = "On macOS"
+settings_mac = "Settings is a single sheet with the broker URL and the start-at-login switch, and an OK / Cancel pair — the other sections describe things macOS does not have."
+settings_about = "Version and licence."
+
+# ── Part 6: notifications ────────────────────────────────────────────────────
+notify_lead = "The app speaks rarely and only about things that matter."
+notify = [
+  ["Access being restored after a problem", "Routine renewals that worked"],
+  ["Access about to stop, around twenty minutes ahead", "The pass clock ticking down normally"],
+  ["Access having stopped", "Brief network trouble that fixed itself"],
+  ["Your device's authorization coming up for renewal", "A machine that is simply switched off"],
+]
+notify_notes = [
+  "<strong>Nothing is lost if you miss one.</strong> A notification is an interruption, never a record — the status panel always has the current truth, and nothing decays. There is no unread badge and no list of what you missed.",
+  "The renewal reminder waits until you are actually at the keyboard, rather than firing at three in the morning.",
+]
+
+# ── Part 7: when something isn't working ─────────────────────────────────────
+trouble_lead = "Start with the icon, then the panel. It almost always names the problem and puts the fix on a button."
+trouble = [
+  { symptom = "A drive asks for a password", cause = "The pass has run out or was never obtained", todo = "Open the panel. It will say there is no access, or that access is expiring." },
+  { symptom = "Drives worked, then stopped mid-session", os = "win", cause = "Windows' NTLM hiccup", todo = "Use the repair button, after saving your work" },
+  { symptom = "The panel says it can't reach the server", cause = "Off the network, or VPN down", todo = "Reconnect. It retries by itself and recovers." },
+  { symptom = "IT just gave you access to a folder, and it still won't open", cause = "Your pass was issued before the change", todo = "Renew — a pass carries a snapshot of your groups, so a fresh one is needed" },
+  { symptom = "Everything looks fine, but one folder is denied", cause = "Permissions on that folder", todo = "Not a NAS Access problem — ask whoever owns the folder" },
+  { symptom = "The panel says an administrator has to fix it", cause = "It does", todo = "Send IT the message, exactly as written" },
+]
+
+error_title = "Reading an error message"
+error_lead = "Every detailed message is written in two halves:"
+error_example_handle = "TLS untrusted:"
+error_before = "Before the colon"
+error_before_means = "a technical handle, put there deliberately for whoever helps you"
+error_after = "After it"
+error_after_means = "what it means for you"
+error_note = "When you report a problem, quote the whole line — the handle is often all your IT team needs."
+
+# ── Part 8: quick answers ────────────────────────────────────────────────────
+answers = [
+  { q = "Do I have to keep the app running?", a = "Yes, to keep drives reachable. It uses almost nothing while idle, and starting it at login means you never think about it." },
+  { q = "Why does a browser window open when I sign in?", a = "Because your sign-in belongs to your organisation, not to this app. The app never sees your password — your browser handles it, exactly as it does for your other work sites." },
+  { q = "Why didn't it ask me for anything this morning?", a = "Because it didn't have to. That is the intended experience." },
+  { q = "I closed the lid over lunch.", a = "Fine. It picks up where it left off, and gets a fresh pass if needed." },
+  { q = "I'm working from home.", a = "Whatever normally reaches your file server — VPN or otherwise — is what NAS Access needs too. If your drives work at home today, they will work with NAS Access." },
+  { q = "Is my password stored anywhere?", a = "No. The app never receives one. Nothing it keeps on disk can be used to sign in as you." },
+  { q = "Can IT see what I open?", a = "NAS Access does not watch your files. Your file server keeps its own records, as it always has." },
+  { q = "I signed off, but a drive is still open.", a = "Your operating system is holding a connection it already had. Close the window, disconnect the drive, or restart. Nothing new can be opened." },
+]
+
+# ── Glossary ─────────────────────────────────────────────────────────────────
+words = [
+  { word = "Access",        means = "Being able to authenticate on your network file server" },
+  { word = "Sign in",       means = "Proving who you are, in your browser" },
+  { label = "act_drop_ticket", means = "Throwing away the current pass to network drives" },
+  { word = "Authorization", means = "This device's permission to skip the browser for a while, optionally as a different user" },
+  { word = "Renew",         means = "Getting a fresh pass without bothering you" },
+  { word = "Realm",         means = "The name of the on-site system your drives belong to, like <code>EXAMPLE.SITE</code>" },
+  { word = "Broker",        means = "Your IT team's server — the one NAS Access asks a pass from" },
+  { word = "Ticket",        means = "The pass itself. A technical term; it only appears under the Kerberos details" },
+  { word = "This device",   means = "The computer you are sitting at" },
+]
+
+# ── Asking for help ──────────────────────────────────────────────────────────
+support_lead = "Have these ready — the app shows all of them:"
+support_steps = [
+  { what = "The headline", detail = "The coloured line at the top of the panel" },
+  { what = "The full message", detail = "Including the part before the colon" },
+  { what = "The realm", detail = "From the Kerberos details — the first thing anyone will ask" },
+  { what = "The log", detail = "Settings ▸ Advanced ▸ Troubleshoot ▸ open the log folder" },
+]
+support_note = "That is usually enough to resolve it without anyone touching your computer."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Everything below uses TOML table syntax, and a table header captures every
+# bare key that follows it -- so these have to be last. Add new plain keys
+# above this line, not below it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# The three doors. `access`/`grant`/`signin` drive the Yes/No table, and the
+# order here is the order of both the table and the explanations under it.
+[[doors]]
+action = "act_sign_out_idp"
+arg = "Entra"
+access = false
+grant  = false
+signin = true
+detail = "Closes the sign-in session this app left in your browser. It is good hygiene on a shared computer. It does not touch your drives."
+
+[[doors]]
+action = "act_give_up_grant"
+access = false
+grant  = true
+signin = false
+detail = "Gives up this device's permission to reach your drives <em>without a browser</em>. Your access right now is untouched — you simply go back to signing in through the browser each time. It cannot be undone: authorizing again creates a fresh permission rather than restoring the old one."
+caveat = """
+On a shared-account machine — one whose panel says it is working as another \
+account — there is no "go back to the browser". Authorization is the only way \
+such a machine gets access, so removing it means access runs out and stops. \
+The confirmation tells you exactly how long you have."""
+
+[[doors]]
+action = "act_drop_ticket"
+access = true
+grant  = false
+signin = false
+detail = "Throws away this computer's pass. It is the everyday one — the thing to do when you are done for the day, or don't need shared drive access any more."
+caveat = """
+One honest caveat: <strong>network drives you already have open may keep \
+working</strong> until you close them or restart. That is your operating system \
+holding a connection open, and no app can promise otherwise. But nothing new \
+can be opened."""
+
+# Lucide paths, keyed by section. Not translated -- they are drawings.
+[goal_icons]
+purpose = '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>'
+icon = '<rect x="2" y="3" width="20" height="14"/><path d="M8 21h8"/><path d="M12 17v4"/>'
+panel = '<rect x="3" y="3" width="18" height="18"/><path d="M3 9h18"/><path d="M7 13h7"/>'
+buttons = '<path d="M9 9l5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 8-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/>'
+settings = '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>'
+notifications = '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'
+trouble = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'
+answers = '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
+words = '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+support = '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>'

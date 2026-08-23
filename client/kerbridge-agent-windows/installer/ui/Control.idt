@@ -1,0 +1,13 @@
+Dialog_	Control	Type	X	Y	Width	Height	Attributes	Property	Text	Control_Next	Help
+s72	s50	s20	i2	i2	i2	i2	I4	S72	L0	S50	L50
+Control	Dialog_	Control
+ExitDialog	Title	Text	15	15	290	12	196611		{\DlgFontBold8}Setup is complete		
+ExitDialog	InstalledText	Text	15	34	290	36	196610		[ProductName] is installed. Open it from the Start menu to sign in; your network drives then use your cloud account.		
+ExitDialog	RemovedText	Text	15	34	290	36	196610		[ProductName] has been removed from this computer.		
+ExitDialog	Finish	PushButton	249	86	56	17	3		Finish	Finish	
+MsiRMFilesInUse	Title	Text	15	15	290	12	196611		{\DlgFontBold8}[ProductName] is running		
+MsiRMFilesInUse	Text	Text	15	34	290	24	196611		Setup has to replace files that are in use.		
+MsiRMFilesInUse	ShutdownOption	RadioButtonGroup	15	64	290	34	3	MsiRestartManagerOption		OK	
+MsiRMFilesInUse	List	ListBox	15	106	290	44	7	FileInUseProcess			
+MsiRMFilesInUse	OK	PushButton	189	162	56	17	3		OK	Cancel	
+MsiRMFilesInUse	Cancel	PushButton	249	162	56	17	3		Cancel	ShutdownOption	

@@ -1,0 +1,75 @@
+[package]
+name = "kerbridge-client"
+version = "0.9.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+# The library is the shared core each platform's agent links
+[lib]
+name = "kerbridge_client"
+path = "src/lib.rs"
+
+# CLI `kerbridge` on every platform, so a support instruction reads the same to a
+# Windows and a macOS user.
+[[bin]]
+name = "kerbridge"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+base64 = "0.22.1"
+clap = { version = "4.6.3", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.151"
+toml = "0.9"
+sha2 = "0.10"
+getrandom = "0.3"
+form_urlencoded = "1"
+webbrowser = "1"
+url = "2"
+# Gzip for the rotated log, on its default pure-Rust backend: the Windows agent
+# is cross-compiled, and a C backend would put a compiler in that path.
+flate2 = "1.1.9"
+
+# native-tls, not rustls: this is SChannel on Windows and Security.framework on
+# macOS, both of which validate against the OS certificate store. The broker's
+# cert is signed by the operator's LAN CA, whose root the operator installs in
+# that store; login.microsoftonline.com chains to a public root already there.
+# rustls+webpki-roots would trust neither the private CA nor, without extra
+# wiring, the OS store.
+ureq = { version = "3.3.0", default-features = false, features = ["native-tls"] }
+# The same native-tls ureq is already built on, reached directly for one thing
+# ureq does not expose: reading back the certificate a host presented, after
+# validation has refused it. See `tls.rs`.
+native-tls = "0.2.18"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",                    # locale time formatting
+    "Win32_NetworkManagement_Dns",            # SRV lookup for the broker
+    "Win32_System_SystemInformation",         # the machine's primary DNS suffix
+    "Win32_Security",                         # token elevation check
+    "Win32_Security_Authentication_Identity", # LSA: submit / query / purge tickets
+    "Win32_Security_Cryptography",            # CNG: the device grant's TPM key
+    "Win32_System_Registry",                  # settings, policy, LSA realm state
+    "Win32_System_Services",                  # SCM, for the --repair restart
+    "Win32_System_Threading",                 # wait on the elevated child
+    "Win32_System_Time",                      # FILETIME -> local time
+    "Win32_UI_Input_KeyboardAndMouse",         # GetLastInputInfo: is anyone here?
+    "Win32_UI_Shell",                         # ShellExecuteEx "runas"
+] }
+
+# The macOS counterpart of windows-sys
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation-sys = "0.8.7"
+
+# Objective-C runtime, for the one framework here that has no C interface:
+# ServiceManagement, which is how an app registers itself as a login item. Not a
+# UI dependency -- objc2 is to Objective-C what windows-sys is to Win32.
+objc2 = "0.6.4"
+
+[dev-dependencies]
+# A throwaway directory for the log-rotation tests. No new dependency:
+# native-tls already pulls it in.
+tempfile = "3"

@@ -1,0 +1,519 @@
+{#-
+  One page, both platforms, one language.
+
+  Two namespaces, and the split is the whole point:
+    {{ s.* }}  a label the agent actually draws, from the client's string table
+    {{ t.* }}  this page's own prose, from content/<lang>.toml
+
+  So a translator never retypes a button name -- they get the reviewed one for
+  their language for free, and the page cannot teach a label the product does not
+  say. If you are about to write a UI label as prose, it belongs in `s`.
+-#}
+<!doctype html>
+<html lang="{{ lang }}" class="os-win">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ t.page_title }}</title>
+<meta name="description" content="{{ t.page_description }}">
+<link rel="icon" href="../img/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/site.css">
+{% for l in langs %}
+<link rel="alternate" hreflang="{{ l[0] }}" href="../{{ l[0] }}/">
+{% endfor %}
+<link rel="alternate" hreflang="x-default" href="../">
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+
+<script type="application/json" id="ui-strings">
+{"onThisPage": {{ t.on_this_page | tojson }}, "matches": {{ t.search_matches | tojson }}}
+</script>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <img src="../img/logo.svg" alt="" width="30" height="30">
+      <b>{{ s.app_name }} <span>{{ t.help_word }}</span></b>
+    </a>
+
+    <div class="search">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      <input data-search type="search" placeholder="{{ t.search_placeholder }}" aria-label="{{ t.search_placeholder }}">
+    </div>
+
+    <div class="switch" role="group" aria-label="{{ t.platform_group }}">
+      <button type="button" data-osbtn="win" aria-pressed="true">Windows</button>
+      <button type="button" data-osbtn="mac" aria-pressed="false">macOS</button>
+    </div>
+
+    <div class="langs">
+      <select data-langpick aria-label="{{ t.language_group }}">
+        {% for l in langs %}
+        <option value="{{ l[0] }}"{% if l[0] == lang %} selected{% endif %}>{{ l[1] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button class="themebtn" type="button" data-themebtn aria-label="{{ t.theme_toggle }}" title="{{ t.theme_toggle }}" aria-pressed="false">
+      <svg class="i-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path></svg>
+      <svg class="i-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+    </button>
+  </div>
+</header>
+
+<div id="top" class="wrap">
+  <div class="hero">
+    <div>
+      <div class="kicker hero-kicker">{{ t.hero_kicker }}</div>
+      <h1>{{ t.hero_title }}</h1>
+    </div>
+    <p class="hero-lead">{{ t.hero_lead }}</p>
+  </div>
+
+  <nav class="goals" aria-label="{{ t.topics }}">
+    {% for g in t.goals %}
+    <a class="goal" href="#{{ g.id }}">
+      <div class="goal-head">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ t.goal_icons[g.id] }}</svg>
+        <span class="goal-num">{% if loop.index < 10 %}0{% endif %}{{ loop.index }}</span>
+      </div>
+      <div class="goal-title">{{ g.title }}</div>
+      <div class="goal-sub">{{ g.sub }}</div>
+    </a>
+    {% endfor %}
+  </nav>
+</div>
+
+<div class="wrap body">
+  <aside class="toc">
+    <div class="kicker toc-title" data-count>{{ t.on_this_page }}</div>
+    <nav>
+      {% for g in t.goals %}
+      <a data-navfor="{{ g.id }}" href="#{{ g.id }}">{{ g.title }}</a>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <main>
+    <div class="empty" data-empty>{{ t.search_empty }}</div>
+
+{#- Small helpers so the repetitive furniture is written once. -#}
+{%- macro section(id, title, part) %}
+    <section class="helpsec" id="{{ id }}" data-sec="{{ id }}">
+      <div data-block>
+        <div class="sec-head"><h2>{{ title }}</h2><span class="kicker">{{ part }}</span></div>
+{%- endmacro %}
+
+{%- macro tech(hint) %}
+      <details class="tech" data-block>
+        <summary>
+          <span class="chev">&#9654;</span>
+          <span class="tech-label">{{ t.technically }}</span>
+          <span class="tech-hint">{{ hint }}</span>
+        </summary>
+        <div class="tech-body">
+{%- endmacro %}
+
+{#- Puts an example value *into* the label's placeholder rather than stripping the
+    placeholder and appending it. English happens to end most of these lines with
+    the placeholder; Finnish and Japanese do not, and a stripped label plus a
+    trailing value would silently reorder the sentence. -#}
+{%- macro filled(template, value) -%}
+  {%- set v = "<code>" ~ value ~ "</code>" -%}
+  {{ template | replace("{duration}", v) | replace("{days}", v) | replace("{account}", v)
+              | replace("{broker}", v) | replace("{realm}", v) | replace("{idp}", v) | trim }}
+{%- endmacro %}
+
+{%- macro yes(label) %}<span class="yes"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"></path></svg>{{ label }}</span>{% endmacro %}
+{%- macro no(label) %}<span class="no"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg>{{ label }}</span>{% endmacro %}
+
+{#- ─── Part 1 ─────────────────────────────────────────────────────────── -#}
+{{ section("purpose", t.goals[0].title, t.part | replace("{n}", "1")) }}
+        <figure class="figure" data-os="win">
+          <img src="../img/systray-win.png" alt="{{ t.shot_alt_win }}" width="357" height="479">
+          <figcaption>{{ t.shot_caption_win }}</figcaption>
+        </figure>
+        <figure class="figure mac" data-os="mac">
+          <img src="../img/systray-mac.png" alt="{{ t.shot_alt_mac }}" width="252" height="392">
+          <figcaption>{{ t.shot_caption_mac }}</figcaption>
+        </figure>
+        <h3>{{ t.two_worlds_title }}</h3>
+        {% for p in t.two_worlds %}<p>{{ p }}</p>
+        {% endfor %}
+      </div>
+
+      <div data-block>
+        <h3>{{ t.gobetween_title }}</h3>
+        <p>{{ t.gobetween_lead }}</p>
+      </div>
+
+      <div data-block>
+        <h3>{{ t.worth_knowing_title }}</h3>
+        {% for p in t.worth_knowing %}<p>{{ p }}</p>
+        {% endfor %}
+      </div>
+
+{{ tech(t.tech_concepts_hint) }}
+          {% for p in t.tech_concepts %}<p>{{ p }}</p>
+          {% endfor %}
+        </div>
+      </details>
+
+      <div data-block>
+        <h3>{{ t.not_do_title }}</h3>
+        <ul>{% for li in t.not_do %}<li>{{ li }}</li>{% endfor %}</ul>
+      </div>
+
+{{ tech(t.tech_at_rest_hint) }}
+          {% for p in t.tech_at_rest %}<p>{{ p }}</p>
+          {% endfor %}
+        </div>
+      </details>
+    </section>
+
+{#- ─── Part 2: the icon ───────────────────────────────────────────────── -#}
+{{ section("icon", t.goals[1].title, t.part | replace("{n}", "2")) }}
+        <p data-os="win">{{ t.icon_lead_win }}</p>
+        <p data-os="mac">{{ t.icon_lead_mac }}</p>
+        <div class="grid grid-4">
+          {% for st in t.icon_states %}
+          <div class="box iconcard">
+            {% for os in platforms %}<span data-os="{{ os }}">{{ icons[os ~ "-" ~ st.icon] }}</span>{% endfor %}
+            <div class="iconcard-name">
+              <span data-os="win">{{ st.name_win }}</span><span data-os="mac">{{ st.name_mac }}</span>
+            </div>
+            <div class="iconcard-means">{{ s[st.headline] if st.headline else st.means }}</div>
+            <div class="iconcard-do{{ st.tone }}">{{ st.todo }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% for p in t.icon_notes %}<p>{{ p }}</p>
+        {% endfor %}
+        <p data-os="win">{{ t.icon_mac_note }}</p>
+      </div>
+    </section>
+
+{#- ─── Part 3: the status view ────────────────────────────────────────── -#}
+{{ section("panel", t.goals[2].title, t.part | replace("{n}", "3")) }}
+        <p data-os="win">{{ t.panel_lead_win }}</p>
+        <p data-os="mac">{{ t.panel_lead_mac }}</p>
+      </div>
+
+      <div data-block>
+        <h3>{{ t.headline_title }}</h3>
+        <p>{{ t.headline_lead }}</p>
+        <table>
+          <thead><tr><th>{{ t.th_headline }}</th><th>{{ t.th_means }}</th><th>{{ t.th_todo }}</th></tr></thead>
+          <tbody>
+            {% for r in t.headlines %}
+            <tr>
+              <td><strong class="ink-{{ r.tone }}">{{ s[r.headline] }}</strong></td>
+              <td>{{ r.means }}</td><td>{{ r.todo }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="after-table">{{ t.headline_note }}</p>
+      </div>
+
+{{ tech(t.tech_condition_hint) }}
+          {% for p in t.tech_condition %}<p>{{ p }}</p>
+          {% endfor %}
+        </div>
+      </details>
+
+      <div data-block>
+        <h3>{{ t.identity_title }}</h3>
+        <table>
+          <thead><tr><th>{{ t.th_line }}</th><th>{{ t.th_means }}</th></tr></thead>
+          <tbody>
+            <tr><td><strong>{{ filled(s.id_signed_in_as, "you@example.site") }}</strong></td><td>{{ t.identity_signed_in }}</td></tr>
+            <tr><td><strong>{{ filled(s.id_working_as, "svc-builder") }}</strong></td><td>{{ t.identity_working_as }}</td></tr>
+          </tbody>
+        </table>
+        <p class="after-table">{{ t.identity_note }}</p>
+      </div>
+
+{{ tech(t.tech_delegation_hint) }}
+          {% for p in t.tech_delegation %}<p>{{ p }}</p>
+          {% endfor %}
+        </div>
+      </details>
+
+      <div data-block>
+        <h3>{{ t.clocks_title }}</h3>
+        <table>
+          <thead><tr><th>{{ t.th_line }}</th><th>{{ t.th_means }}</th></tr></thead>
+          <tbody>
+            <tr><td><strong>{{ filled(s.access_ends_in, "4h 12m") }}</strong></td><td>{{ t.clock_access }}</td></tr>
+            <tr><td><strong>{{ filled(s.grant_expires_in, t.example_days) }}</strong></td><td>{{ t.clock_grant }}</td></tr>
+          </tbody>
+        </table>
+        <p class="after-table">{{ t.clocks_note }}</p>
+      </div>
+
+      <div data-block>
+        <h3>{{ t.explanation_title }}</h3>
+        <p>{{ t.explanation_lead }}</p>
+        <table>
+          <thead><tr><th>{{ t.th_says }}</th><th>{{ t.th_plain }}</th><th>{{ t.th_todo }}</th></tr></thead>
+          <tbody>
+            {% for r in t.blockers %}
+            <tr{% if r.os %} data-os="{{ r.os }}"{% endif %}>
+              <td><strong>{{ filled(s[r.blocker], r.arg) if r.arg else s[r.blocker] }}</strong></td>
+              <td>{{ r.plain }}</td><td>{{ r.todo }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+{{ tech(t.tech_blockers_hint) }}
+          {% for p in t.tech_blockers %}<p>{{ p }}</p>
+          {% endfor %}
+        </div>
+      </details>
+
+      <div data-block>
+        <h3>{{ s.details_heading }}</h3>
+        <p>{{ t.details_lead }}</p>
+        <p>{{ t.details_supply_lead }}</p>
+        <table>
+          <thead><tr><th>{{ t.th_value }}</th><th>{{ t.th_means }}</th></tr></thead>
+          <tbody>
+            <tr><td><em>{{ s.d_supply_grant }}</em></td><td>{{ t.supply_grant }}</td></tr>
+            <tr data-os="win"><td><em>{{ s.d_supply_wam }}</em></td><td>{{ t.supply_wam }}</td></tr>
+            <tr><td><em>{{ s.d_supply_browser }}</em></td><td>{{ t.supply_browser }}</td></tr>
+            <tr><td><em>{{ s.d_supply_none }}</em></td><td>{{ t.supply_none }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+{#- ─── Part 4: the buttons ────────────────────────────────────────────── -#}
+{{ section("buttons", t.goals[3].title, t.part | replace("{n}", "4")) }}
+        <h3>{{ t.conventions_title }}</h3>
+        <p>{{ t.convention_ellipsis }}</p>
+        <p data-os="win">{{ t.convention_shield }}</p>
+      </div>
+
+      <div data-block>
+        <h3>{{ t.getting_access_title }}</h3>
+        <table>
+          <thead><tr><th>{{ t.th_button }}</th><th>{{ t.th_does }}</th></tr></thead>
+          <tbody>
+            {% for r in t.getting_access %}
+            <tr><td><strong>{{ s[r.action] }}</strong></td><td>{{ r.does }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="after-table">{{ t.getting_access_note }}</p>
+      </div>
+
+      <div data-block>
+        <h3>{{ t.doors_title }}</h3>
+        <p>{{ t.doors_lead }}</p>
+        <table>
+          <thead><tr><th>{{ t.th_button }}</th><th>{{ t.th_ends_access }}</th><th>{{ t.th_ends_grant }}</th><th>{{ t.th_ends_signin }}</th></tr></thead>
+          <tbody>
+            {% for r in t.doors %}
+            <tr>
+              <td><strong>{{ filled(s[r.action], r.arg) if r.arg else s[r.action] }}</strong></td>
+              {% for cell in [r.access, r.grant, r.signin] %}
+              <td>{{ yes(t.yes) if cell else no(t.no) }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% for d in t.doors %}
+        <h4>{{ filled(s[d.action], d.arg) if d.arg else s[d.action] }}</h4>
+        <p>{{ d.detail }}</p>
+        {% if d.caveat %}<blockquote class="note">{{ d.caveat }}</blockquote>{% endif %}
+        {% endfor %}
+      </div>
+
+{{ tech(t.tech_doors_hint) }}
+          {% for p in t.tech_doors %}<p>{{ p }}</p>
+          {% endfor %}
+        </div>
+      </details>
+
+      <div data-block data-os="win">
+        <h3>{{ t.fixing_title }}</h3>
+        <table>
+          <thead><tr><th>{{ t.th_button }}</th><th>{{ t.th_does }}</th></tr></thead>
+          <tbody>
+            {% for r in t.fixing %}
+            <tr><td><strong>{{ s[r.action] }}</strong></td><td>{{ r.does }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="after-table">{{ t.fixing_note }}</p>
+        <p class="box">{{ t.fixing_mac }}</p>
+      </div>
+
+      <div data-block data-os="mac">
+        <h3>{{ t.fixing_title }}</h3>
+        <p>{{ t.fixing_mac }}</p>
+      </div>
+
+      <div data-block>
+        <h3>{{ t.authorizing_title }}</h3>
+        <table>
+          <thead><tr><th>{{ t.th_button }}</th><th>{{ t.th_does }}</th></tr></thead>
+          <tbody>
+            {% for r in t.authorizing %}
+            <tr><td><strong>{{ s[r.action] }}</strong></td><td>{{ r.does }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% for p in t.authorizing_notes %}<p class="after-table">{{ p }}</p>
+        {% endfor %}
+      </div>
+
+{{ tech(t.tech_grant_hint) }}
+          {% for p in t.tech_grant %}<p>{{ p }}</p>
+          {% endfor %}
+        </div>
+      </details>
+
+      <div data-block>
+        <h3>{{ t.everything_else_title }}</h3>
+        <table>
+          <thead><tr><th>{{ t.th_item }}</th><th>{{ t.th_does }}</th></tr></thead>
+          <tbody>
+            {% for r in t.everything_else %}
+            <tr><td><strong>{{ s[r.action] }}</strong></td><td>{{ r.does }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+{#- ─── Part 5: settings ───────────────────────────────────────────────── -#}
+{{ section("settings", t.goals[4].title, t.part | replace("{n}", "5")) }}
+        <h3>{{ s.tab_basic }}</h3>
+        {% for p in t.settings_basic %}<p>{{ p }}</p>
+        {% endfor %}
+        <p data-os="win">{{ t.settings_wam }}</p>
+      </div>
+
+      <div data-block data-os="win">
+        <h3>{{ s.tab_advanced }}</h3>
+        {% for p in t.settings_advanced %}<p>{{ p }}</p>
+        {% endfor %}
+      </div>
+
+      <div data-block data-os="mac">
+        <h3>{{ t.settings_mac_title }}</h3>
+        <p>{{ t.settings_mac }}</p>
+      </div>
+
+      <div data-block>
+        <h3>{{ s.tab_about }}</h3>
+        <p>{{ t.settings_about }}</p>
+      </div>
+    </section>
+
+{#- ─── Part 6: notifications ──────────────────────────────────────────── -#}
+{{ section("notifications", t.goals[5].title, t.part | replace("{n}", "6")) }}
+        <p>{{ t.notify_lead }}</p>
+        <table>
+          <thead><tr><th>{{ t.th_will_hear }}</th><th>{{ t.th_wont_hear }}</th></tr></thead>
+          <tbody>
+            {% for r in t.notify %}
+            <tr><td>{{ r[0] }}</td><td class="muted">{{ r[1] }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% for p in t.notify_notes %}<p class="after-table">{{ p }}</p>
+        {% endfor %}
+      </div>
+    </section>
+
+{#- ─── Part 7: troubleshooting ────────────────────────────────────────── -#}
+{{ section("trouble", t.goals[6].title, t.part | replace("{n}", "7")) }}
+        <p>{{ t.trouble_lead }}</p>
+        <table>
+          <thead><tr><th>{{ t.th_symptom }}</th><th>{{ t.th_cause }}</th><th>{{ t.th_todo }}</th></tr></thead>
+          <tbody>
+            {% for r in t.trouble %}
+            <tr{% if r.os %} data-os="{{ r.os }}"{% endif %}><td>{{ r.symptom }}</td><td>{{ r.cause }}</td><td>{{ r.todo }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div data-block>
+        <h3>{{ t.error_title }}</h3>
+        <p>{{ t.error_lead }}</p>
+        <div class="msg">
+          <div class="msg-line">
+            <strong class="ink-stop">{{ t.error_example_handle }}</strong>
+            {{ s.err_tls_untrusted | replace("{broker}", "kerbridge.example.site") }}
+          </div>
+          <div class="msg-key">
+            <b class="ink-stop">{{ t.error_before }}</b><span>{{ t.error_before_means }}</span>
+            <b>{{ t.error_after }}</b><span>{{ t.error_after_means }}</span>
+          </div>
+        </div>
+        <p>{{ t.error_note }}</p>
+      </div>
+    </section>
+
+{#- ─── Part 8: quick answers ──────────────────────────────────────────── -#}
+{{ section("answers", t.goals[7].title, t.part | replace("{n}", "8")) }}
+        <div class="grid grid-2">
+          {% for qa in t.answers %}
+          <div class="box">
+            <div class="card-title">{{ qa.q }}</div>
+            <div class="card-body">{{ qa.a }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+{#- ─── Glossary ───────────────────────────────────────────────────────── -#}
+{{ section("words", t.goals[8].title, t.glossary) }}
+        <table>
+          <thead><tr><th>{{ t.th_word }}</th><th>{{ t.th_means_here }}</th></tr></thead>
+          <tbody>
+            {% for w in t.words %}
+            {#- A row that names a button carries `label`, not `word`: the button's
+                own translation is the only one that can be right. -#}
+            <tr><td><strong>{{ w.word if w.word is defined else s[w.label] }}</strong></td><td>{{ w.means }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+{#- ─── Asking for help ────────────────────────────────────────────────── -#}
+{{ section("support", t.goals[9].title, t.finally) }}
+        <p>{{ t.support_lead }}</p>
+        <div class="grid grid-4">
+          {% for step in t.support_steps %}
+          <div class="box">
+            <div class="step-num">{{ loop.index }}</div>
+            <div class="card-title">{{ step.what }}</div>
+            <div class="step-sub">{{ step.detail }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        <p>{{ t.support_note }}</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span>{{ s.app_name }} {{ s.tagline }} &mdash; {{ t.footer_help }}</span>
+    <span>{{ s.about_license }}</span>
+  </div>
+</footer>
+</body>
+</html>

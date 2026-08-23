@@ -1,0 +1,83 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Page-1" id="dLs_B1n_iSl1D1QbYrg3">
+    <mxGraphModel dx="926" dy="603" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="diXZz0Wu7_2abb8lckpI-54" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillStyle=solid;fillColor=light-dark(#BAC8D3,#0F1414);strokeColor=light-dark(#23445D,#60707D);dashed=1;" value="" vertex="1">
+          <mxGeometry height="290" width="517" x="23" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-6" parent="1" style="aspect=fixed;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/internet_cloud.svg;shape=image;labelBackgroundColor=default;verticalAlign=top;verticalLabelPosition=bottom;perimeter=ellipsePerimeter;" value="Cloud IdP&lt;br&gt;MS Entra" vertex="1">
+          <mxGeometry height="50" width="50" x="276.25" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-8" parent="1" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/key.svg;" value="Entra token in" vertex="1">
+          <mxGeometry height="24.05" width="32.5" x="285" y="179" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-24" edge="1" parent="1" source="diXZz0Wu7_2abb8lckpI-36" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;curved=1;" target="diXZz0Wu7_2abb8lckpI-6" value="login to Entra">
+          <mxGeometry relative="1" x="-0.4907" y="-20" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="90" y="85.03" />
+            </Array>
+            <mxPoint x="130" y="222.5753986803453" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-50" edge="1" parent="1" source="diXZz0Wu7_2abb8lckpI-26" style="edgeStyle=none;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" target="diXZz0Wu7_2abb8lckpI-48">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="460" y="300" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-51" connectable="0" parent="diXZz0Wu7_2abb8lckpI-50" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="join into&lt;br&gt;local AD&lt;br&gt;&lt;span style=&quot;color: light-dark(rgb(0, 0, 0), rgb(112, 112, 112));&quot;&gt;Kerberos&lt;/span&gt;" vertex="1">
+          <mxGeometry relative="1" x="0.3371" y="-1" as="geometry">
+            <mxPoint x="-48" y="48" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-26" parent="1" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/sql_server.svg;" value="smbd&lt;br&gt;file server" vertex="1">
+          <mxGeometry height="50" width="38.5" x="282" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-27" parent="1" style="aspect=fixed;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/data_jack.svg;shape=image;labelBackgroundColor=#6a00ff;verticalAlign=top;verticalLabelPosition=bottom;perimeter=ellipsePerimeter;fontColor=#ffffff;labelBorderColor=#3700CC;" value="" vertex="1">
+          <mxGeometry height="50" width="32.5" x="110" y="219.5" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-30" parent="1" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/key.svg;" value="Kerberos TGT out" vertex="1">
+          <mxGeometry height="24.05" width="32.5" x="285" y="265.25" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-39" edge="1" parent="1" source="diXZz0Wu7_2abb8lckpI-35" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0;exitDx=0;exitDy=0;entryX=-0.087;entryY=0.409;entryDx=0;entryDy=0;entryPerimeter=0;" target="diXZz0Wu7_2abb8lckpI-48">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="335" y="231.25" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-35" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;fontColor=default;fontStyle=1;fontSize=10;" value="&lt;p&gt;&lt;span style=&quot;font-weight: normal; color: light-dark(rgb(0, 0, 0), rgb(204, 255, 153));&quot;&gt;&lt;font face=&quot;Helvetica&quot; style=&quot;&quot;&gt;&lt;font style=&quot;line-height: 50%;&quot;&gt;KerBridge&lt;br&gt;&lt;/font&gt;&lt;font style=&quot;line-height: 50%;&quot;&gt;systray app&lt;/font&gt;&lt;/font&gt;&lt;/span&gt;&lt;/p&gt;" vertex="1">
+          <mxGeometry height="30" width="97" x="143" y="229.5" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-49" edge="1" parent="1" source="diXZz0Wu7_2abb8lckpI-36" style="edgeStyle=none;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="diXZz0Wu7_2abb8lckpI-26" value="&lt;div&gt;&lt;span style=&quot;background-color: light-dark(#ffffff, var(--ge-dark-color, #121212)); color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;Windows Explorer&lt;/span&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;color: light-dark(rgb(0, 0, 0), rgb(130, 130, 130));&quot;&gt;CIFS&lt;/span&gt;&lt;span style=&quot;background-color: light-dark(#ffffff, var(--ge-dark-color, #121212)); color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;&lt;/span&gt;&lt;/div&gt;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-36" parent="1" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/laptop_client.svg;" value="Entra-only&lt;br&gt;joined PC" vertex="1">
+          <mxGeometry height="88.89" width="80" x="40" y="221" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-41" edge="1" parent="1" source="diXZz0Wu7_2abb8lckpI-48" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.035;exitY=0.995;exitDx=0;exitDy=0;entryX=1;entryY=1;entryDx=0;entryDy=0;exitPerimeter=0;" target="diXZz0Wu7_2abb8lckpI-27">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="335" y="261.25" as="sourcePoint" />
+            <mxPoint x="355" y="281" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-44" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;fontColor=default;fontStyle=0;fontFamily=Helvetica;" value="&lt;font style=&quot;color: light-dark(rgb(0, 0, 0), rgb(140, 140, 140));&quot;&gt;REST API&lt;/font&gt;" vertex="1">
+          <mxGeometry height="30" width="60" x="271.25" y="230.25" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-46" edge="1" parent="1" source="diXZz0Wu7_2abb8lckpI-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;curved=1;" target="diXZz0Wu7_2abb8lckpI-48" value="sync&lt;br&gt;&lt;span style=&quot;background-color: light-dark(#ffffff, var(--ge-dark-color, #121212)); color: light-dark(rgb(0, 0, 0), rgb(255, 255, 255));&quot;&gt;users + groups&lt;br&gt;to local directory&lt;/span&gt;">
+          <mxGeometry relative="1" x="0.4257" y="-21" as="geometry">
+            <mxPoint as="offset" />
+            <mxPoint x="390" y="266" as="sourcePoint" />
+            <mxPoint x="485" y="110.5" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-48" parent="1" style="image;aspect=fixed;perimeter=ellipsePerimeter;html=1;align=center;shadow=0;dashed=0;spacingTop=3;image=img/lib/active_directory/windows_server.svg;" value="" vertex="1">
+          <mxGeometry height="50" width="41" x="460" y="210.25" as="geometry" />
+        </mxCell>
+        <mxCell id="diXZz0Wu7_2abb8lckpI-53" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=right;verticalAlign=middle;rounded=0;fontColor=default;fontStyle=1;fontSize=10;" value="&lt;p&gt;&lt;span style=&quot;font-weight: normal; color: light-dark(rgb(0, 0, 0), rgb(204, 255, 153));&quot;&gt;&lt;font face=&quot;Helvetica&quot; style=&quot;&quot;&gt;&lt;font style=&quot;line-height: 50%;&quot;&gt;KerBridge&lt;br&gt;&lt;/font&gt;&lt;font style=&quot;line-height: 50%;&quot;&gt;server&lt;/font&gt;&lt;/font&gt;&lt;/span&gt;&lt;/p&gt;" vertex="1">
+          <mxGeometry height="30" width="97" x="357" y="230.5" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

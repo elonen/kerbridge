@@ -1,0 +1,35 @@
+# Connection deadlines, shared by every TLS strategy and imported into the global
+# options block of each Caddyfile.<strategy>. One copy, for the same reason as
+# routes.caddyfile: a certificate source does not get to vary these.
+#
+# Caddy sets none of them by default -- a connection may take as long as it likes
+# to send a request, and an idle one is kept for five minutes. That suits a
+# public web server, not this: the only internet-facing listener, one TLS
+# handshake per connection, and a legitimate client that makes a couple of
+# requests a day. Without deadlines a few hundred sockets dribbling one header
+# byte a minute hold the server for free, and since no request is ever made
+# nothing downstream (the broker's in-flight cap, issuerd's) sees them -- and no
+# token is needed to try it.
+servers {
+	timeouts {
+		# Headers, from the first byte. A real client sends them in one segment;
+		# ten seconds is beyond generous for a bad link and fatal to a dribbler.
+		read_header 10s
+		# Headers *and* body -- this is Go's ReadTimeout, not a second budget
+		# after the first. The body is already capped at 16KB by routes.caddyfile,
+		# so this bounds the rate at which those bytes are allowed to arrive.
+		read_body 30s
+		# Keep-alive. The helper builds a fresh agent per request and never reuses
+		# a connection between them, so nothing legitimate is idle here at all;
+		# this is a floor under that, not a budget anyone spends.
+		idle 60s
+	}
+}
+
+# `write` is deliberately absent. It is the deadline for producing the response,
+# and the response comes from the broker: a slow directory plus a slow issuance is
+# two 30s timeouts (KB_TIMEOUT_SECONDS, twice) before the broker gives up on its
+# own. Any write deadline short enough to matter against an attacker would cut
+# off a legitimate slow ticket instead, and a client holding a connection open to
+# *read* slowly costs the broker nothing that the in-flight cap has not already
+# bounded.

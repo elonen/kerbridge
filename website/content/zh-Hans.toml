@@ -1,0 +1,389 @@
+# content/en.toml 的中文译本。键必须与其完全一致。
+#
+# 不要把应用按钮或标题上的文字翻译到这里：它们直接来自客户端的字符串表，
+# 已经是中文，也已经核对过。如果你发现自己正要把某个按钮名写进这个文件，
+# 请改用模板里的 `{{ s.* }}` 引用。
+
+language_name = "简体中文"
+page_title = "NAS Access — 用户帮助"
+page_description = "NAS Access 如何用你所在组织的云账户打开你工作用的网络驱动器，以及它的每个部分是什么意思。"
+
+# ── 页面框架 ─────────────────────────────────────────────────────────────────
+help_word = "帮助"
+search_placeholder = "在本页搜索…"
+search_matches = "{n} 处匹配"
+search_empty = "本页没有与此匹配的内容。试试更短的词 — 或者某个按钮的名字。"
+on_this_page = "本页内容"
+topics = "主题"
+platform_group = "选择你的平台"
+language_group = "选择语言"
+theme_toggle = "在浅色与深色之间切换"
+technically = "技术细节"
+part = "第 {n} 部分"
+glossary = "词汇表"
+finally = "最后"
+yes = "是"
+no = "否"
+footer_help = "用户帮助"
+
+# ── 表头 ─────────────────────────────────────────────────────────────────────
+th_headline = "标题"
+th_means = "含义"
+th_means_here = "在这里的含义"
+th_todo = "该做什么"
+th_line = "行"
+th_says = "显示内容"
+th_plain = "通俗地说"
+th_value = "值"
+th_button = "按钮"
+th_item = "项目"
+th_does = "作用"
+th_word = "词"
+th_symptom = "症状"
+th_cause = "可能的原因"
+th_will_hear = "会通知你的"
+th_wont_hear = "不会通知你的"
+th_ends_access = "结束你对驱动器的访问"
+th_ends_grant = "结束此设备的授权"
+th_ends_signin = "结束你的浏览器登录"
+
+# ── 首屏 ─────────────────────────────────────────────────────────────────────
+hero_kicker = "用户帮助"
+hero_title = "网络驱动器，无需密码。"
+hero_lead = "NAS Access 让你登录你所在组织的云账户，并用这次登录打开你工作用的网络驱动器。它运行起来之后，你还是按老习惯打开驱动器。没有额外的密码要记，也没有任何东西要输入。"
+
+# ── 目录 ─────────────────────────────────────────────────────────────────────
+# 这里的顺序就是页面的顺序。`id` 对应模板中的区块 — 不要改动。
+goals = [
+  { id = "purpose",       title = "这个应用是做什么的",   sub = "它为什么存在，做了什么" },
+  { id = "icon",          title = "图标",                 sub = "四种状态，一眼看清" },
+  { id = "panel",         title = "状态视图",             sub = "逐行解释" },
+  { id = "buttons",       title = "按钮",                 sub = "每个按钮做什么，不做什么" },
+  { id = "settings",      title = "设置",                 sub = "基本、高级、关于" },
+  { id = "notifications", title = "通知",                 sub = "它在什么时候告诉你什么" },
+  { id = "trouble",       title = "出问题的时候",         sub = "症状、原因、修复" },
+  { id = "answers",       title = "快速解答",             sub = "大家常问的问题" },
+  { id = "words",         title = "这个应用用到的词",     sub = "九个术语的定义" },
+  { id = "support",       title = "寻求帮助",             sub = "该准备好什么" },
+]
+
+# ── 第 1 部分 ────────────────────────────────────────────────────────────────
+shot_alt_win = "NAS Access 状态面板在 Windows 通知区域上方打开，显示“访问正常”。"
+shot_alt_mac = "NAS Access 菜单在 macOS 菜单栏中打开，显示“访问正常”。"
+shot_caption_win = "如果这看起来眼熟，你就来对地方了 — 它从通知区域打开。"
+shot_caption_mac = "如果这看起来眼熟，你就来对地方了 — 它从菜单栏打开。"
+
+two_worlds_title = "两个原本互不相通的系统"
+two_worlds = [
+  "<strong>你的账户在云端。</strong>就是你用来收发邮件、登录工作网站的那个账户。你所在的组织在那里管理它。",
+  "<strong>你的文件在你们自己的楼里。</strong>它们放在一台文件服务器上 — 你的网络驱动器和共享文件夹都出自这台机器。这台服务器在安全问题上刻意守旧，而且从没听说过什么云。",
+  "没有人从中牵线，这两边就无法认定你就是你。",
+]
+
+gobetween_title = "NAS Access 就是中间人"
+gobetween_lead = "NAS Access 把你的云端登录转换成一张文件服务器能理解、也肯接受的通行证。"
+
+worth_knowing_title = "值得知道的三件事"
+worth_knowing = [
+  "<strong>通行证有时限。</strong>通常够用大半个工作日。这是正常的，也是有意为之 — 正因为如此，你所在的组织才能在需要时收回访问权限。",
+  "<strong>大约到一半时，NAS Access 会悄悄取得一张新通行证</strong>，远在旧的用完之前。平常的日子里，你根本不会察觉。",
+  "<strong>它没有的东西，它就续不了。</strong>如果应用无法自行取得新通行证，它会在当前这张到期<em>之前</em>告诉你，你点一下就能继续工作。",
+]
+
+tech_concepts_hint = "精确的术语，供需要的人参考"
+tech_concepts = [
+  "你的云账户是<strong>身份提供方</strong>（多数部署中是 Entra ID）上的一个 <strong>OIDC</strong> 身份。证明是一枚 OIDC 访问令牌，通过系统浏览器里带 PKCE 的授权码流程获得。",
+  "<strong>代理服务器</strong>（broker）是你的 IT 团队运行的 KerBridge 服务。它验证令牌，并请 <strong>KDC</strong> 为你的账户在本地<strong>领域</strong>（realm）中签发一张真正的 <strong>Kerberos TGT</strong>（票据授予票据）。",
+  "“通行证口袋”就是你登录会话的<strong>票据缓存</strong> — Windows 上是 LSA 登录会话，macOS 上是 Heimdal 的 <code>API:</code> 缓存。把票据放进去的动作叫<strong>注入</strong>。之后，系统自带的 SMB 客户端做的就是普通的 Kerberos：用 TGT 向文件服务器换取服务票据。文件访问路径没有任何部分被改动。",
+  "“到一半时的新通行证”是<strong>重新注入</strong>，不是 Kerberos 层面的续期。据我们的测试，Windows 会请 KDC 续期 KerBridge 注入的 TGT，然后从不安装结果，所以应用改为把整个交换重新做一遍，注入一张新票据。",
+]
+
+not_do_title = "它不做的事"
+not_do = [
+  "它不保存你的密码。它从来见不到密码。",
+  "它不读取、也不更改你的文件、驱动器或盘符。",
+  "它不取代你所在组织的登录，而是使用它。",
+  "你<em>使用</em>电脑并不需要它在运行 — 只有让网络驱动器保持可用才需要。",
+]
+
+tech_at_rest_hint = "保存了什么，存在哪里"
+tech_at_rest = [
+  "<strong>磁盘上不留任何机密。</strong>票据交换一完成，访问令牌就被丢弃。刷新令牌只保存在进程内存中，随进程一起消失 — 从不写入磁盘或日志。写到磁盘上的只有代理服务器 URL、一份已发现配置的缓存副本，以及此设备的授权状态。它甚至并不真正了解你的 NAS 或其他 Kerberos 服务；它只跟 Kerberos TGT 打交道。",
+]
+
+# ── 第 2 部分 ────────────────────────────────────────────────────────────────
+icon_lead_win = "NAS Access 住在通知区域里。看一眼图标，就知道全部状态。"
+icon_lead_mac = "NAS Access 住在菜单栏里。看一眼图标，就知道全部状态。"
+
+icon_states = [
+  { icon = "working",     headline = "cond_working",   name_win = "实色",               name_mac = "实色",           todo = "无需操作", tone = "" },
+  { icon = "not-started", headline = "cond_off",       name_win = "变淡，无标记",       name_mac = "变淡，无标记",   todo = "无需操作", tone = "" },
+  { icon = "will-stop",   headline = "cond_will_stop", name_win = "变淡，琥珀色三角形", name_mac = "变淡，三角形",   todo = "快了，但不是现在", tone = " warn" },
+  { icon = "stopped",     headline = "cond_stopped",   name_win = "变淡，红色圆圈",     name_mac = "变淡，圆圈",     todo = "是的 — 这个需要你", tone = " stop" },
+]
+
+icon_notes = [
+  "<strong>变淡不代表出了问题。</strong>实色专门留给<em>无事可看</em>的时候，这样当真有东西要看时，它才有被看见的对比度。",
+  "形状和颜色同样重要 — 三角形和圆圈始终不同，分不清琥珀色和红色的人也能分辨。",
+]
+icon_mac_note = "在 Mac 上，同样四种形状以菜单栏的单一颜色显示，因为菜单栏画什么都是这样。"
+
+# ── 第 3 部分 ────────────────────────────────────────────────────────────────
+panel_lead_win = "点击图标会打开一个小面板。它依次告诉你<strong>有什么需要你处理</strong>、<strong>你是谁</strong>、<strong>还有多久</strong>，如果出了问题，还有<strong>为什么</strong>。"
+panel_lead_mac = "点击图标会打开菜单。它告诉你<strong>有什么需要你处理</strong>、<strong>你是谁</strong>、<strong>还有多久</strong>，如果出了问题，还有<strong>为什么需要你行动</strong>。"
+
+headline_title = "标题行"
+headline_lead = "一行带颜色的文字，点明当前状况。"
+headlines = [
+  { headline = "cond_working",   tone = "ok",   means = "你的驱动器正常工作，应用自己就能让它们一直正常。", todo = "什么都不用做。" },
+  { headline = "cond_flaky",     tone = "warn", means = "你的驱动器现在正常。应用连接你 IT 团队的服务器时遇到了困难。", todo = "通常不用做什么 — 它常常自己恢复。持续不散的话，跟 IT 提一声。" },
+  { headline = "cond_will_stop", tone = "warn", means = "你的驱动器正常，但访问会在一个已知时刻停止，而且不会有任何东西自动续期。", todo = "在那个时刻之前，趁你方便的时候，使用提出延长访问的那个按钮。" },
+  { headline = "cond_stopped",   tone = "stop", means = "你的驱动器打不开了。", todo = "读一读标题下面的解释 — 它会说明原因，并给出修复它的按钮。" },
+  { headline = "cond_off",       tone = "off",  means = "应用在这里没在工作，也没人指望它工作 — 比如在你注销之后。", todo = "什么都不用做，除非你想要回访问权限。" },
+]
+headline_note = "<strong>到期警告不是故障。</strong>它表示应用悄悄续期的办法用完了 — 常常只是因为你关掉了浏览器会话，或者此设备的授权快到重新授权的时候了。在显示的时刻之前，你的访问完好无损。点一下，安静的续期就回来了。"
+
+tech_condition_hint = "标题行由什么计算得来"
+tech_condition = [
+  "标题行呈现的是 <code>Condition</code>，取值为 <code>Working</code>、<code>Flaky</code>、<code>WillStop</code>、<code>Stopped</code> 或 <code>NotStarted</code> 之一。它是三个本地事实的纯函数：是否持有<strong>可用的</strong>票据、这台机器是否应当在此工作，以及下一次续期是否存在<strong>静默的续期方式</strong>。",
+  "没有任何网络事实参与其中 — 代理服务器故障永远不会改变这个状态。它会以障碍的形式出现，只有持续了一段时间才会成为 <code>Flaky</code>。",
+]
+
+identity_title = "身份行"
+identity_signed_in = "你的访问 — 以及你保存的一切 — 所属的那个账户。"
+identity_working_as = "这台电脑被设置为以<em>另一个账户</em>的身份运行。"
+identity_note = "<strong>第二种值得读两遍。</strong>在这样的电脑上，你保存到网络驱动器的文件记在那个（通常是共享的）账户名下，而不是你的名下。你在这里登录，是在为这台机器作担保 — 你并没有获得属于你自己的访问权限。构建机、信息亭和共享工作站上这样很正常，是你的 IT 团队特意这么设置的。"
+
+tech_delegation_hint = "设备委托"
+tech_delegation = [
+  "这台机器被<strong>委托</strong>为特定账户获取 TGT：配置了 <code>grant_for</code> 目标，于是只有设备授权才能取得票据，而票据携带的是目标账户的 principal。受委托的登录<strong>授权的是以指定用户身份的访问</strong>，而不是登录者本人的访问 — 这次登录证明的是谁坐在键盘前，而不是这台机器以哪个账户访问你的 Kerberos 服务。",
+]
+
+# 一个完整的名词短语：客户端用 `days()` 呈现天数，在裸数字无法与上下文搭配的
+# 语言里，它会随周围的词变化。
+example_days = "6 天"
+
+clocks_title = "到期时钟"
+clock_access = "当前通行证何时用完。正常情况下，大约到一半就会有新的送来，所以这只是个数字，不是最后期限。"
+clock_grant = "此设备跳过浏览器的许可即将到头。在那之前通过浏览器登录一次，它就会延长。"
+clocks_note = "这两个永远不会以互相矛盾的警告同时出现 — 如果访问真的快到期了，该操心的就不是授权那只时钟。"
+
+explanation_title = "解释"
+explanation_lead = "有话要说的时候，它会出现在各项信息下方、自己的方块里。你可能看到这些："
+blockers = [
+  { blocker = "blk_no_supply",            plain = "又到了证明你是你的时候。", todo = "通过浏览器登录。几秒钟就好。" },
+  { blocker = "blk_network_error",        arg = "服务器", plain = "应用连不上你 IT 团队的服务器。", todo = "检查你是否在内网或 VPN 上。已经打开的驱动器通常还能继续用。" },
+  { blocker = "blk_realm_unknown",        arg = "服务器", plain = "应用连上了服务器，但还没拿到它的配置。", todo = "等一等。它会自己重试。" },
+  { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "这台电脑的一次性配置步骤还没做。", todo = "用配置按钮。它会请求管理员权限，之后要重启一次。" },
+  { blocker = "blk_ntlm_fallback",        os = "win", plain = "通行证到期后的一个已知 Windows 小毛病。你的驱动器卡住了。", todo = "先保存工作，然后用修复按钮。" },
+  { blocker = "blk_refused",              plain = "你所在组织的服务器不接受你的账户使用这些驱动器。", todo = "这台电脑修不了这个 — 请联系 IT。" },
+  { blocker = "blk_no_grant",             arg = "账户", plain = "一台还没有获得授权的共享账户机器。", todo = "得由有权授权它的人在这里登录。" },
+  { blocker = "blk_grant_refused",        plain = "策略不允许此设备跳过浏览器。", todo = "再试也没用。请联系 IT。" },
+  { blocker = "blk_no_broker_url",        plain = "第一次运行 — 应用还不知道要与哪台服务器通信。", todo = "在设置里输入你 IT 团队给你的地址。" },
+]
+
+tech_blockers_hint = "障碍与操作"
+tech_blockers = [
+  "这些是<strong>障碍</strong>：此刻缺什么，直接陈述、不作推论。它们是一份清单而不是排名，因为多个障碍可以同时成立，模型会把它们全部报告出来，而不是只报最响的那个。",
+  "障碍负责<em>解释</em>；操作负责<em>解决</em>。它们不是平行的两张表，彼此之间也没有一一对应。“服务器无法访问”这一个障碍合并了连不上、TLS 被拒、限流和 5xx 四种情况，因为它们成因不同，但你能做的事相同；确切的句子保留在详细消息里。",
+]
+
+details_lead = "一个折叠区，留给有人帮你排查的时候。里面有领域、通行证的结束时间、下一次续期会用什么方式，以及应用下次尝试的时间。"
+details_supply_lead = "最有用的一行，是指出下一次续期用什么的那行："
+supply_grant = "静默。此设备在设定的天数内受信任。"
+supply_wam = "静默。Windows 自带的登录会完成这件事。"
+supply_browser = "静默，只要应用一直运行着。"
+supply_none = "这就是标题行警告访问即将到期的原因。"
+
+# ── 第 4 部分 ────────────────────────────────────────────────────────────────
+conventions_title = "值得学会的两条惯例"
+convention_ellipsis = "<strong>以“…”结尾的按钮，意味着后面还有一步</strong> — 一个浏览器窗口，或一个要你回答的问题。没有省略号的按钮，点了就直接做它写的事。两个续期按钮的区别仅此而已：它们承诺同样的结果，但其中一个会打开浏览器。"
+convention_shield = "<strong>按钮上的盾牌表示 Windows 会请求管理员权限。</strong>无论你自己是不是管理员，那些按钮上始终有它。"
+
+getting_access_title = "获得访问"
+getting_access = [
+  { action = "act_sign_in",        does = "打开浏览器，让你登录，取得通行证。最普通的开始方式。" },
+  { action = "act_sign_in_extend", does = "同一件事，只是措辞面向已经有访问权限的你。取得新通行证，并恢复静默续期。" },
+  { action = "act_reinject",       does = "<em>不用</em>浏览器就取得新通行证，靠的是应用手上已有的东西。只有真能成功时才会出现。" },
+  { action = "act_cancel",         does = "只在等待浏览器登录时出现。停止等待。" },
+]
+getting_access_note = "如果免浏览器的续期出现了，优先用它 — 它是省事的那个，而且只在能成功时才出现。"
+
+doors_title = "离开 — 三扇各不相同的门"
+doors_lead = "它们听起来相似，效果却各不相同。整页只有这一张表值得收藏。"
+
+tech_doors_hint = "每扇门实际做了什么"
+tech_doors = [
+  "<strong>从身份提供方退出登录</strong>会结束颁发机构那边的 SSO 会话，并丢弃内存中的刷新令牌。它无法把你从 Windows 本身注销；一个应用只能释放自己的会话。",
+  "<strong>移除授权</strong>会<em>先</em>从此设备的 TPM 中删除设备授权那把不可导出的 ECDSA P-256 密钥，然后才在代理服务器上吊销它 — 正是这个顺序让它离线也能工作。",
+  "<strong>注销</strong>是一次以领域为范围的票据缓存清除 — 只清这个领域的 TGT 和服务票据。其他领域的票据原封不动，这正是它在 cloud trust 租户上安全的原因。已经建立的 SMB 会话会在空缓存之上继续提供文件，不产生任何 Kerberos 流量，所以任何只作用于票据的操作都无法诚实地承诺连接会断开。",
+]
+
+fixing_title = "修复"
+fixing = [
+  { action = "act_enroll",              does = "一次性的，按电脑计。让 Windows 认识你所在组织的领域。需要管理员权限，之后要重启一次。" },
+  { action = "act_restart_workstation", does = "清除卡住的网络驱动器状态。<strong>先保存你的工作</strong> — 这台电脑上的每一个网络驱动器都会断开，不只是这些。" },
+  { action = "act_reenroll",            does = "同样的配置，覆盖在残缺或过时的配置之上。位于设置 ▸ 高级。" },
+  { action = "act_unenroll",            does = "把配置整个移除。位于设置 ▸ 高级。" },
+]
+fixing_note = "凡是无法撤销的操作都会先问你，说清楚它将要做什么，并默认选择取消。你可以关掉那个窗口让它继续干 — 它会告诉你结果如何。"
+fixing_mac = "<strong>macOS 完全不需要这些。</strong>它自己就能找到领域，所以没有配置步骤，整个产品里没有任何管理员提示，也没有修复功能 — 在那里连接断了就只是重新连上。"
+
+authorizing_title = "授权此设备"
+authorizing = [
+  { action = "act_create_grant",       does = "让此设备在设定的天数内，无需浏览器登录就能取得通行证。" },
+  { action = "act_create_grant_again", does = "同一件事，在已持有授权时 — 这就是延长它的方法。" },
+]
+authorizing_notes = [
+  "实际发生的是：在此设备的安全芯片里创建一把密钥。它无法从设备上复制出去，只覆盖你在此设备上的账户，你的 IT 团队随时可以吊销它。",
+  "它到期之前你会收到提醒。通过浏览器登录一次就能延长。",
+]
+
+tech_grant_hint = "设备授权"
+tech_grant = [
+  "这是 KerBridge 的<strong>设备授权</strong> — TPM 中一把不可导出的 ECDSA P-256 密钥，通过 CNG 的 platform crypto provider 在用户范围内创建，因此不需要提升权限，并随用户配置文件一起消失。代理服务器保存对应的公钥并执行自己的天数上限，所以调低上限会缩短所有已发出的授权。",
+]
+
+everything_else_title = "其余的一切"
+everything_else = [
+  { action = "menu_open_status", does = "把状态面板调出来。" },
+  { action = "menu_settings",    does = "见下方的设置一节。" },
+  { action = "menu_help",        does = "就是本页。" },
+  { action = "act_open_log",     does = "应用做过什么的技术记录，供有人帮你时使用。出了问题时会出现，并且始终在设置 ▸ 高级 ▸ 疑难解答。" },
+  { action = "menu_quit",        does = "停止应用。你当前的通行证在用完前保持有效，此后不会再有任何续期。" },
+]
+
+# ── 第 5 部分 ────────────────────────────────────────────────────────────────
+settings_basic = [
+  "<strong>代理服务器 URL</strong> — 你的 IT 团队给你的服务器。这是应用唯一需要知道的东西；其余一切它都向那台服务器询问。",
+  "如果它显示 URL 由你的 IT 团队设置、此处无法更改，那就是集中设置的 — 在受管理的电脑上这很正常。",
+  "<strong>登录时启动</strong> — 你登录电脑后自动为你登录，这样你就位时驱动器也已就绪。建议开启。",
+]
+settings_wam = "<strong>尽可能使用 Windows 登录</strong>会在 Windows 自带的登录能静默为你作保时跳过浏览器。让它开着；帮不上忙时，应用会退回浏览器，什么也不损失。"
+settings_advanced = [
+  "<strong>授权</strong> — 显示此设备以什么身份获得授权，并放着创建与移除授权的按钮。用于以另一账户名义授权此设备的那个输入框，是给共享账户机器用的：自己的账户就让它空着。",
+  "改动那个输入框，决定的是<em>下一次</em>授权给谁。对已持有的这份没有任何影响。",
+  "<strong>Windows 配置</strong> — 这台电脑是否认识你所在组织的领域，外加重做和移除配置的按钮。",
+  "<strong>疑难解答</strong> — 打开日志文件夹。",
+]
+settings_mac_title = "在 macOS 上"
+settings_mac = "设置只是一张单独的表单，包含代理服务器 URL 和登录时启动的开关，外加“确定”“取消”一对按钮 — 其余小节描述的都是 macOS 上不存在的东西。"
+settings_about = "版本与许可证。"
+
+# ── 第 6 部分 ────────────────────────────────────────────────────────────────
+notify_lead = "这个应用很少开口，开口只说要紧的事。"
+notify = [
+  ["出问题后访问恢复了", "例行续期成功了"],
+  ["访问即将停止，提前约二十分钟", "通行证的时间正常流逝"],
+  ["访问已经停止", "自己好了的短暂网络故障"],
+  ["你设备的授权即将到期", "一台只是关了机的电脑"],
+]
+notify_notes = [
+  "<strong>错过一条也不会损失什么。</strong>通知是一次打断，从来不是记录 — 状态面板上永远是当下的实情，什么都不会过期作废。没有未读角标，也没有“你错过了什么”的列表。",
+  "重新授权的提醒会等到你真的坐在键盘前，而不是凌晨三点响起。",
+]
+
+# ── 第 7 部分 ────────────────────────────────────────────────────────────────
+trouble_lead = "先看图标，再看面板。它几乎总能点出问题，并把修复放在一个按钮上。"
+trouble = [
+  { symptom = "某个驱动器要密码", cause = "通行证到期了，或者从来没取得过", todo = "打开面板。它会说没有访问权限，或者访问即将到期。" },
+  { symptom = "驱动器本来好好的，用着用着停了", os = "win", cause = "Windows 的 NTLM 小毛病", todo = "保存好工作，然后用修复按钮" },
+  { symptom = "面板说连不上服务器", cause = "不在内网，或 VPN 断了", todo = "重新连上。它会自己重试并恢复。" },
+  { symptom = "IT 刚给了你某个文件夹的权限，它还是打不开", cause = "你的通行证是在改动之前签发的", todo = "续期 — 通行证带着你所在组的一份快照，所以需要新的一张" },
+  { symptom = "一切看着正常，但有个文件夹被拒绝", cause = "那个文件夹自己的权限", todo = "不是 NAS Access 的问题 — 去问文件夹的负责人" },
+  { symptom = "面板说必须由管理员来修", cause = "确实如此", todo = "把消息原封不动发给 IT" },
+]
+
+error_title = "读懂错误消息"
+error_lead = "每条详细消息都写成两半："
+error_example_handle = "TLS untrusted:"
+error_before = "冒号之前"
+error_before_means = "一个技术性标识，特意放在那里给帮你的人看"
+error_after = "冒号之后"
+error_after_means = "它对你意味着什么"
+error_note = "报告问题时，请引用整行 — 那个标识常常就是你的 IT 团队需要的全部。"
+
+# ── 第 8 部分 ────────────────────────────────────────────────────────────────
+answers = [
+  { q = "我必须一直开着这个应用吗？", a = "是的，这样驱动器才保持可用。它空闲时几乎不消耗资源，设成登录时启动，你就再也不用想起它。" },
+  { q = "为什么我登录时会弹出浏览器窗口？", a = "因为你的登录属于你所在的组织，不属于这个应用。应用从来见不到你的密码 — 由浏览器来处理，跟你其他的工作网站一模一样。" },
+  { q = "今天早上它为什么什么都没问我？", a = "因为不需要。这正是设计中的体验。" },
+  { q = "午饭时我合上了笔记本盖子。", a = "没关系。它会从中断的地方继续，需要的话再取一张新通行证。" },
+  { q = "我在家办公。", a = "平时能连上你文件服务器的东西 — VPN 也好，别的也好 — NAS Access 需要的也是它。今天你的驱动器在家能用，配上 NAS Access 也能用。" },
+  { q = "我的密码存在什么地方吗？", a = "没有。应用从不接收密码。它存在磁盘上的任何东西，都不能用来以你的身份登录。" },
+  { q = "IT 能看到我打开了什么吗？", a = "NAS Access 不监视你的文件。你的文件服务器保留自己的记录，一如既往。" },
+  { q = "我注销了，但一个驱动器还开着。", a = "那是你的操作系统在维持一条它已有的连接。关掉窗口、断开驱动器，或者重启。新的东西打不开了。" },
+]
+
+# ── 词汇表 ───────────────────────────────────────────────────────────────────
+words = [
+  { word = "访问",       means = "能够在你的网络文件服务器上完成身份验证" },
+  { word = "登录",       means = "在浏览器里证明你是谁" },
+  { label = "act_drop_ticket", means = "丢掉当前那张网络驱动器通行证" },
+  { word = "授权",       means = "此设备在一段时间内跳过浏览器的许可，也可以以另一位用户的身份" },
+  { word = "续期",       means = "在不打扰你的情况下取得新通行证" },
+  { word = "领域",       means = "你的驱动器所属的本地系统的名字，比如 <code>EXAMPLE.SITE</code>" },
+  { word = "代理服务器", means = "你 IT 团队的服务器 — NAS Access 向它索取通行证的那台" },
+  { word = "票据",       means = "通行证本身。技术术语；只在 Kerberos 详情里出现" },
+  { word = "此设备",     means = "你面前的这台电脑" },
+]
+
+# ── 寻求帮助 ─────────────────────────────────────────────────────────────────
+support_lead = "把这些准备好 — 应用全都会显示："
+support_steps = [
+  { what = "标题行", detail = "面板顶端那行带颜色的字" },
+  { what = "完整消息", detail = "包括冒号之前的部分" },
+  { what = "领域", detail = "在 Kerberos 详情里 — 任何人都会先问这个" },
+  { what = "日志", detail = "设置 ▸ 高级 ▸ 疑难解答 ▸ 打开日志文件夹" },
+]
+support_note = "通常这就足够解决问题，谁也不用碰你的电脑。"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 从这里往下使用 TOML 的表语法，表头会捕获其后所有裸键 — 所以这些必须放在
+# 最后。新的普通键请加在这条线上方，不要加在下方。
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 三扇门。`access`/`grant`/`signin` 驱动“是/否”表格，这里的顺序也是表格
+# 及其下方解释的顺序。
+[[doors]]
+action = "act_sign_out_idp"
+arg = "Entra"
+access = false
+grant  = false
+signin = true
+detail = "关闭这个应用留在你浏览器里的登录会话。在共享电脑上这是良好的习惯。它不碰你的驱动器。"
+
+[[doors]]
+action = "act_give_up_grant"
+access = false
+grant  = true
+signin = false
+detail = "放弃此设备<em>不经浏览器</em>访问你驱动器的许可。你此刻的访问不受影响 — 只是回到每次都通过浏览器登录的方式。它无法撤销：再次授权创建的是一份新的许可，不会恢复旧的那份。"
+caveat = """
+在共享账户机器上 — 也就是面板上写着以另一账户身份运行的那种 — 不存在\
+“回到浏览器”这条路。授权是这种机器获得访问的唯一途径，移除它就意味着访问\
+会用完并停止。确认窗口会准确告诉你还剩多少时间。"""
+
+[[doors]]
+action = "act_drop_ticket"
+access = true
+grant  = false
+signin = false
+detail = "扔掉这台电脑的通行证。这是最日常的一扇门 — 一天的活儿干完了，或者不再需要访问共享驱动器时，就用它。"
+caveat = """
+一句实话实说的提醒：<strong>已经打开的网络驱动器可能会继续可用</strong>，\
+直到你关闭它们或重启。那是你的操作系统把一条连接保持着，没有哪个应用能\
+承诺不这样。但新的东西打不开了。"""
+
+# Lucide paths, keyed by section. Not translated -- they are drawings.
+[goal_icons]
+purpose = '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>'
+icon = '<rect x="2" y="3" width="20" height="14"/><path d="M8 21h8"/><path d="M12 17v4"/>'
+panel = '<rect x="3" y="3" width="18" height="18"/><path d="M3 9h18"/><path d="M7 13h7"/>'
+buttons = '<path d="M9 9l5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 8-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/>'
+settings = '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>'
+notifications = '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'
+trouble = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'
+answers = '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
+words = '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+support = '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>'

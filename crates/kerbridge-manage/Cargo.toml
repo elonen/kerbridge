@@ -1,0 +1,50 @@
+[package]
+name = "kerbridge-manage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "kbmanage"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+kerbridge-core = { workspace = true, features = ["tls"] }
+ldap3.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+# The preflight's own reading of `ldap_url`, parsed the way `ldap3` parses it,
+# and the endpoint probe's reading of the URL it is given.
+# Already in the lock through `ldap3`, so this adds no crate.
+url.workspace = true
+
+# The public roots the endpoint probe judges an ACME-issued certificate
+# against -- the question a client's own store would ask. Compiled in rather
+# than read from the host: this binary ships as `scratch` plus itself, and a
+# missing bundle would report every certificate as untrusted. Already in the
+# lock through `reqwest`, so this adds no crate either.
+webpki-roots.workspace = true
+
+[build-dependencies]
+clap.workspace = true
+# `kbmanage.1` is generated from the command definition at build time, with no
+# committed copy -- the same arrangement `kerbridge-setup` uses for `kbsetup.8`.
+clap_mangen = "0.3"
+
+[dev-dependencies]
+serde_json.workspace = true
+
+# The test fixture builds a config set from the templates, and rendering one
+# needs the parser's description of itself. A dev-dependency, so no binary this
+# crate ships gains schemars -- see the `schema` feature in `kerbridge-core`.
+kerbridge-core = { workspace = true, features = ["tls", "schema"] }

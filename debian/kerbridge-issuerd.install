@@ -1,0 +1,7 @@
+usr/sbin/issuerd
+usr/sbin/kbsetup
+usr/share/man/man8/issuerd.8
+usr/share/man/man8/kbsetup.8
+usr/share/man/man8/kbsetup-realm.8
+usr/share/man/man8/kbsetup-directory.8
+usr/share/man/man8/kbsetup-verify.8

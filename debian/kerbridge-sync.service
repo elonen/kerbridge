@@ -1,0 +1,44 @@
+# The synchronisation daemon, on the same skeleton as the issuer's unit. Its
+# Compose counterpart is the `sync` service, starting the same binary with the
+# same argument surface; debian/check-manifests holds the two to each other.
+[Unit]
+Description=KerBridge directory synchronisation daemon
+Documentation=man:kerbridge-sync(8)
+# sync connects per cycle and retries at its own interval, so ordering is
+# tidiness: a domain controller that is not answering yet costs one discarded
+# cycle, not a failed start.
+Wants=samba-ad-dc.service
+After=samba-ad-dc.service network-online.target
+# Installed and not yet configured is a designed state, and every failure a
+# condition cannot see latches into `failed` after ~25 s rather than looping --
+# see the issuer's unit for both.
+ConditionPathExists=/etc/kerbridge/main.toml
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+ExecStartPre=/usr/bin/kbconfig --config /etc/kerbridge check
+ExecStart=/usr/sbin/kerbridge-sync
+Restart=on-failure
+RestartSec=5s
+User=_kerbridge-sync
+# _kerbridge is this account's *primary* group -- the postinst creates it with
+# `adduser --ingroup`, so there is no per-user group. Stated here rather
+# than left to the passwd entry, and not repeated as SupplementaryGroups=, which
+# would name the same group twice.
+Group=_kerbridge
+StateDirectory=kerbridge/sync
+StateDirectoryMode=0750
+LogsDirectory=kerbridge/sync
+LogsDirectoryMode=0750
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# Outbound only: the cloud IdP over HTTPS and the domain controller over LDAPS.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

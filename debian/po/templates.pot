@@ -1,0 +1,209 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the  package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: elonen@iki.fi\n"
+"POT-Creation-Date: 2026-08-21 19:25+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:1001
+msgid "Kerberos realm for this deployment:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:1001
+msgid ""
+"KerBridge serves one Kerberos realm, in upper case, for example EXAMPLE."
+"SITE. Six further values are derived from it -- the domain root, the DNS "
+"domain, the NetBIOS name, the domain controller's short name and two "
+"organisational units -- so this is the one answer the rest of the "
+"configuration is built out of."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:1001
+msgid ""
+"The realm is baked into the Samba database the day the domain is "
+"provisioned, along with the domain SID and every filesystem ACL that carries "
+"it. It cannot be corrected afterwards without provisioning again."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:1001
+msgid ""
+"These answers are used on first install only, to write a configuration set "
+"that is not there yet. No package ever edits a configuration file you "
+"already have: reconfiguring asks again, sees the files, and leaves them "
+"alone. Leave this empty and nothing at all is written, which is the right "
+"outcome for an unattended install with no answers to give."
+msgstr ""
+
+#. Type: error
+#. Description
+#: ../kerbridge-config.templates:2001
+msgid "Invalid Kerberos realm"
+msgstr ""
+
+#. Type: error
+#. Description
+#: ../kerbridge-config.templates:2001
+msgid ""
+"A realm is a dotted domain name with no spaces in it, such as EXAMPLE.SITE. "
+"The value entered is not one."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:3001
+msgid "LDAPS URL of the domain controller:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:3001
+msgid ""
+"The address KerBridge binds to, ldaps:// only -- plain LDAP and StartTLS are "
+"both refused where this is read, because the bind password and every "
+"password sync writes would otherwise cross the network in the clear."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:3001
+msgid ""
+"The proposed value names a domain controller called \"kerbridge\" inside the "
+"realm above. Change the host if yours is called something else; the short "
+"name is taken from this URL's first label."
+msgstr ""
+
+#. Type: error
+#. Description
+#: ../kerbridge-config.templates:4001
+msgid "Invalid LDAPS URL"
+msgstr ""
+
+#. Type: error
+#. Description
+#: ../kerbridge-config.templates:4001
+msgid ""
+"The URL must begin with ldaps:// . Plain ldap:// and StartTLS are refused by "
+"KerBridge itself, so an address entered here in that form would only fail "
+"later."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:5001
+msgid "Cloud IdP tenant id:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:5001
+msgid ""
+"The Microsoft Entra ID tenant whose users this deployment admits, as a UUID."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:5001
+msgid ""
+"Leave this empty for a host that runs no synchronisation and serves no sign-"
+"ins -- an administrator's machine with kerbridge-manage on it, for instance. "
+"The configuration set is still written, with no identity provider listed in "
+"it, and a provider can be added later by editing the files."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:5001
+msgid ""
+"This is not a secret. Tenant and client ids are public OIDC identifiers, and "
+"no KerBridge credential is ever passed through debconf."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:6001
+msgid "Application id of the broker API registration:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:6001
+msgid ""
+"The Entra application registration that the broker validates access tokens "
+"for -- the audience a client asks its token to be issued for."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:7001
+msgid "Application id of the workstation client registration:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:7001
+msgid ""
+"The public Entra application registration the workstation agent signs in "
+"with. It is handed to clients by the broker, so a client needs no "
+"configuration of its own beyond the address."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:8001
+msgid "Application id of the synchronisation registration:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:8001
+msgid ""
+"The confidential Entra application registration kerbridge-sync reads the "
+"directory with. Its client secret or certificate is a file under /etc/"
+"kerbridge.secrets/, named in the configuration and never held here."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:9001
+msgid "Name of the cloud group whose members are admitted:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:9001
+msgid ""
+"Membership of this group is what admits an identity: users outside it are "
+"not mirrored into the directory and every sign-in for them is refused. "
+"Nothing works until a group by this name exists in the tenant, so create it "
+"if you have not already."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:9001
+msgid ""
+"The proposed name is only a suggestion -- any group will do. Once the realm "
+"is live, replace the name with the group's object id in /etc/kerbridge/"
+"idp_entra.toml: a group that is renamed or recreated can otherwise resolve "
+"to one you did not choose."
+msgstr ""

@@ -1,0 +1,5 @@
+Dialog_	Control_	Action	Condition
+s72	s50	s50	s255
+ControlCondition	Dialog_	Control_	Action	Condition
+ExitDialog	InstalledText	Show	NOT REMOVE~="ALL"
+ExitDialog	RemovedText	Show	REMOVE~="ALL"

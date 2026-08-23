@@ -1,0 +1,42 @@
+# The binary is a statically linked musl artifact on purpose: one package must
+# install unchanged on every supported release, which a libc6-linked binary
+# cannot do, and there is no Debian-packaged musl runtime to depend on instead.
+#
+# Two lines, not one, because lintian sees a different shape per architecture
+# and fires a different tag. On amd64 a musl release build is static-PIE --
+# ET_DYN with a PT_DYNAMIC and no NEEDED entries -- and
+# lintian's Binaries::Static skips its tag for anything whose file type reads
+# as a shared object or pie executable, so Binaries::Prerequisites reports a
+# shared library missing its dependencies instead. On arm64 the same build is a
+# plain ET_EXEC and the expected tag fires.
+#
+# Measured on lintian 2.116.3 and 2.122.0, identically.
+# Re-check either half with `file` on the built binary and
+# `lintian --show-overrides <deb>`: the tag that fires on this architecture
+# shows as an `O:` line, and the other one is simply not evaluated.
+kerbridge-config [amd64]: shared-library-lacks-prerequisites [usr/bin/kbconfig]
+kerbridge-config [arm64]: statically-linked-binary [usr/bin/kbconfig]
+
+# The debconf `config` script names /usr/bin/kbconfig absolutely, and that is
+# the point rather than an oversight. This package installs that binary at that
+# path, so it cannot move without this package moving it -- which is the risk
+# the tag exists to catch. This tree pins the same hazard elsewhere: issuerd's
+# SUBPROCESS_PATH names its directories explicitly and excludes /usr/local, so
+# an operator's hand-built samba-tool cannot beat the packaged one
+# (crates/kerbridge-issuerd/src/issue.rs). A maintainer script resolving its own
+# package's binary through PATH is that hazard in a script that runs as root.
+#
+# No context on the line, deliberately: with one the override names a line
+# number, and the first edit above it turns this into an unused override that a
+# gate set to --fail-on error,warning would then trip over.
+kerbridge-config: command-with-path-in-maintainer-script
+
+# Six of the seven questions are reported unused, at info severity, because
+# lintian greps the maintainer scripts for each template's literal name and the
+# `config` script passes them to a shell function instead: `ask
+# kerbridge-config/tenant_id` is one word to lintian's eye and none of it is
+# the template name it is looking for. All seven are asked; the two Type: error
+# templates are shown by the same function when a validator refuses an answer.
+# Overridden rather than left, so that nobody reading a tag list concludes the
+# question set is half dead.
+kerbridge-config: unused-debconf-template

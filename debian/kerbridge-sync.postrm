@@ -1,0 +1,30 @@
+#!/bin/sh
+# This daemon's own halves of the two shared parents, and nothing else. The
+# parents are kerbridge-config's, and dpkg configures it first and therefore
+# purges it last, so its rmdir sees these already gone.
+#
+# The audit log itself is never removed, and neither is the unix account -- see
+# kerbridge-config.postrm and this package's postinst for why. `rmdir` if
+# empty is what serves both: piuparts never starts a daemon, so it finds these
+# directories empty and passes with no exception file, while a live deployment
+# keeps its record.
+set -e
+
+case "$1" in
+    purge)
+        [ -d /var/log/kerbridge/sync ] && rmdir /var/log/kerbridge/sync 2>/dev/null || true
+        [ -d /var/lib/kerbridge/sync ] && rmdir /var/lib/kerbridge/sync 2>/dev/null || true
+        ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

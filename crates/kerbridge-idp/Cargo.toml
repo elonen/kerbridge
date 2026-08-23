@@ -1,0 +1,51 @@
+[package]
+name = "kerbridge-idp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# Off by default for the reason `kerbridge-core/schema` is: only `kbconfig` asks
+# a config struct what its own shape is, and the broker and sync must compile no
+# schemars. The adapter describes its own `[provider_config]`, so rendering that
+# block needs core's renderer too.
+schema = ["dep:schemars", "kerbridge-core/schema"]
+
+[dependencies]
+kerbridge-core.workspace = true
+kerbridge-notify.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars = { workspace = true, optional = true }
+
+# The `[provider_config]` table arrives from `kerbridge-core` as a `toml::Table`
+# and is parsed here, so the type is in this crate's own signatures.
+toml.workspace = true
+
+# Fetching the IdP's signing keys. The one outbound HTTP call this workspace
+# makes to something outside the deployment.
+reqwest.workspace = true
+tokio.workspace = true
+
+# `dyn IdentityProvider` with an async method: async fn in trait is stable but
+# not dyn-compatible, and boxing the future by hand at every impl site is worse
+# than one proc-macro.
+async-trait = "0.1"
+
+ring.workspace = true
+base64.workspace = true
+
+[dev-dependencies]
+
+# Depending on ourselves is how a crate turns its own feature on for its own
+# tests without turning it on for anything that depends on it, the same trick
+# `kerbridge-core` uses: the template tests below need the schema, and the broker
+# and sync still must not compile schemars.
+kerbridge-idp = { path = ".", features = ["schema"] }
+
+# Building a `reqwest::Response` from a body without a server, for the
+# document-size limit. Already in the lock via reqwest; nothing ships with it.
+http = "1"
+tokio = { workspace = true, features = ["rt"] }

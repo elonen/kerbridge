@@ -1,0 +1,5 @@
+Property	Order	Value	X	Y	Width	Height	Text	Help
+s72	i2	s64	i2	i2	i2	i2	L0	L50
+RadioButton	Property	Order
+MsiRestartManagerOption	1	CloseRestart	0	0	290	16	Close it and start it again when Setup has finished	
+MsiRestartManagerOption	2	DontClose	0	18	290	16	Leave it running and finish after a restart	

@@ -1,0 +1,24 @@
+{
+  "note": "THE ADMISSION GROUP ITSELF deleted -> sync freezes admission changes + alerts; broker fails closed via role-marker count 0 after quarantine. NEVER auto-recreate (SID would change).",
+  "request": {
+    "method": "GET",
+    "url": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA5"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "@odata.deltaLink": "https://graph.microsoft.com/v1.0/groups/delta?$deltatoken=tok-AAA6",
+      "value": [
+        {
+          "id": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
+          "@removed": {
+            "reason": "changed"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,3 @@
+# The help site: build output, the generated icons, and its cargo target dir.
+.build/
+target/

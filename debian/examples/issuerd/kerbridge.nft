@@ -1,0 +1,46 @@
+# nftables rules for a KerBridge domain controller, from the table in
+# docs/setup/dns-and-firewall.md.
+#
+# Include this from /etc/nftables.conf, or paste the chain contents into a
+# filter chain you already have. Change the `lan` set to your own network.
+#
+# CAUTION: do not expose port 88 to the internet. An exposed AS endpoint lets
+# an attacker use the failed-password count to lock out synchronised accounts,
+# which breaks issuance for those users. The broker endpoint on 443 is the only
+# one that may face the internet, and only if it must.
+
+table inet kerbridge {
+    set lan {
+        type ipv4_addr
+        flags interval
+        elements = { 192.0.2.0/24 }
+    }
+
+    chain input {
+        type filter hook input priority filter; policy accept;
+
+        # Kerberos: the workstations and the file servers. Always needed.
+        ip saddr @lan tcp dport 88 accept comment "KerBridge: Kerberos"
+        ip saddr @lan udp dport 88 accept comment "KerBridge: Kerberos"
+
+        # The broker endpoint. On the broker's host, which is usually but not
+        # always this one.
+        ip saddr @lan tcp dport 443 accept comment "KerBridge: broker"
+
+        # Only if a file server runs on another host, or you manage the
+        # directory remotely with RSAT.
+        ip saddr @lan tcp dport 445 accept comment "KerBridge: SMB"
+        ip saddr @lan tcp dport 389 accept comment "KerBridge: LDAP"
+        ip saddr @lan udp dport 389 accept comment "KerBridge: CLDAP"
+        ip saddr @lan tcp dport 135 accept comment "KerBridge: RPC endpoint mapper"
+        ip saddr @lan tcp dport 49152-49251 accept comment "KerBridge: RPC"
+
+        # Only if you run kbmanage from another host.
+        ip saddr @lan tcp dport 636 accept comment "KerBridge: LDAPS"
+
+        # Everything above is an allow-list on top of whatever policy your own
+        # ruleset sets. `policy accept` here means this table adds permissions
+        # and denies nothing; the drop belongs in your base ruleset, and these
+        # ports must be refused there for hosts outside the LAN.
+    }
+}

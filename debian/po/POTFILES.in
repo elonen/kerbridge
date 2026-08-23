@@ -1,0 +1,8 @@
+# Paths here are relative to debian/, not to the source root -- measured, not
+# assumed, because the other spelling is the common one and it fails silently
+# enough to waste an afternoon. `debconf-updatepo` does `cd debian/po` and then
+# hands intltool-update a source directory of `..`, which is debian/ itself; an
+# entry reading `debian/kerbridge-config.templates` is looked for at
+# debian/debian/... and the run ends in an xgettext error about a missing .h
+# file that names neither the real path nor the real cause.
+[type: gettext/rfc822deb] kerbridge-config.templates

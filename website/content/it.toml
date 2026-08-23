@@ -1,0 +1,396 @@
+# Traduzione italiana di content/en.toml. Le chiavi devono corrispondere
+# esattamente alle sue.
+#
+# Non tradurre qui i testi dei pulsanti o dei titoli dell'app: arrivano
+# direttamente dalle tabelle di stringhe del client, quindi sono già in
+# italiano e già verificati. Se ti sorprendi a scrivere il nome di un pulsante
+# in questo file, usa invece il riferimento `{{ s.* }}` del template.
+
+language_name = "Italiano"
+page_title = "NAS Access — guida per l'utente"
+page_description = "Come NAS Access apre le unità di rete del lavoro con l'account cloud della tua organizzazione, e che cosa significa ogni sua parte."
+
+# ── cornice ──────────────────────────────────────────────────────────────────
+help_word = "Guida"
+search_placeholder = "Cerca in questa pagina…"
+search_matches = "{n} blocchi corrispondenti"
+search_empty = "Niente in questa pagina corrisponde alla ricerca. Prova con una parola più corta — o con il nome di un pulsante."
+on_this_page = "In questa pagina"
+topics = "Argomenti"
+platform_group = "Scegli la piattaforma"
+language_group = "Scegli la lingua"
+theme_toggle = "Alterna tra tema chiaro e scuro"
+technically = "Tecnicamente"
+part = "PARTE {n}"
+glossary = "GLOSSARIO"
+finally = "INFINE"
+yes = "Sì"
+no = "No"
+footer_help = "guida per l'utente"
+
+# ── intestazioni delle tabelle ───────────────────────────────────────────────
+th_headline = "Intestazione"
+th_means = "Che cosa significa"
+th_means_here = "Qui significa"
+th_todo = "Che cosa fare"
+th_line = "Riga"
+th_says = "Che cosa dice"
+th_plain = "In parole semplici"
+th_value = "Valore"
+th_button = "Pulsante"
+th_item = "Voce"
+th_does = "Che cosa fa"
+th_word = "Parola"
+th_symptom = "Sintomo"
+th_cause = "Causa probabile"
+th_will_hear = "Ti avvisa di"
+th_wont_hear = "Non ti avvisa di"
+th_ends_access = "Termina il tuo accesso alle unità"
+th_ends_grant = "Termina l'autorizzazione di questo dispositivo"
+th_ends_signin = "Termina la tua sessione nel browser"
+
+# ── apertura ─────────────────────────────────────────────────────────────────
+hero_kicker = "Guida per l'utente"
+hero_title = "Unità di rete, senza password."
+hero_lead = "NAS Access ti fa accedere con l'account cloud della tua organizzazione e usa quell'accesso per aprire le unità di rete del lavoro. Una volta in esecuzione, apri le unità come hai sempre fatto. Nessuna password a parte da ricordare, niente da digitare."
+
+# ── indice ───────────────────────────────────────────────────────────────────
+# L'ordine è l'ordine della pagina. `id` corrisponde a una sezione del
+# template — non cambiarli.
+goals = [
+  { id = "purpose",       title = "A che cosa serve questa app",  sub = "Perché esiste e che cosa fa" },
+  { id = "icon",          title = "L'icona",                      sub = "Quattro stati, a colpo d'occhio" },
+  { id = "panel",         title = "Il pannello di stato",         sub = "Ogni riga, spiegata" },
+  { id = "buttons",       title = "I pulsanti",                   sub = "Che cosa fa ciascuno — e che cosa no" },
+  { id = "settings",      title = "Impostazioni",                 sub = "Base, Avanzate, Informazioni" },
+  { id = "notifications", title = "Notifiche",                    sub = "Che cosa ti dice, e quando" },
+  { id = "trouble",       title = "Quando qualcosa non funziona", sub = "Sintomi, cause, rimedi" },
+  { id = "answers",       title = "Risposte rapide",              sub = "Le domande che fanno tutti" },
+  { id = "words",         title = "Le parole di questa app",      sub = "Nove termini, spiegati" },
+  { id = "support",       title = "Chiedere aiuto",               sub = "Che cosa tenere a portata di mano" },
+]
+
+# ── Parte 1 ──────────────────────────────────────────────────────────────────
+shot_alt_win = "Il pannello di stato di NAS Access aperto sopra l'area di notifica di Windows, con la scritta Accesso OK."
+shot_alt_mac = "Il menu di NAS Access aperto nella barra dei menu di macOS, con la scritta Accesso OK."
+shot_caption_win = "Se questo ti sembra familiare, sei nel posto giusto — si apre dall'area di notifica."
+shot_caption_mac = "Se questo ti sembra familiare, sei nel posto giusto — si apre dalla barra dei menu."
+
+two_worlds_title = "Due sistemi che da soli non si incontrano"
+two_worlds = [
+  "<strong>Il tuo account vive nel cloud.</strong> È lo stesso con cui leggi la posta e accedi ai siti di lavoro. La tua organizzazione lo gestisce lì.",
+  "<strong>I tuoi file vivono nel tuo edificio.</strong> Stanno su un file server — la macchina da cui arrivano le unità di rete e le cartelle condivise. Sulla sicurezza quel server è all'antica di proposito, e del cloud non ha mai sentito parlare.",
+  "Lasciati a se stessi, i due non riescono a mettersi d'accordo sul fatto che tu sia tu.",
+]
+
+gobetween_title = "NAS Access fa da tramite"
+gobetween_lead = "NAS Access trasforma il tuo accesso cloud in un lasciapassare che il file server capisce e accetta."
+
+worth_knowing_title = "Tre cose che vale la pena sapere"
+worth_knowing = [
+  "<strong>Il lasciapassare ha una scadenza.</strong> In genere buona parte di una giornata di lavoro. È normale e voluto — è ciò che permette alla tua organizzazione di togliere l'accesso quando serve.",
+  "<strong>NAS Access ne ottiene uno nuovo in silenzio verso metà strada</strong>, molto prima che il vecchio scada. In una giornata normale non te ne accorgerai mai.",
+  "<strong>Non può rinnovare ciò che non ha.</strong> Se l'app non riesce a ottenere un lasciapassare nuovo da sola, te lo dice <em>prima</em> che quello attuale scada, così basta un clic e continui a lavorare.",
+]
+
+tech_concepts_hint = "i termini precisi, per chi li vuole"
+tech_concepts = [
+  "Il tuo account cloud è un'identità <strong>OIDC</strong> presso un <strong>identity provider</strong> (Entra ID nella maggior parte delle installazioni). La prova è un access token OIDC, ottenuto con un flusso authorization code con PKCE nel browser di sistema.",
+  "Il <strong>broker</strong> è il servizio KerBridge gestito dal tuo team IT. Convalida il token e chiede al <strong>KDC</strong> di emettere un autentico <strong>Kerberos TGT</strong> (ticket-granting ticket) per il tuo account nel <strong>realm</strong> in sede.",
+  "La \"tasca del lasciapassare\" è la <strong>cache dei ticket</strong> della tua sessione di accesso — la sessione di logon LSA su Windows, la cache <code>API:</code> di Heimdal su macOS. Mettere lì il ticket si chiama <strong>iniezione</strong>. Da lì in poi il normale client SMB fa Kerberos ordinario: usa il TGT per ottenere un ticket di servizio per il file server. Nessuna parte del percorso di accesso ai file viene modificata.",
+  "Il \"lasciapassare nuovo a metà strada\" è una <strong>re-iniezione</strong>, non un rinnovo a livello Kerberos. Secondo i nostri test Windows chiede sì al KDC di rinnovare un TGT iniettato da KerBridge, ma poi non installa mai il risultato — quindi l'agente ripete l'intero scambio e inietta un ticket nuovo.",
+]
+
+not_do_title = "Che cosa non fa"
+not_do = [
+  "Non memorizza la tua password. Non la vede mai.",
+  "Non legge né modifica i tuoi file, le tue unità o le lettere delle unità.",
+  "Non sostituisce l'accesso della tua organizzazione. Lo usa.",
+  "Non deve essere in esecuzione perché tu possa <em>usare</em> il computer — solo perché le unità di rete restino raggiungibili.",
+]
+
+tech_at_rest_hint = "che cosa viene conservato, e dove"
+tech_at_rest = [
+  "<strong>Nessun segreto su disco.</strong> L'access token viene scartato nell'istante in cui lo scambio del ticket si completa. Il refresh token vive solo nella memoria del processo e muore con esso — non viene mai scritto su disco né nel registro. Su disco restano l'URL del broker, una copia in cache della configurazione scoperta e lo stato di autorizzazione di questo dispositivo. In realtà non sa nemmeno del tuo NAS o degli altri servizi Kerberos; tratta soltanto Kerberos TGT.",
+]
+
+# ── Parte 2 ──────────────────────────────────────────────────────────────────
+icon_lead_win = "NAS Access vive nell'area di notifica. L'icona è tutto lo stato, a colpo d'occhio."
+icon_lead_mac = "NAS Access vive nella barra dei menu. L'icona è tutto lo stato, a colpo d'occhio."
+
+icon_states = [
+  { icon = "working",     headline = "cond_working",   name_win = "Piena",                     name_mac = "Piena",               todo = "Niente da fare", tone = "" },
+  { icon = "not-started", headline = "cond_off",       name_win = "Sbiadita, senza segno",     name_mac = "Sbiadita, senza segno", todo = "Niente da fare", tone = "" },
+  { icon = "will-stop",   headline = "cond_will_stop", name_win = "Sbiadita, triangolo ambra", name_mac = "Sbiadita, triangolo", todo = "Presto, non subito", tone = " warn" },
+  { icon = "stopped",     headline = "cond_stopped",   name_win = "Sbiadita, cerchio rosso",   name_mac = "Sbiadita, cerchio",   todo = "Sì — questa ha bisogno di te", tone = " stop" },
+]
+
+icon_notes = [
+  "<strong>Sbiadita non vuol dire guasta.</strong> La piena intensità è riservata a <em>niente da vedere</em>, così quando c'è qualcosa da vedere ha il contrasto per farsi notare.",
+  "Le forme contano quanto i colori — un triangolo e un cerchio restano diversi anche per chi non distingue facilmente l'ambra dal rosso.",
+]
+icon_mac_note = "Su Mac le stesse quattro forme compaiono nell'unico colore della barra dei menu, perché è così che la barra dei menu disegna ogni cosa."
+
+# ── Parte 3 ──────────────────────────────────────────────────────────────────
+panel_lead_win = "Un clic sull'icona apre un piccolo pannello. Ti mostra <strong>che cosa ha bisogno di te</strong>, poi <strong>chi sei</strong>, poi <strong>per quanto</strong>, e infine <strong>perché</strong>, se qualcosa non va."
+panel_lead_mac = "Un clic sull'icona apre il menu. Mostra <strong>che cosa ha bisogno di te</strong>, <strong>chi sei</strong>, <strong>per quanto</strong> e <strong>perché devi intervenire</strong>, se qualcosa non va."
+
+headline_title = "L'intestazione"
+headline_lead = "Una sola riga, colorata, che dà un nome alla situazione."
+headlines = [
+  { headline = "cond_working",   tone = "ok",   means = "Le tue unità funzionano, e l'app può tenerle in funzione da sola.", todo = "Niente." },
+  { headline = "cond_flaky",     tone = "warn", means = "Le tue unità funzionano, per ora. L'app fa fatica a raggiungere il server del tuo team IT.", todo = "Di solito niente — spesso si risolve da solo. Se persiste, segnalalo all'IT." },
+  { headline = "cond_will_stop", tone = "warn", means = "Le tue unità funzionano, ma l'accesso terminerà a un'ora nota e niente lo rinnoverà da solo.", todo = "Usa il pulsante che propone di estendere l'accesso, quando ti fa comodo, prima di quell'ora." },
+  { headline = "cond_stopped",   tone = "stop", means = "Le tue unità non si apriranno.", todo = "Leggi la spiegazione sotto l'intestazione — dice il perché e offre il pulsante che risolve." },
+  { headline = "cond_off",       tone = "off",  means = "L'app qui non è in funzione e non è previsto che lo sia — per esempio dopo che hai chiuso l'accesso.", todo = "Niente, a meno che tu non voglia riavere l'accesso." },
+]
+headline_note = "<strong>Un avviso di scadenza non è un guasto.</strong> Significa che all'app sono finiti i modi silenziosi di rinnovare — spesso semplicemente perché hai chiuso la sessione del browser, o perché l'autorizzazione del dispositivo si avvicina al rinnovo. Il tuo accesso resta intatto fino all'ora indicata. Un clic ripristina i rinnovi silenziosi."
+
+tech_condition_hint = "da che cosa viene calcolata l'intestazione"
+tech_condition = [
+  "L'intestazione mostra <code>Condition</code>, uno fra <code>Working</code>, <code>Flaky</code>, <code>WillStop</code>, <code>Stopped</code> e <code>NotStarted</code>. È una funzione pura di tre fatti locali: se è presente un ticket <strong>utilizzabile</strong>, se ci si aspetta che questa macchina sia operativa qui, e se esiste una <strong>fonte silenziosa</strong> per il prossimo rinnovo.",
+  "Nessun fatto di rete vi entra — un'interruzione del broker non sposta mai la condizione. Compare come ostacolo, e come <code>Flaky</code> solo quando persiste.",
+]
+
+identity_title = "La riga dell'identità"
+identity_signed_in = "L'account a cui appartiene il tuo accesso — e tutto ciò che salvi."
+identity_working_as = "Questo computer è stato configurato per funzionare come <em>un altro account</em>."
+identity_note = "<strong>La seconda merita una doppia lettura.</strong> Su un computer così, i file che salvi sulle unità di rete finiscono a nome di quell'account (spesso condiviso), non a nome tuo. Se accedi qui, stai garantendo per la macchina — non stai ottenendo un accesso tuo. È normale su macchine di build, chioschi e postazioni condivise, e il tuo team IT l'ha configurato apposta."
+
+tech_delegation_hint = "concessioni dispositivo"
+tech_delegation = [
+  "La macchina è <strong>delegata</strong> a ottenere TGT per un account specifico: è configurato un obiettivo <code>grant_for</code>, quindi solo una concessione dispositivo può ottenere un ticket, e i ticket portano il principal dell'obiettivo. Un accesso delegato <strong>autorizza l'accesso come l'utente specificato</strong>, non come la persona che accede — l'accesso dimostra chi è alla tastiera, non l'account con cui la macchina raggiunge i tuoi servizi Kerberos.",
+]
+
+# Un sintagma completo: il client rende i giorni con `days()`, che concorda con
+# le parole circostanti nelle lingue dove un numero nudo non basterebbe.
+example_days = "6 giorni"
+
+clocks_title = "Gli orologi di scadenza"
+clock_access = "Quando scade il lasciapassare attuale. In condizioni normali uno nuovo arriva verso metà strada, quindi è un'informazione, non una scadenza da rincorrere."
+clock_grant = "Il permesso di questo dispositivo di saltare il browser sta per finire. Accedi una volta dal browser prima di allora e viene esteso."
+clocks_note = "I due non compaiono mai come avvisi in contraddizione — se l'accesso sta davvero per scadere, l'orologio dell'autorizzazione non è quello di cui preoccuparsi."
+
+explanation_title = "La spiegazione"
+explanation_lead = "Quando c'è qualcosa da dire, compare in un blocco tutto suo, sotto i fatti. Questi sono quelli che potresti vedere:"
+blockers = [
+  { blocker = "blk_no_supply",            plain = "È ora di dimostrare di nuovo che sei tu.", todo = "Accedi dal browser. Ci vogliono pochi secondi." },
+  { blocker = "blk_network_error",        arg = "server", plain = "L'app non riesce a raggiungere il server del tuo team IT.", todo = "Controlla di essere in rete o sulla VPN. Le unità già aperte di solito continuano a funzionare." },
+  { blocker = "blk_realm_unknown",        arg = "server", plain = "L'app ha raggiunto il server ma non ne ha ancora ricevuto la configurazione.", todo = "Aspetta. Riprova da sola." },
+  { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "Un passaggio di configurazione una tantum per questo computer non è stato fatto.", todo = "Usa il pulsante di configurazione. Chiede i diritti di amministratore e un riavvio." },
+  { blocker = "blk_ntlm_fallback",        os = "win", plain = "Un noto inciampo di Windows dopo la scadenza di un lasciapassare. Le tue unità sono bloccate.", todo = "Salva il tuo lavoro, poi usa il pulsante di riparazione." },
+  { blocker = "blk_refused",              plain = "Il server della tua organizzazione non ha accettato il tuo account per queste unità.", todo = "Non è qualcosa che questo computer possa risolvere — contatta l'IT." },
+  { blocker = "blk_no_grant",             arg = "account", plain = "Una macchina ad account condiviso che non è ancora stata autorizzata.", todo = "Deve accedere qui qualcuno con il permesso di autorizzarla." },
+  { blocker = "blk_grant_refused",        plain = "Le regole non permettono a questo dispositivo di saltare il browser.", todo = "Riprovare non servirà. Contatta l'IT." },
+  { blocker = "blk_no_broker_url",        plain = "Primo avvio — l'app non sa a quale server rivolgersi.", todo = "Inserisci nelle Impostazioni l'indirizzo che ti ha dato il tuo team IT." },
+]
+
+tech_blockers_hint = "ostacoli contro azioni"
+tech_blockers = [
+  "Questi sono <strong>ostacoli</strong>: ciò che manca in questo momento, immediato e senza deduzioni. Sono un elenco, non una classifica, perché più d'uno può essere vero allo stesso tempo, e il modello li riporta tutti anziché solo il più rumoroso.",
+  "Gli ostacoli <em>spiegano</em>; le azioni <em>risolvono</em>. Non sono elenchi paralleli e nulla combacia fra loro. L'ostacolo del server irraggiungibile fonde irraggiungibile, TLS rifiutato, limite di richieste e 5xx, perché i quattro differiscono nella causa ma non in ciò che puoi farci; la frase esatta resta nel messaggio dettagliato.",
+]
+
+details_lead = "Una sezione ripiegata per quando qualcuno ti sta aiutando. Contiene il realm, l'ora in cui termina il lasciapassare, che cosa userà il prossimo rinnovo e quando l'app riproverà."
+details_supply_lead = "La riga più utile è quella che dice che cosa userà il prossimo rinnovo:"
+supply_grant = "Silenzioso. Questo dispositivo è ritenuto affidabile per un numero stabilito di giorni."
+supply_wam = "Silenzioso. Se ne occupa l'accesso di Windows stesso."
+supply_browser = "Silenzioso, finché l'app resta in esecuzione."
+supply_none = "È per questo che l'intestazione avvisa che l'accesso sta per scadere."
+
+# ── Parte 4 ──────────────────────────────────────────────────────────────────
+conventions_title = "Due convenzioni che vale la pena imparare"
+convention_ellipsis = "<strong>Un'etichetta che finisce con \"…\" significa che arriva ancora un passaggio</strong> — una finestra del browser, o una domanda a cui rispondere. Un pulsante senza puntini fa semplicemente quello che dice. È l'unica differenza fra i due pulsanti di rinnovo: promettono lo stesso risultato, ma uno dei due aprirà il browser."
+convention_shield = "<strong>Uno scudo su un pulsante significa che Windows chiederà i diritti di amministratore.</strong> C'è sempre su quei pulsanti, che tu sia amministratore o no."
+
+getting_access_title = "Ottenere l'accesso"
+getting_access = [
+  { action = "act_sign_in",        does = "Apre il browser, ti fa accedere, ottiene un lasciapassare. Il modo normale di cominciare." },
+  { action = "act_sign_in_extend", does = "La stessa cosa, formulata per quando l'accesso ce l'hai già. Ottiene un lasciapassare nuovo e ripristina i rinnovi silenziosi." },
+  { action = "act_reinject",       does = "Ottiene un lasciapassare nuovo <em>senza</em> browser, con ciò che l'app ha già. Proposto solo quando può davvero funzionare." },
+  { action = "act_cancel",         does = "Compare solo mentre si attende un accesso dal browser. Smette di attenderlo." },
+]
+getting_access_note = "Se il rinnovo senza browser è disponibile, preferiscilo — è quello leggero, e viene proposto solo quando funzionerà."
+
+doors_title = "Uscire — le tre porte, ben distinte"
+doors_lead = "Sembrano simili ma hanno effetti diversi. È l'unica tabella di questa pagina che vale la pena segnarsi."
+tech_doors_hint = "che cosa fa davvero ciascuna porta"
+tech_doors = [
+  "<strong>Disconnettersi dall'identity provider</strong> termina la sessione SSO presso l'authority e scarta il refresh token in memoria. Non può disconnetterti da Windows stesso; un'applicazione può rilasciare solo la propria sessione.",
+  "<strong>Rimuovere l'autorizzazione</strong> elimina <em>prima</em> la chiave ECDSA P-256 non esportabile della concessione dispositivo dal TPM di questo dispositivo, e solo dopo la revoca sul broker — è quell'ordine a farla funzionare anche offline.",
+  "<strong>Chiudere l'accesso</strong> è uno svuotamento della cache dei ticket limitato al realm — il TGT e i ticket di servizio di questo realm soltanto. I ticket degli altri realm restano intatti, ed è questo a renderlo sicuro su un tenant con cloud trust. Una sessione SMB già stabilita continua a servire file sopra una cache vuota, senza alcun traffico Kerberos, quindi nessuna operazione limitata ai ticket può promettere onestamente che le connessioni terminino.",
+]
+
+fixing_title = "Riparare"
+fixing = [
+  { action = "act_enroll",              does = "Una tantum, per computer. Insegna a Windows il realm della tua organizzazione. Richiede i diritti di amministratore e, dopo, un riavvio." },
+  { action = "act_restart_workstation", does = "Sblocca uno stato inceppato delle unità di rete. <strong>Salva prima il tuo lavoro</strong> — si disconnette ogni unità di rete del computer, non solo queste." },
+  { action = "act_reenroll",            does = "La stessa configurazione, applicata sopra una parziale o invecchiata. In Impostazioni ▸ Avanzate." },
+  { action = "act_unenroll",            does = "Rimuove del tutto la configurazione. In Impostazioni ▸ Avanzate." },
+]
+fixing_note = "Tutto ciò che non si può annullare prima ti chiede conferma, ti dice esattamente che cosa farà e propone di annullare come scelta predefinita. Puoi chiudere quella finestra e lasciare che il lavoro proceda — ti dirà com'è andata."
+fixing_mac = "<strong>macOS non ha bisogno di niente di tutto questo.</strong> Trova il realm da solo, quindi non c'è passaggio di configurazione, nessuna richiesta di amministratore in nessun punto del prodotto e nessuna riparazione — una connessione caduta, lì, si limita a riconnettersi."
+
+authorizing_title = "Autorizzare questo dispositivo"
+authorizing = [
+  { action = "act_create_grant",       does = "Permette a questo dispositivo di ottenere lasciapassare senza accesso dal browser, per un numero stabilito di giorni." },
+  { action = "act_create_grant_again", does = "Lo stesso, quando l'autorizzazione c'è già — è il modo per estenderla." },
+]
+authorizing_notes = [
+  "Che cosa succede davvero: dentro il chip di sicurezza di questo dispositivo viene creata una chiave. Non può essere copiata fuori dal dispositivo, vale solo per il tuo account su questo dispositivo, e il tuo team IT può revocarla in qualsiasi momento.",
+  "Riceverai un promemoria prima della scadenza. Un accesso dal browser la estende.",
+]
+
+tech_grant_hint = "la concessione dispositivo"
+tech_grant = [
+  "È una <strong>concessione dispositivo</strong> di KerBridge — una chiave ECDSA P-256 non esportabile nel TPM, creata tramite il platform crypto provider di CNG con ambito utente, quindi non richiede elevazione e muore con il profilo. Il broker conserva la chiave pubblica corrispondente e applica il proprio tetto di giorni, quindi abbassare quel tetto accorcia ogni concessione in essere.",
+]
+
+everything_else_title = "Tutto il resto"
+everything_else = [
+  { action = "menu_open_status", does = "Porta in primo piano il pannello di stato." },
+  { action = "menu_settings",    does = "Vedi la sezione Impostazioni qui sotto." },
+  { action = "menu_help",        does = "Questa pagina." },
+  { action = "act_open_log",     does = "Una registrazione tecnica di ciò che l'app ha fatto, per quando qualcuno ti aiuta. Compare quando qualcosa è andato storto, e sempre in Impostazioni ▸ Avanzate ▸ Risoluzione dei problemi." },
+  { action = "menu_quit",        does = "Ferma l'app. Il lasciapassare attuale resta valido fino alla scadenza, e dopo niente lo rinnova." },
+]
+
+# ── Parte 5 ──────────────────────────────────────────────────────────────────
+settings_basic = [
+  "<strong>URL del broker</strong> — il server che ti ha dato il tuo team IT. È l'unica cosa che l'app deve sapere; tutto il resto lo chiede a quel server.",
+  "Se dice che l'URL è stato impostato dal tuo team IT e non si può cambiare qui, è stato impostato centralmente: normale su un computer gestito.",
+  "<strong>Avvia all'accesso</strong> — ti fa accedere automaticamente dopo il login, così le unità sono pronte quando lo sei tu. Consigliato.",
+]
+settings_wam = "<strong>Usare l'accesso di Windows quando è possibile</strong> salta il browser quando l'accesso di Windows stesso può garantire per te in silenzio. Lascialo attivo; se non può aiutare, l'app ripiega sul browser e non si perde nulla."
+settings_advanced = [
+  "<strong>Autorizzazione</strong> — mostra come è autorizzato questo dispositivo e contiene i pulsanti che la creano e la rimuovono. Il campo per autorizzare questo dispositivo per conto di un altro account serve alle macchine ad account condiviso: lascialo vuoto per il tuo account.",
+  "Cambiare quel campo decide per chi sarà la <em>prossima</em> autorizzazione. Non cambia nulla in quella già in essere.",
+  "<strong>Configurazione di Windows</strong> — se questo computer conosce il realm della tua organizzazione, più i pulsanti per rifarla o rimuoverla.",
+  "<strong>Risoluzione dei problemi</strong> — apre la cartella del registro.",
+]
+settings_mac_title = "Su macOS"
+settings_mac = "Le Impostazioni sono un unico foglio con l'URL del broker e l'interruttore di avvio all'accesso, più la coppia OK / Annulla — le altre sezioni descrivono cose che macOS non ha."
+settings_about = "Versione e licenza."
+
+# ── Parte 6 ──────────────────────────────────────────────────────────────────
+notify_lead = "L'app parla di rado e solo di cose che contano."
+notify = [
+  ["L'accesso che torna dopo un problema", "I rinnovi di routine andati a buon fine"],
+  ["L'accesso che sta per terminare, con circa venti minuti di anticipo", "Il normale scorrere dell'orologio del lasciapassare"],
+  ["L'accesso che è terminato", "Un breve problema di rete risoltosi da solo"],
+  ["L'autorizzazione del tuo dispositivo che si avvicina al rinnovo", "Una macchina semplicemente spenta"],
+]
+notify_notes = [
+  "<strong>Se ne perdi una, non perdi niente.</strong> Una notifica è un'interruzione, mai un archivio — il pannello di stato ha sempre la verità del momento, e nulla si deteriora. Non c'è un contatore di non lette né un elenco di ciò che ti sei perso.",
+  "Il promemoria del rinnovo aspetta che tu sia davvero alla tastiera, invece di scattare alle tre di notte.",
+]
+
+# ── Parte 7 ──────────────────────────────────────────────────────────────────
+trouble_lead = "Parti dall'icona, poi dal pannello. Quasi sempre il problema ha lì il suo nome, e il rimedio è su un pulsante."
+trouble = [
+  { symptom = "Un'unità chiede una password", cause = "Il lasciapassare è scaduto o non è mai stato ottenuto", todo = "Apri il pannello. Dirà che non c'è accesso, o che sta per scadere." },
+  { symptom = "Le unità funzionavano, poi si sono fermate a metà sessione", os = "win", cause = "L'inciampo NTLM di Windows", todo = "Usa il pulsante di riparazione, dopo aver salvato il lavoro" },
+  { symptom = "Il pannello dice che non riesce a raggiungere il server", cause = "Fuori rete, o VPN giù", todo = "Riconnettiti. Riprova da sola e si riprende." },
+  { symptom = "L'IT ti ha appena dato accesso a una cartella, e ancora non si apre", cause = "Il tuo lasciapassare è stato emesso prima del cambiamento", todo = "Rinnova — un lasciapassare porta con sé un'istantanea dei tuoi gruppi, quindi ne serve uno fresco" },
+  { symptom = "Sembra tutto a posto, ma una cartella è negata", cause = "I permessi di quella cartella", todo = "Non è un problema di NAS Access — chiedi a chi possiede la cartella" },
+  { symptom = "Il pannello dice che deve risolverlo un amministratore", cause = "È così", todo = "Manda all'IT il messaggio, esattamente com'è scritto" },
+]
+
+error_title = "Leggere un messaggio di errore"
+error_lead = "Ogni messaggio dettagliato è scritto in due metà:"
+error_example_handle = "TLS untrusted:"
+error_before = "Prima dei due punti"
+error_before_means = "un'etichetta tecnica, messa lì apposta per chi ti aiuta"
+error_after = "Dopo"
+error_after_means = "che cosa significa per te"
+error_note = "Quando segnali un problema, cita la riga intera — spesso l'etichetta è tutto ciò che serve al tuo team IT."
+
+# ── Parte 8 ──────────────────────────────────────────────────────────────────
+answers = [
+  { q = "Devo tenere l'app in esecuzione?", a = "Sì, perché le unità restino raggiungibili. Da inattiva consuma quasi nulla, e avviarla all'accesso significa non doverci più pensare." },
+  { q = "Perché si apre una finestra del browser quando accedo?", a = "Perché il tuo accesso appartiene alla tua organizzazione, non a questa app. L'app non vede mai la tua password — la gestisce il tuo browser, esattamente come per gli altri siti di lavoro." },
+  { q = "Perché stamattina non mi ha chiesto niente?", a = "Perché non ne aveva bisogno. È l'esperienza prevista." },
+  { q = "Ho chiuso il portatile in pausa pranzo.", a = "Va bene. Riprende da dove aveva lasciato e, se serve, ottiene un lasciapassare nuovo." },
+  { q = "Lavoro da casa.", a = "Ciò che normalmente raggiunge il tuo file server — VPN o altro — è ciò che serve anche a NAS Access. Se le tue unità oggi funzionano da casa, funzioneranno con NAS Access." },
+  { q = "La mia password è memorizzata da qualche parte?", a = "No. L'app non la riceve mai. Niente di ciò che conserva su disco può essere usato per accedere come te." },
+  { q = "L'IT può vedere che cosa apro?", a = "NAS Access non osserva i tuoi file. Il tuo file server tiene i suoi registri, come ha sempre fatto." },
+  { q = "Ho chiuso l'accesso, ma un'unità è ancora aperta.", a = "Il tuo sistema operativo sta tenendo una connessione che aveva già. Chiudi la finestra, disconnetti l'unità o riavvia. Non si può aprire nulla di nuovo." },
+]
+
+# ── Glossario ────────────────────────────────────────────────────────────────
+words = [
+  { word = "Accesso",             means = "La possibilità di autenticarti sul file server della tua rete" },
+  { word = "Accedere",            means = "Dimostrare chi sei, nel tuo browser" },
+  { label = "act_drop_ticket", means = "Buttare via il lasciapassare attuale per le unità di rete" },
+  { word = "Autorizzazione",      means = "Il permesso di questo dispositivo di saltare il browser per un certo tempo, eventualmente come un altro utente" },
+  { word = "Rinnovo",             means = "Ottenere un lasciapassare nuovo senza disturbarti" },
+  { word = "Realm",               means = "Il nome del sistema in sede a cui appartengono le tue unità, come <code>EXAMPLE.SITE</code>" },
+  { word = "Broker",              means = "Il server del tuo team IT — quello a cui NAS Access chiede il lasciapassare" },
+  { word = "Ticket",              means = "Il lasciapassare vero e proprio. Termine tecnico; compare solo nei dettagli Kerberos" },
+  { word = "Questo dispositivo",  means = "Il computer davanti a cui sei seduto" },
+]
+
+# ── Chiedere aiuto ───────────────────────────────────────────────────────────
+support_lead = "Tieni pronte queste cose — l'app le mostra tutte:"
+support_steps = [
+  { what = "L'intestazione", detail = "La riga colorata in cima al pannello" },
+  { what = "Il messaggio completo", detail = "Compresa la parte prima dei due punti" },
+  { what = "Il realm", detail = "Dai dettagli Kerberos — la prima cosa che chiunque chiederà" },
+  { what = "Il registro", detail = "Impostazioni ▸ Avanzate ▸ Risoluzione dei problemi ▸ apri la cartella del registro" },
+]
+support_note = "Di solito basta questo per risolvere senza che nessuno tocchi il tuo computer."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Da qui in giù si usa la sintassi delle tabelle TOML, e un'intestazione di
+# tabella cattura ogni chiave semplice che la segue — quindi queste devono
+# stare per ultime. Aggiungi le nuove chiavi semplici sopra questa riga, non
+# sotto.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Le tre porte. `access`/`grant`/`signin` guidano la tabella Sì/No, e l'ordine
+# qui è l'ordine sia della tabella sia delle spiegazioni sotto di essa.
+[[doors]]
+action = "act_sign_out_idp"
+arg = "Entra"
+access = false
+grant  = false
+signin = true
+detail = "Chiude la sessione di accesso che questa app ha lasciato nel tuo browser. È buona igiene su un computer condiviso. Non tocca le tue unità."
+
+[[doors]]
+action = "act_give_up_grant"
+access = false
+grant  = true
+signin = false
+detail = "Rinuncia al permesso di questo dispositivo di raggiungere le tue unità <em>senza browser</em>. Il tuo accesso di adesso resta intatto — semplicemente torni ad accedere dal browser ogni volta. Non si può annullare: autorizzare di nuovo crea un permesso nuovo, non ripristina il vecchio."
+caveat = """
+Su una macchina ad account condiviso — una il cui pannello dice che funziona \
+come un altro account — non esiste alcun \"tornare al browser\". \
+L'autorizzazione è l'unico modo in cui una macchina così ottiene l'accesso, \
+quindi rimuoverla significa che l'accesso scade e si ferma. La conferma ti \
+dice esattamente quanto tempo hai."""
+
+[[doors]]
+action = "act_drop_ticket"
+access = true
+grant  = false
+signin = false
+detail = "Butta via il lasciapassare di questo computer. È la porta di tutti i giorni — quella da usare quando hai finito per oggi, o non ti serve più l'accesso alle unità condivise."
+caveat = """
+Un'avvertenza onesta: <strong>le unità di rete che hai già aperte possono \
+continuare a funzionare</strong> finché non le chiudi o non riavvii. È il tuo \
+sistema operativo che tiene aperta una connessione, e nessuna app può \
+promettere il contrario. Ma non si può aprire nulla di nuovo."""
+
+# Lucide paths, keyed by section. Not translated -- they are drawings.
+[goal_icons]
+purpose = '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>'
+icon = '<rect x="2" y="3" width="20" height="14"/><path d="M8 21h8"/><path d="M12 17v4"/>'
+panel = '<rect x="3" y="3" width="18" height="18"/><path d="M3 9h18"/><path d="M7 13h7"/>'
+buttons = '<path d="M9 9l5 12 1.8-5.2L21 14Z"/><path d="M7.2 2.2 8 5.1"/><path d="m5.1 8-2.9-.8"/><path d="M14 4.1 12 6"/><path d="m6 12-1.9 2"/>'
+settings = '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>'
+notifications = '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'
+trouble = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'
+answers = '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
+words = '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
+support = '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>'

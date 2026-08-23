@@ -1,0 +1,133 @@
+# KerBridge, entry point.
+#
+# The other files are found beside this one under fixed names -- realm.toml,
+# issuerd.toml, broker.toml, sync.toml, the optional kbmanage.toml, and one
+# idp_<source>.toml per cloud IdP. A binary is given this *directory*, never one
+# file in it, so --config <dir> relocates the whole set.
+#
+# Copy the *.toml.example set to *.toml and edit. Secrets are files under
+# deploy/secrets/ and are named here as paths, never written here as values.
+# Procedure: SETUP.md.
+#
+# HOW TO READ THESE FILES
+#
+# Each configuration option is one line: its key, `=`, and its value. A line
+# that starts with `#` is commented out and sets nothing. Two forms:
+#
+#   #some_option = 8    KerBridge uses 8. That is the default.
+#   #some_option =      This option has no default. KerBridge derives the value
+#                       from another option, or leaves it unset. The comment
+#                       above the line says which, and shows an example.
+#
+# To set an option, remove the `#` and write the value. For the second form you
+# must also supply a value: `some_option =` alone is not valid TOML.
+#
+# Leave every other line commented out. A default can change when you install a
+# new version, and an option you left alone then uses the new value. An option
+# you set keeps your value, even where the new default is better.
+#
+# `kbconfig get <path>` prints the value in use, and `kbconfig decisions` lists
+# every option this deployment sets.
+#
+# This file holds what would not exist without KerBridge. Anything that would
+# still be true of the realm if a different tool fronted it is in realm.toml.
+
+# The cloud IdPs this deployment serves, one per idp_<name>.toml beside this
+# file. The list is the enable switch: drop a name and keep the file, and sync
+# stops mirroring that source and the broker stops serving its path, with
+# nothing already in the directory touched.
+#
+# Never a wildcard, deliberately. A source that disappeared by glob would orphan
+# every object it owns -- SIDs, memberships, file ownership -- with nothing
+# reporting it. A listed name with no file refuses to start; a file no name
+# lists is ignored, with a line in the log saying so.
+sources = ["entra"]
+
+
+# --- Device grants: let a machine skip the browser sign-in ---
+# Read docs/setup/device-grants.md before turning this on.
+
+# How long a machine may go without a human proving the identity to the cloud
+# IdP again. 0 is off, and off is the default: an operator who does nothing gets
+# nothing.
+#
+# NOT a revocation window. Every lever in DESIGN.md @ Ticket policy still takes
+# at most one ticket lifetime, because each is re-checked on the exchange path.
+# Lowering this clamps every outstanding grant at its next exchange; raising it
+# stretches none.
+#device_grant_days = 0
+
+# Grants one account may hold. A safety bound rather than policy -- what stops a
+# compromised broker from looping the grant verb until the object will not load.
+# Configurable because one service account across twenty build machines is the
+# economical shape, cloud IdPs licensing per user.
+#device_grant_max_per_user = 10
+
+
+# --- Operator notification ---
+# For conditions only a human can fix and nothing else will report: an expiring
+# Graph credential, a deleted admission group, a sync cycle that keeps failing.
+#
+# With no url_file every event is still a `NOTIFY <severity> <event>:` line in
+# the service log, and state_dir keeps the currently-true conditions for your
+# own monitoring. The full story, including the monitoring-agent recipe:
+# deploy/README.md @ Operator notification. Verify delivery end to end with
+# `make test-notification`, from deploy/.
+[notify]
+
+# The webhook URL is a secret, not a setting: for Slack, Teams and the rest the
+# URL is the receiver's only authentication. https:// only.
+#
+# Example: "/etc/kerbridge.secrets/notify_url"
+#url_file =
+
+# One JSON file per currently-true condition, which a monitoring agent can read
+# without KerBridge's cooperation and which is written whether or not a webhook
+# is configured.
+#
+# This is the parent. Each service takes the directory named after itself under
+# it -- broker/, sync/, issuerd/ -- so three services never write over one
+# another. Point a monitoring agent at the parent and it sees all three.
+#
+# `none` gives that up: open problems are then tracked in memory only, so
+# nothing outside the process can read them and a restart re-sends whatever is
+# still outstanding.
+#state_dir = "/var/lib/kerbridge"
+
+# The JSON body. Unset uses a default that Slack, Teams, Mattermost and
+# Rocket.Chat all render. Placeholders: %EVENT% %SEVERITY% %COMPONENT% %REALM%
+# %TIMESTAMP% %MESSAGE% %DETAIL%. Every substituted value is escaped as a JSON
+# string, so each placeholder must sit inside one; an unknown placeholder, or a
+# template that does not render as JSON, refuses to start.
+#
+# Example: '{"text":"%COMPONENT% on %REALM%: %SEVERITY% %EVENT% -- %MESSAGE%"}'
+#template =
+
+# Suppress anything below this: info, warning or error.
+#min_severity = "info"
+
+# How long a *standing* condition waits before it is reported again. An expiry
+# does not use this -- it is reported at 30, 14, 7, 3 and 1 days remaining and
+# is silent between those. Also the flap damper: a condition that clears and
+# comes straight back is not announced twice within this window, though the
+# state files still record every transition.
+#repeat_interval_hours = 24
+
+# The whole delivery attempt -- connect, TLS, request, response.
+#timeout_seconds = 5
+
+# A CA bundle for a self-hosted receiver behind a private CA, added to the
+# public roots rather than replacing them. Must be a path the service can read;
+# mount it yourself if it is not already there.
+#
+# Example: "/etc/kerbridge/notify-ca.pem"
+#ca_file =
+
+# LAST RESORT, LAB ONLY. Names the one host whose certificate is not validated,
+# and permits http:// to that host. Anyone on the path to it can then capture
+# the webhook URL and post forged alerts with it -- which mutes the alarm rather
+# than triggering it. Logs a warning for as long as it is set, and does nothing
+# if it does not name the host the webhook URL actually points at.
+#
+# Example: "hooks.lab.example.site"
+#insecure_host =

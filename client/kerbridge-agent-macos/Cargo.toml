@@ -1,0 +1,72 @@
+[package]
+name = "kerbridge-agent-macos"
+version = "0.9.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "kerbridge-agent"
+path = "src/main.rs"
+
+[dependencies]
+kerbridge-client = { path = "../kerbridge-client" }
+
+# All UI is AppKit through objc2.
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", features = [
+    "NSApplication",
+    "NSAttributedString",                     # NSFontAttributeName: the bold headline
+    "NSButton",
+    "NSCell",
+    "NSColor",
+    "NSControl",
+    "NSFont",
+    "NSGraphics",
+    "NSImage",
+    "NSMenu",
+    "NSMenuItem",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSStatusBar",
+    "NSStatusBarButton",
+    "NSStatusItem",
+    "NSText",
+    "NSTextField",
+    "NSView",
+    "NSWindow",
+    "NSWorkspace",
+    "NSAlert",
+    "NSButtonCell",
+] }
+objc2-foundation = { version = "0.3.2", features = [
+    "NSString",
+    "NSArray",
+    "NSAttributedString",
+    "NSData",
+    "NSDate",
+    "NSDictionary",
+    "NSError",
+    "NSGeometry",
+    "NSObjCRuntime",
+    "NSRunLoop",
+    "NSThread",
+    "NSTimer",
+    "NSURL",
+    "NSValue",
+] }
+
+# Completion handler UNUserNotificationCenter's authorization request takes.
+block2 = "0.6"
+
+# Notification Center. Needs a bundled app to deliver anything, which is why the
+# Makefile builds an .app and ad-hoc signs it rather than shipping a bare binary.
+objc2-user-notifications = { version = "0.3.2", features = [
+    "UNNotificationRequest",
+    "UNNotificationContent",
+    "UNNotificationTrigger",
+    "UNUserNotificationCenter",
+    "UNError",
+] }
+
+# Rasterize app icon svg
+resvg = "0.47"

@@ -1,0 +1,202 @@
+#!/bin/sh
+# What the six .deb files do to a host that installs them, on each release the
+# deployment claims. `make test-deb` is what runs it; lintian already ran inside
+# debian/Dockerfile, so this is the other half of that tier.
+#
+# WHY CONTAINERS AND NOT THE HOST. Every check here installs packages, creates
+# unix accounts and edits /etc/krb5.conf. It has to happen somewhere disposable,
+# and a container is the only disposable Linux a Mac has. The cost is that the
+# units are never started: `systemd-analyze verify` reads them instead, which
+# catches syntax, unknown directives and a dangling After=, and catches nothing
+# about runtime. The units are a partly untested surface and are documented as
+# one.
+#
+# WHAT EACH RELEASE IS FOR.
+#
+#   trixie    the reference. Installs all six, verifies the units, reinstalls,
+#             purges, and checks what purge is supposed to leave behind.
+#   noble     that `apt` resolves the dependencies there too. Nothing is run.
+#   bookworm  that kerbridge-issuerd is *refused* -- its samba-ad-dc (>= 2:4.19)
+#   jammy     floor is the whole of why those two releases are unsupported, and
+#             an untested refusal is a claim rather than a guarantee. Nothing
+#             else is asserted on either: not even kbconfig and kbmanage
+#             install on jammy, whose adduser 3.118 refuses the leading
+#             underscore in `_kerbridge` and so fails kerbridge-config's
+#             postinst. bookworm's 3.134 accepts it, as noble's 3.137 and
+#             trixie's 3.152 do -- a measurement, not a promise.
+#
+# usage: debian/check-install [<deb-dir>]
+set -eu
+
+# Absolute, because `docker run -v` takes nothing else.
+DEBS=$(cd "${1:-dist/debian}" 2>/dev/null && pwd) || {
+    echo "check-install: no ${1:-dist/debian} -- run \`make debian-docker\` first" >&2
+    exit 1
+}
+
+names=$(cd "$DEBS" && ls ./*.deb 2>/dev/null | sed 's|^\./||')
+[ -n "$names" ] || {
+    echo "check-install: no .deb files in $DEBS -- run \`make debian-docker\` first" >&2
+    exit 1
+}
+
+# One version of each package, or `/debs/*.deb` names two and apt picks.
+# `make debian-docker` empties the directory for exactly this reason, so a
+# duplicate here means the directory was filled some other way.
+dupes=$(echo "$names" | sed 's/_[^_]*_[^_]*\.deb$//' | sort | uniq -d)
+[ -z "$dupes" ] || {
+    echo "check-install: $DEBS holds more than one version of:" >&2
+    echo "$dupes" >&2
+    exit 1
+}
+
+# stdin is the check; the image is the release. --rm because a failure is read
+# from the exit status and the log, never from the container afterwards.
+in_release() {
+    echo "=== $1"
+    docker run --rm -i -v "$DEBS:/debs:ro" "$1" sh -eu
+}
+
+in_release debian:trixie <<'EOF'
+export DEBIAN_FRONTEND=noninteractive
+# No init here, so invoke-rc.d must not try to start what it cannot.
+printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+chmod +x /usr/sbin/policy-rc.d
+apt-get update -qq
+# man-db is not incidental: `systemd-analyze verify` resolves every
+# Documentation=man: entry, so with it installed the check also answers whether
+# each unit documents a page the packages really ship. Without it, all three
+# units fail the verify for a reason that is about the container.
+apt-get install -y -qq systemd man-db > /dev/null 2>&1
+
+# The operator's own command, recommends included -- so krb5-config ships
+# /etc/krb5.conf and the purge check below is against a file this deployment
+# did not create.
+apt-get install -y /debs/*.deb > /tmp/install.log 2>&1 || { cat /tmp/install.log; exit 1; }
+
+# An install nobody answered writes no config set, and says so rather than
+# writing a broken one. This is the "install now, configure later" path.
+[ ! -e /etc/kerbridge/main.toml ] || { echo "FAIL: an unanswered install wrote a config set"; exit 1; }
+grep -q "no realm was given" /tmp/install.log || {
+    echo "FAIL: nothing told the operator why no config set was written"; cat /tmp/install.log; exit 1; }
+
+# What the postinst and prepare-state make regardless of the answers.
+getent group _kerbridge > /dev/null || { echo "FAIL: no _kerbridge group"; exit 1; }
+getent passwd _kerbridge-broker > /dev/null || { echo "FAIL: no _kerbridge-broker user"; exit 1; }
+getent passwd _kerbridge-sync > /dev/null || { echo "FAIL: no _kerbridge-sync user"; exit 1; }
+for d in /etc/kerbridge /etc/kerbridge.secrets /var/lib/kerbridge /var/log/kerbridge; do
+    [ -d "$d" ] || { echo "FAIL: $d was not created"; exit 1; }
+done
+
+# The include line, and the drop-in directory it names. A dangling one breaks
+# every krb5 binary on the host, so both halves are asserted rather than one.
+grep -qxF 'includedir /etc/krb5.conf.d/' /etc/krb5.conf || { echo "FAIL: no includedir line"; exit 1; }
+[ -d /etc/krb5.conf.d ] || { echo "FAIL: includedir names a directory that does not exist"; exit 1; }
+
+# Syntax, unknown directives and dangling ordering. Every unit named in After=
+# and Wants= exists here, because kerbridge-issuerd pulled samba-ad-dc in.
+systemd-analyze verify /usr/lib/systemd/system/kerbridge-*.service
+
+# The three units are meant to be skipped, not failed, while there is no config
+# set -- that is the whole of ConditionPathExists=.
+for u in issuerd broker sync; do
+    grep -q '^ConditionPathExists=/etc/kerbridge/main.toml' \
+        "/usr/lib/systemd/system/kerbridge-$u.service" || {
+        echo "FAIL: kerbridge-$u.service would start with no config set"; exit 1; }
+done
+
+# Reinstall over itself: every step in the postinst is create-if-absent, and
+# `dpkg-reconfigure` reaches the same code.
+apt-get install -y --reinstall /debs/*.deb > /tmp/reinstall.log 2>&1 || {
+    cat /tmp/reinstall.log; exit 1; }
+
+apt-get purge -y kerbridge kerbridge-issuerd kerbridge-broker kerbridge-sync \
+                 kerbridge-manage kerbridge-config > /tmp/purge.log 2>&1 || {
+    cat /tmp/purge.log; exit 1; }
+
+# What purge removes.
+[ ! -d /etc/kerbridge ] || { echo "FAIL: /etc/kerbridge survived purge"; ls -laR /etc/kerbridge; exit 1; }
+[ ! -d /etc/kerbridge.secrets ] || { echo "FAIL: /etc/kerbridge.secrets survived purge"; exit 1; }
+grep -qxF 'includedir /etc/krb5.conf.d/' /etc/krb5.conf 2>/dev/null && {
+    echo "FAIL: the includedir line survived purge, and now dangles"; exit 1; }
+
+# And what it must not. krb5-config's own file stays, because the postrm greps
+# for its own marked line rather than owning the file; the unix identities stay
+# because a reallocated uid would inherit files elsewhere that still carry it.
+[ -s /etc/krb5.conf ] || { echo "FAIL: purge took krb5-config's /etc/krb5.conf with it"; exit 1; }
+getent group _kerbridge > /dev/null || { echo "FAIL: purge removed the _kerbridge group"; exit 1; }
+getent passwd _kerbridge-broker > /dev/null || { echo "FAIL: purge removed _kerbridge-broker"; exit 1; }
+
+echo "ok: installed, verified, reinstalled and purged"
+EOF
+
+in_release ubuntu:24.04 <<'EOF'
+export DEBIAN_FRONTEND=noninteractive
+printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+chmod +x /usr/sbin/policy-rc.d
+apt-get update -qq
+# Installability is the whole claim on this release: that apt resolves all six
+# against what noble ships, samba-ad-dc 4.19 included. Nothing is run, and the
+# page says so.
+apt-get install -y /debs/*.deb > /tmp/install.log 2>&1 || { cat /tmp/install.log; exit 1; }
+[ ! -e /etc/kerbridge/main.toml ] || { echo "FAIL: an unanswered install wrote a config set"; exit 1; }
+apt-get purge -y kerbridge kerbridge-issuerd kerbridge-broker kerbridge-sync \
+                 kerbridge-manage kerbridge-config > /tmp/purge.log 2>&1 || {
+    cat /tmp/purge.log; exit 1; }
+[ ! -d /etc/kerbridge ] || { echo "FAIL: /etc/kerbridge survived purge"; exit 1; }
+echo "ok: installs and purges"
+EOF
+
+# The refusal, on both releases the floor excludes. Asserted rather than assumed:
+# a dependency that stopped being enforced would leave apt happily installing a
+# domain controller that can never provision the schema KerBridge needs.
+for old in debian:bookworm ubuntu:22.04; do
+    in_release "$old" <<'EOF'
+export DEBIAN_FRONTEND=noninteractive
+printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+chmod +x /usr/sbin/policy-rc.d
+apt-get update -qq
+
+if apt-get install -y /debs/kerbridge-issuerd_*.deb > /tmp/refuse.log 2>&1; then
+    echo "FAIL: kerbridge-issuerd installed on a release whose samba stops at the 2012_R2 schema"
+    exit 1
+fi
+# Refused for the stated reason. Any other unmet dependency would also fail the
+# command above, and would mean something different.
+grep -q 'samba-ad-dc' /tmp/refuse.log || {
+    echo "FAIL: kerbridge-issuerd was refused, but not over samba-ad-dc"; cat /tmp/refuse.log; exit 1; }
+echo "ok: issuerd refused"
+EOF
+done
+
+# piuparts is not a tidier spelling of the purge checks above and does not
+# replace them. It debootstraps a clean chroot, records the whole file list and
+# metadata before and after, and diffs them -- so it catches a file left behind
+# somewhere nothing above thought to look, which is the failure the postrm rules
+# are written against. Plus debsums, a broken-symlink scan, and lsof for
+# anything still held open after purge.
+#
+# --privileged, for debootstrap and the chroot's own mounts. The only container
+# here that gets it, and all it holds is the debs.
+#
+# No upgrade test: it needs a previous release's packages and there is none yet.
+# piuparts detects the absent archive itself, so there is no flag to pass; from
+# the release after 0.10.0, hand it both sets.
+echo "=== piuparts (trixie chroot)"
+docker run --rm -i --privileged -v "$DEBS:/debs:ro" debian:trixie sh -eu <<'EOF'
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq piuparts debootstrap
+# Quiet unless it fails: the default log is every chroot command at DEBUG.
+if ! piuparts -d trixie --mirror http://deb.debian.org/debian /debs/*.deb \
+        > /tmp/piuparts.log 2>&1; then
+    tail -60 /tmp/piuparts.log
+    echo "FAIL: piuparts -- install, upgrade or purge left the chroot dirty"
+    exit 1
+fi
+grep -q 'PASS: All tests' /tmp/piuparts.log || {
+    tail -30 /tmp/piuparts.log; echo "FAIL: piuparts exited 0 without passing"; exit 1; }
+echo "ok: install and purge leave no leftovers"
+EOF
+
+echo "check-install: four releases and piuparts pass"

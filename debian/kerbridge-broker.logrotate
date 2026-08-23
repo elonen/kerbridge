@@ -1,0 +1,15 @@
+# See the issuer's snippet for why `create` and `su` are here, and what the
+# postrotate line needs of the daemon it signals.
+/var/log/kerbridge/broker/*.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    notifempty
+    missingok
+    su _kerbridge-broker _kerbridge
+    create 0640 _kerbridge-broker _kerbridge
+    postrotate
+        systemctl kill -s USR1 kerbridge-broker.service
+    endscript
+}

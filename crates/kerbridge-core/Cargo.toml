@@ -1,0 +1,56 @@
+[package]
+name = "kerbridge-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+# Other KerBridge parts are GPLv3, this one is more permissive for interoperability:
+license = "MIT OR Apache-2.0"
+
+[features]
+# Off by default so `issuerd`, which binds no sockets outward and speaks no TLS,
+# does not compile rustls at all. The three components that do reach the
+# directory over LDAPS turn it on.
+tls = ["dep:rustls"]
+
+# Off by default for the same reason, and it is the config structs that describe
+# themselves: `issuerd` reads this config but never asks it what its own shape
+# is, so it compiles no schemars. `kbconfig` is the one consumer and turns it on.
+# `serde_json` comes with schemars regardless, so naming it here adds nothing
+# to the tree; it is what `render` reads the schema through.
+schema = ["dep:schemars", "dep:serde_json"]
+
+# Off by default for the third time, and for the same reason spelled with a
+# different dependency: the one generator for every account a deployment creates
+# needs `ring`, and `issuerd` creates no accounts. `kerbridge-sync` and
+# `kbsetup` are its two consumers and turn it on. `base64` rides with it rather
+# than unconditionally, because the only thing in this crate that encodes is the
+# generator.
+password = ["dep:ring", "dep:base64"]
+
+[dependencies]
+anyhow.workspace = true
+base64 = { workspace = true, optional = true }
+ring = { workspace = true, optional = true }
+# The second unconditional exception to `lib.rs`'s rule, on the same terms as
+# `toml`: small, pure and audited far more than this repo is. It is the one
+# exception that costs `issuerd` a crate -- rustix and, on musl, its
+# `linux-raw-sys` -- and it buys the whole crate `forbid(unsafe_code)`.
+rustix.workspace = true
+serde.workspace = true
+toml.workspace = true
+rustls = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+
+# Depending on ourselves is how a crate turns its own feature on for its own
+# tests without turning it on for anything that depends on it: the key-coverage
+# test in `config/template.rs` needs the schema, and `issuerd` still must not
+# compile schemars. Without this, `cargo test -p kerbridge-core` would silently
+# skip that test while `cargo test --workspace` ran it -- a test that is there
+# or not depending on how you invoked it. `password` is listed for exactly the
+# same reason: its tests draw thousands of passwords to assert the complexity
+# rule holds by construction, and `issuerd` still must not compile `ring`.
+kerbridge-core = { path = ".", features = ["schema", "password"] }

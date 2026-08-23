@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>NAS Access</string>
+	<key>CFBundleDisplayName</key>
+	<string>NAS Access by KerBridge</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.kerbridge.agent</string>
+	<key>CFBundleExecutable</key>
+	<string>kerbridge-agent</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@VERSION@</string>
+	<key>CFBundleIconFile</key>
+	<string>app-icon</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Jarno Elonen. GPL-3.0-or-later.</string>
+	<!-- 13.0 is where SMAppService starts, which is how the agent registers
+	     itself as a login item. Everything else here would run on 11.0. -->
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<!-- The agent is its menu-bar item and nothing else: no Dock tile, no
+	     window on launch. Set here as well as at runtime so it is true from
+	     the first frame rather than from the first line of main(). -->
+	<key>LSUIElement</key>
+	<true/>
+</dict>
+</plist>
