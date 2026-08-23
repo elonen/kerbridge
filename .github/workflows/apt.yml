@@ -1,0 +1,202 @@
+# Publishes the signed apt repository, as assets on a release tagged `apt`.
+#
+# There is no server. A flat ("trivial") apt repository puts its indices
+# directly at the base URI with no `dists/` tree, and a release's assets are
+# exactly that: one flat namespace under
+# `https://github.com/OWNER/REPO/releases/download/apt/`. So the debs every
+# other release already published are indexed, signed, and served from there.
+#
+# Storage on releases is unmetered, so every release is carried rather than a
+# recent window.
+#
+# The signing subkey lives in the `signing` environment. Its deployment rules
+# have to allow the tag pattern `v*` as well as `main`: branches and tags are
+# two separate lists there, and a release calls this workflow from `refs/tags/v*`,
+# which a branch-only rule refuses. The primary key is offline and is not here:
+# the secret is a `--export-secret-subkeys` export, so a runner compromise costs
+# a subkey.
+name: apt
+
+on:
+  # Not `on: release`: a release created with GITHUB_TOKEN does not fire that
+  # event. Called at the end of a release run, or by hand to re-index.
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Two runs would race on the same assets, and the loser would leave a signed
+# index naming a deb it had already replaced.
+concurrency:
+  group: apt
+  cancel-in-progress: false
+
+env:
+  # The tag whose assets are the repository. Excluded when collecting debs
+  # below: it holds copies, not a release.
+  APT_TAG: apt
+  # Pinned so a substituted secret fails loudly rather than quietly signing with
+  # a key nobody published. SECURITY.md tells an operator to check this string,
+  # and `docs/scripts/check-signing-key.py` holds the two to one value. Quoted:
+  # an all-digit fingerprint would parse as a number and never match gpg.
+  APT_FINGERPRINT: "F434FD6F31F2D93C0ABB6FDA49A7BBC9D4729807"
+  # Nothing is checked out here -- the job only moves release assets around --
+  # so `gh` has no git remote to read the repository from, and it does not fall
+  # back to GITHUB_REPOSITORY.
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  publish:
+    name: index, sign, upload
+    runs-on: ubuntu-latest
+    environment: signing
+    permissions:
+      contents: write
+    steps:
+      - name: dpkg-scanpackages and apt-ftparchive
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev apt-utils
+
+      # Every deb this repository has ever released. Drafts and prereleases are
+      # skipped: a prerelease is not something an `apt upgrade` should reach.
+      - name: collect the debs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p pool dist
+          gh release list --limit 200 \
+             --json tagName,isDraft,isPrerelease \
+             --jq '.[] | select(.isDraft or .isPrerelease | not) | .tagName' \
+          | grep -vxF "$APT_TAG" > tags
+          test -s tags || { echo "no releases to index" >&2; exit 1; }
+          while read -r tag; do
+            echo "::group::$tag"
+            # A release from before the debs existed matches nothing, and
+            # `gh release download` calls that an error. Not one here.
+            gh release download "$tag" --pattern '*.deb' --dir pool --clobber \
+              || echo "no debs on $tag"
+            echo "::endgroup::"
+          done < tags
+          ls -l pool
+          # Tolerating a release with no debs means the whole set can be empty.
+          # Publishing an index over nothing would replace a working repository
+          # with one that resolves no package.
+          ls pool/*.deb >/dev/null 2>&1 || { echo "no debs on any release" >&2; exit 1; }
+
+      # `--multiversion` lists every version found rather than the newest of
+      # each name, which is the whole point of carrying the history. One
+      # Packages file holds all three architectures: a flat repository has no
+      # per-architecture index, and apt selects from it.
+      #
+      # The debs are scanned in `pool/` but served from the base URI, so the
+      # directory prefix is stripped from each Filename. `dist/` then holds
+      # nothing but indices, which keeps `apt-ftparchive release` from
+      # checksumming several hundred megabytes of package into the Release file.
+      - name: index
+        run: |
+          set -euo pipefail
+          dpkg-scanpackages --multiversion pool \
+            | sed 's|^Filename: pool/|Filename: |' > dist/Packages
+          gzip -9 -kf dist/Packages
+          grep -c '^Package:' dist/Packages
+          cd dist
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin=KerBridge \
+            -o APT::FTPArchive::Release::Label=KerBridge \
+            -o APT::FTPArchive::Release::Architectures="amd64 arm64 all" \
+            release . > Release
+          # No Valid-Until on purpose. The spec leaves client behaviour on an
+          # expired Release undefined, and a quiet six months would otherwise
+          # break `apt update` on every installed host.
+          cat Release
+
+      - name: sign
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          APT_SIGNING_PASSPHRASE: ${{ secrets.APT_SIGNING_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
+          echo allow-loopback-pinentry > "$GNUPGHOME/gpg-agent.conf"
+          printf '%s' "$APT_SIGNING_KEY" | base64 -d | gpg --batch --import
+
+          # The import carries a stub for the primary and the real signing
+          # subkey; `sec#` is what says the primary secret stayed offline. Both
+          # are asserted, because an export made without a reachable pinentry
+          # silently drops the subkey and still exits 0.
+          gpg --batch --list-secret-keys
+          got=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/{print $10; exit}')
+          [ "$got" = "$APT_FINGERPRINT" ] || {
+            echo "imported key is $got, expected $APT_FINGERPRINT" >&2; exit 1
+          }
+          gpg --list-secret-keys --with-colons | grep -q '^ssb:' || {
+            echo "the export carries no secret subkey -- re-export it" >&2; exit 1
+          }
+
+          # `--passphrase-fd`, never `--passphrase`: an argv is readable from
+          # /proc by every other process on the runner.
+          sign() { # <gpg-mode> <output>
+            printf '%s' "$APT_SIGNING_PASSPHRASE" \
+            | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+                  --digest-algo SHA256 -u "$APT_FINGERPRINT" \
+                  "$1" --output "dist/$2" dist/Release
+          }
+          sign --clearsign InRelease
+          sign --detach-sign Release.gpg
+
+          # `--export`, never `--export-secret-keys`. This is the file an
+          # operator installs into /etc/apt/keyrings.
+          gpg --armor --export "$APT_FINGERPRINT" > dist/kerbridge-archive-keyring.asc
+          gpgconf --kill all
+          rm -rf "$GNUPGHOME"
+
+      # The tag has to exist before anything can be attached to it, and it is
+      # not a release: `--latest=false` keeps it off the repository's front page,
+      # where it would otherwise displace the newest real version.
+      - name: the apt tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release view "$APT_TAG" >/dev/null 2>&1 || \
+            gh release create "$APT_TAG" --target main --latest=false \
+              --title "apt repository" \
+              --notes "Signed apt repository, not a release. See
+                       docs/setup/debian-deployment.md."
+
+      # There is no atomic publish, so the order is load-bearing. A client reads
+      # InRelease first and trusts the hashes in it, so every file those hashes
+      # name must already be in place: the debs, then the indices naming them,
+      # then the signatures over those indices. Any other order leaves a window
+      # where `apt update` fails with a hash mismatch.
+      - name: upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "$APT_TAG" pool/*.deb --clobber
+          gh release upload "$APT_TAG" \
+            dist/Packages dist/Packages.gz dist/kerbridge-archive-keyring.asc --clobber
+          gh release upload "$APT_TAG" \
+            dist/Release dist/Release.gpg dist/InRelease --clobber
+
+      # GitHub rewrites `+` and `~` to `.` in an asset name on upload, so a
+      # Filename generated from the local name can point at a file that is not
+      # there. Nothing published carries either character today; this fails the
+      # run if that ever stops being true.
+      - name: the names apt will ask for
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release view "$APT_TAG" --json assets --jq '.assets[].name' | sort > uploaded
+          sed -n 's/^Filename: //p' dist/Packages | sort > wanted
+          comm -23 wanted uploaded > missing || true
+          if [ -s missing ]; then
+            echo "these are indexed but not downloadable under that name:" >&2
+            cat missing >&2
+            exit 1
+          fi
+          echo "all $(wc -l < wanted) indexed files resolve"

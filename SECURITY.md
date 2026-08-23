@@ -614,13 +614,26 @@ as every Rust program's do, and nothing here audits it.
   step, and the build process does not do it.
 - **The macOS app is ad-hoc signed only.** There is no Developer ID. This also
   blocks Secure Enclave use.
-- Release artifacts carry a `SHA256SUMS` file and **no cryptographic signature**.
-  A hash proves integrity against corruption, not against a substituted release.
+- **The Debian packages are signed, but only through the apt repository.** The
+  index at `.../releases/download/apt/` is covered by an OpenPGP signature, and
+  the index carries the hash of every package, so `apt` verifies what it
+  installs. A `.deb` downloaded from a release page carries no signature of its
+  own.
+- The signing key is `F434FD6F31F2D93C0ABB6FDA49A7BBC9D4729807`. The primary is
+  offline; CI holds a signing subkey only, in an environment restricted to
+  `main`. **The subkey expires 2031-08-22** — after that date the repository can
+  no longer be re-signed until it is extended, and `apt update` on a stale index
+  keeps working meanwhile.
+- Other release artifacts carry a `SHA256SUMS` file and **no cryptographic
+  signature**. A hash proves integrity against corruption, not against a
+  substituted release.
 - Nothing is published to crates.io.
 
-**Worst case.** You cannot verify, from the artifact alone, that a release came
-from this repository. Build from source if that matters to you. Every shipping
-artifact builds in Docker with `make`.
+**Worst case.** Outside the apt repository, you cannot verify from the artifact
+alone that a release came from here. Build from source if that matters to you.
+Every shipping artifact builds in Docker with `make`. Inside it, the signature
+attests that this repository published those bytes — not that they were built
+from any particular source, which nothing here measures.
 
 ## What no test covers
 

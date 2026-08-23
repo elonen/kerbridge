@@ -1,0 +1,86 @@
+# Publishes the user help site to help.kerbridge.org on GitHub Pages.
+#
+# The site is generated, never committed: `make -C website` renders one page per
+# language from `content/*.toml`, the client's string tables and the agents' icon
+# constants. So the deployable tree only exists on the runner, and this is the
+# only thing that produces the bytes the site serves.
+#
+# No secret. Pages authenticates the upload with the job's OIDC token, which is
+# why `deploy` asks for `id-token: write`.
+#
+# Rendering is already a pull-request gate -- `make test-fast` runs
+# `make -C website check`, which renders every language without writing -- so a
+# change that breaks a template fails in CI before it can reach this.
+#
+# Two settings live outside this file and are set once, by hand, in
+# Settings -> Pages: the source must be "GitHub Actions", and the custom domain
+# must be help.kerbridge.org. DNS needs a CNAME from help.kerbridge.org to
+# elonen.github.io.
+name: Website
+
+on:
+  push:
+    branches: [main]
+    # The generator's whole input set: `website/src/main.rs` and
+    # `make-state-icons.py` name each of these paths. Extend it when either
+    # grows a source, or the site silently stops tracking that source.
+    paths:
+      - website/**
+      - client/kerbridge-client/src/strings/**
+      - client/kerbridge-client/src/icon.rs
+      - client/kerbridge-agent-windows/src/theme.rs
+      - client/kerbridge-agent-windows/src/sys.rs
+      - client/kerbridge-agent-macos/src/icon.rs
+      - client/assets/app-icon.svg
+      - docs/scripts/make-state-icons.py
+      - docs/systray-windows.png
+      - docs/systray-macos.png
+      - docs/kerbridge-logo.svg
+      - .github/workflows/website.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time, and never cancelled: a half-published site is worse
+# than a late one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: render (11 languages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: website -> target
+      # `all` rebuilds the state icons first. They are a projection of the
+      # agents' constants and are not committed, so there is no stale copy to
+      # publish -- but it does mean the icon script's own assertions run here.
+      - run: make -C website all
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    name: deploy (help.kerbridge.org)
+    needs: build
+    runs-on: ubuntu-latest
+    # Split from `build` so the token that can publish is never held by the job
+    # that compiles the tree.
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

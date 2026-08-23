@@ -368,6 +368,7 @@ test-fast:
 		debian/kerbridge-sync.postinst debian/kerbridge-sync.postrm
 	python3 docs/scripts/check-research.py
 	python3 docs/scripts/check-doc-links.py
+	python3 docs/scripts/check-signing-key.py
 	@# The help site renders every language from the client's own string tables,
 	@# so a renamed field, a template that no longer compiles, or a translation
 	@# missing a key all fail here rather than at publish time. Renders to memory

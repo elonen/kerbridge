@@ -22,7 +22,10 @@
 # before the next. The date precedes the hash because git hashes do not sort.
 #
 # It is derived from `git describe`, never from Cargo.toml, which sidesteps the
-# five-manifest version drift for release purposes entirely. That needs tags in
+# five-manifest version drift for release purposes entirely. `--match 'v*'` is
+# load-bearing: the repository carries tags that name no release -- `apt` marks
+# the signed repository, and git describe honours a lightweight tag -- and the
+# nearest of those would otherwise become the version. That needs tags in
 # the checkout -- `fetch-depth: 0` in CI. A tree with no `.git` at all, an export
 # or a release tarball, passes KB_VERSION= instead and needs no git.
 #
@@ -54,7 +57,7 @@ maintainer=$(sed -n 's/^Maintainer: //p' debian/control | head -n 1)
 
 version=${KB_VERSION:-}
 if [ -z "$version" ]; then
-    described=$(git describe --tags --long --dirty 2>/dev/null) || {
+    described=$(git describe --tags --match 'v*' --long --dirty 2>/dev/null) || {
         echo "make-changelog: no version could be derived here." >&2
         echo "    It comes from \`git describe\`, so a shallow checkout" >&2
         echo "    (fetch-depth: 0 fixes it), a tree with no .git, or a host" >&2
@@ -62,10 +65,10 @@ if [ -z "$version" ]; then
         echo "    Pass KB_VERSION=<version> instead." >&2
         exit 1
     }
-    if git describe --tags --exact-match >/dev/null 2>&1; then
-        version=$(git describe --tags --exact-match | sed 's/^v//')
+    if git describe --tags --match 'v*' --exact-match >/dev/null 2>&1; then
+        version=$(git describe --tags --match 'v*' --exact-match | sed 's/^v//')
     else
-        last=$(git describe --tags --abbrev=0 | sed 's/^v//')
+        last=$(git describe --tags --match 'v*' --abbrev=0 | sed 's/^v//')
         # The commit's own date, not today's: two builds of one commit have to
         # produce one version, or `dpkg` cannot tell which is newer and an
         # upgrade silently does nothing.

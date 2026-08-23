@@ -346,6 +346,10 @@ sudo kbsetup directory              # the OUs, the service accounts, the delegat
 sudo $EDITOR /etc/kerbridge/*.toml  # only if you left a question unanswered
 ```
 
+The first line installs files you already have. To take them from the signed apt
+repository instead, and get `apt upgrade` with them, add the source first —
+[`debian-deployment.md`](docs/setup/debian-deployment.md#from-the-apt-repository).
+
 The seven install-time questions are the realm, the LDAPS URL, and the five
 Entra values from step 2; answer them and the config set is written for you. The
 packages install files and start daemons — they never provision a domain, which

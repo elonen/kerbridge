@@ -182,3 +182,6 @@ constants the agents draw from, and the screenshots and the logo are copied from
 
 `make -C website` builds it, `serve` previews it, and `check` renders every
 language without writing anything — that last one is what `make test` runs.
+
+[`.github/workflows/website.yml`](.github/workflows/website.yml) publishes it to
+GitHub Pages on a push to `main` that touches one of the generator's inputs.

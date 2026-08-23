@@ -1,7 +1,11 @@
 # Everything here is `make` underneath, so a green run means the same
 # commands pass on a developer's machine.
 #
-#   fast     Fast checks without Docker.
+#   changes  Whether the push touched anything but prose. Gates the three
+#            heavy jobs below, which between them hold two runners for over an
+#            hour and cannot be affected by an edit to a `.md` file.
+#   fast     Fast checks without Docker. Ungated: it runs the doc checks, which
+#            a prose-only push is exactly the thing that can break.
 #   windows  The cross-build gate for the client.
 #   build    Main, manual. Every shipping artifact still builds.
 #   stack    Main, manual. A realm provisioned from scratch, a TGT issued
@@ -31,6 +35,49 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Answers one question for the jobs below: did this push touch anything a
+  # build could notice? Asked over the compare API rather than a checkout, so
+  # it costs seconds rather than a clone.
+  #
+  # Every uncertain answer is `true`. A first push to a branch, a force-push
+  # whose base is gone, a manual run, a compare too large to return in one
+  # page -- each runs everything. A wasted hour is recoverable; a regression
+  # that reached main because the gate guessed wrong is not.
+  changes:
+    name: anything but prose
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - id: filter
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          everything() { echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          [ "$EVENT" = push ] || everything
+          case "$BEFORE" in ""|0000000000000000000000000000000000000000) everything ;; esac
+          gh api "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$GITHUB_SHA" \
+            --jq '.files[].filename' > files 2>/dev/null || everything
+          # The compare API returns at most 300 files and does not say when it
+          # truncated, so a push at the ceiling is treated as unknown.
+          [ "$(wc -l < files)" -lt 300 ] || everything
+          cat files
+
+          # Prose is `docs/` and any `.md`, with one exception: the package
+          # version and the release notes are read out of CHANGELOG.md, so an
+          # edit to it is something `deb` can notice.
+          grep -vE '^(docs/|.*\.md$)' files > interesting || true
+          grep -qx CHANGELOG.md files && echo CHANGELOG.md >> interesting || true
+          if [ -s interesting ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prose only: the heavy jobs are skipped"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   fast:
     name: fast (fmt, tests, clippy, shell, docs)
     runs-on: ubuntu-latest
@@ -65,7 +112,8 @@ jobs:
 
   build:
     name: artifacts (images, exes, MSI)
-    if: github.event_name != 'pull_request'
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +146,8 @@ jobs:
 
   stack:
     name: stack (provision, issue, SMB)
-    if: github.event_name != 'pull_request'
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Provisioning a fresh domain and joining a member to it is the slow part;
     # the default 360 would let a hung KDC burn an hour.
@@ -136,7 +185,8 @@ jobs:
 
   deb:
     name: debs (${{ matrix.arch }})
-    if: github.event_name != 'pull_request'
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:

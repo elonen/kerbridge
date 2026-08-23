@@ -22,8 +22,9 @@ during an upgrade.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
-## Unreleased
+## 0.9.0
 
+- Debian packages install from a signed apt repository.
 - Installs from six Debian packages, as an alternative to Docker Compose.
 - Domain controller: Debian 13 or Ubuntu 24.04 onwards. Older ones refused.
 - The realm needs a privileged container or a virtual machine: Samba

@@ -44,18 +44,57 @@ release like everything else.
 
 ## The six packages
 
-There is no apt repository: you install the `.deb` files themselves, and updates
-are the same command over newer files. `make debian-docker` builds all six into
-`dist/debian/`. The package version comes from `git describe` inside the image,
-so a tree with no tag reachable from HEAD needs
-`make debian-docker KB_VERSION=0.10.0` instead. The build stops and says so
-rather than guess a version. Install them with
-`apt` rather than `dpkg -i`, so the distro dependencies — Samba above all — are
-resolved for you:
+Install them from the apt repository, or from the `.deb` files themselves.
+
+### From the apt repository
+
+The packages are served as assets on a release tagged `apt`, and the index over
+them is signed. Add the key and the source once:
+
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSL -o /etc/apt/keyrings/kerbridge.asc \
+  https://github.com/elonen/kerbridge/releases/download/apt/kerbridge-archive-keyring.asc
+sudo tee /etc/apt/sources.list.d/kerbridge.sources > /dev/null <<'EOF'
+Types: deb
+URIs: https://github.com/elonen/kerbridge/releases/download/apt/
+Suites: ./
+Signed-By: /etc/apt/keyrings/kerbridge.asc
+EOF
+sudo apt update
+sudo apt install kerbridge
+```
+
+`Suites: ./` is not a placeholder to fill in. This is a flat repository — the
+indices sit at the base URI with no `dists/` tree, because a release's assets
+are one flat namespace — and `./` is how a flat repository is named.
+
+Check the key before you trust it. Its fingerprint is in
+[`SECURITY.md`](../../SECURITY.md#13-dependencies-and-artifacts), and an
+operator who reaches this page over the same compromised network that served
+the key gains nothing by comparing the two — read it from somewhere else:
+
+```sh
+gpg --show-keys --with-fingerprint /etc/apt/keyrings/kerbridge.asc
+```
+
+Updates are `apt upgrade` from then on.
+
+### From the files
+
+`make debian-docker` builds all six into `dist/debian/`. The package version
+comes from `git describe` inside the image, so a tree with no tag reachable from
+HEAD needs `make debian-docker KB_VERSION=0.10.0` instead. The build stops and
+says so rather than guess a version. Install them with `apt` rather than
+`dpkg -i`, so the distro dependencies — Samba above all — are resolved for you:
 
 ```sh
 sudo apt install ./kerbridge*.deb
 ```
+
+Nothing verifies these. They carry no signature of their own — only the
+repository index is signed — so a file you did not build yourself is worth the
+`SHA256SUMS` check the release page ships.
 
 | Package | What it is | Where it goes |
 |---|---|---|
