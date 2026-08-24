@@ -84,7 +84,8 @@ own copies in `deploy/configs/`, which the containers mount at the compiled-in
 [config schema](../crates/kerbridge-config/GLOSSARY.md#config-schema), so it
 cannot disagree with the parser.
 <!-- refs: `kerbridge_core::config`, `deploy/configs/`, `DEFAULT_CONFIG_DIR` -->
-<!-- avoid: the config files, the toml config, the config directory, configs/, `kbmanage.env` -->
+<!-- avoid: the toml config, configs/, `kbmanage.env` -->
+<!-- user-facing: the config files, the config directory -->
 <!-- different than: `.env` (compose-level, and what this replaced) -->
 
 ### delegation (directory rights)

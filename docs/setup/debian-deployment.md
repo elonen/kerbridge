@@ -146,7 +146,7 @@ already have.
 | Cloud IdP tenant id | The Entra tenant, as a UUID. **Leave empty** for a host that runs no sync and serves no sign-ins — the questions below are then not asked. |
 | Application id of the broker API registration | From [step 2](../../SETUP.md#2-register-three-applications-in-entra). |
 | Application id of the workstation client registration | From step 2. |
-| Application id of the synchronisation registration | From step 2. |
+| Application id of the synchronization registration | From step 2. |
 | Name of the cloud group whose members are admitted | Defaults to `KerBridge Allowed On-prem Users`. Nothing works until a group by that name exists in the tenant. |
 
 Nothing secret passes through debconf, and that is structural rather than
