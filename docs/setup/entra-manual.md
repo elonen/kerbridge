@@ -2,11 +2,11 @@
 
 This page tells you how to create the app registrations and the admission
 group by hand. The result is identical to the result of
-[the Terraform module](entra-terraform.md), except for the display names:
-the portal walk-through below uses `kerbridge-broker`, `kerbridge-client` and
-`kerbridge-sync`, and Terraform and the CLI blocks use `KerBridge broker API`,
-`KerBridge helper` and `KerBridge sync`. A display name is yours to select. No
-config value holds one. [`entra.md`](entra.md) tells you
+[the Terraform module](entra-terraform.md), including the display names:
+the portal walk-through below and the Terraform and CLI blocks all suggest
+`KerBridge broker API`, `KerBridge public client` and `KerBridge sync`. A display
+name is yours to select. No config value holds one. [`entra.md`](entra.md)
+tells you
 *what* these objects are, which `[provider_config]` values they produce, and the
 defaults that Entra sets incorrectly. This page is only the *how*.
 
@@ -30,14 +30,14 @@ Terraform does.
 
 ```mermaid
 flowchart LR
-  helper["B. kerbridge-client<br/>public client"]
-  api["A. kerbridge-broker<br/>protected API"]
-  sync["C. kerbridge-sync<br/>Graph reader"]
+  client["B. KerBridge public client<br/>browser sign-in"]
+  api["A. KerBridge broker API<br/>protected API"]
+  sync["C. KerBridge sync<br/>Graph reader"]
   msgraph["Microsoft Graph"]
   group["D. KerBridge Allowed On-prem Users<br/>admission group"]
 
-  helper -->|"delegated access_as_user"| api
-  api -.->|"pre-authorized client"| helper
+  client -->|"delegated access_as_user"| api
+  api -.->|"pre-authorized client"| client
   sync -->|"User.Read.All + Group.Read.All, admin-consented"| msgraph
   msgraph -->|"members of"| group
 ```
@@ -46,15 +46,15 @@ flowchart LR
 
 ## The portal walk-through
 
-### A. `kerbridge-broker` — the protected API
+### A. `KerBridge broker API` — the protected API
 
-1. **New registration.** Set the name to `kerbridge-broker`. Select single
+1. **New registration.** Set the name to `KerBridge broker API`. Select single
    tenant. **Do not add a redirect URI** — this registration is an API, not a
    client.
 2. **Expose an API → Application ID URI → Add.** Accept the default
    `api://{BROKER_APP_ID}`. Save.
 
-   > **CAUTION:** Do not skip this step. The broker tells the helper that its
+   > **CAUTION:** Do not skip this step. The broker tells the client that its
    > scope is `api://{BROKER_APP_ID}/access_as_user`, thus that URI must
    > resolve to this application. The portal does not let you add a scope
    > before you save this URI. But a tool that drives Graph directly can
@@ -69,9 +69,9 @@ flowchart LR
    | Scope name | `access_as_user` |
    | Who can consent | `Admins and users` (the portal default is `Admins only`; each value works, because step 4 pre-authorizes the client) |
    | Admin consent display name | `Access KerBridge as the signed-in user` |
-   | Admin consent description | `Allow the KerBridge helper to obtain a Kerberos ticket for the signed-in user.` |
+   | Admin consent description | `Allow the KerBridge client to obtain a Kerberos ticket for the signed-in user.` |
    | User consent display name | `Access KerBridge on your behalf` |
-   | User consent description | `Allow the KerBridge helper to obtain a Kerberos ticket for you.` |
+   | User consent description | `Allow NAS Access to obtain a Kerberos ticket for you.` |
    | State | `Enabled` |
 
    The two user-consent fields appear only when *Who can consent* is `Admins
@@ -80,7 +80,7 @@ flowchart LR
    ones, so keep them the same.
 
 4. **Expose an API → Authorized client applications → Add a client
-   application.** Enter the **`kerbridge-client` application ID from section
+   application.** Enter the **`KerBridge public client` application ID from section
    B** and select `api://{BROKER_APP_ID}/access_as_user`. This step removes
    the consent prompt for your users. Register B first, or return to this
    step after you register B.
@@ -106,37 +106,37 @@ flowchart LR
 
 Do **not** add app roles. Nothing needs them.
 
-### B. `kerbridge-client` — the workstation client
+### B. `KerBridge public client` — the workstation client
 
-1. **New registration.** Set the name to `kerbridge-client`. Select single
+1. **New registration.** Set the name to `KerBridge public client`. Select single
    tenant.
 2. **Authentication → Add a platform → Mobile and desktop applications.** Add
    the redirect URI `http://127.0.0.1`, with no port.
    - Entra ignores the port when it matches loopback redirects. Thus the
-     helper can bind any ephemeral port.
+     client can bind any ephemeral port.
    - Register only this one URI. Do not add variants with ports.
-   - Do not use `localhost` — `127.0.0.1` is the host that the helper sends.
+   - Do not use `localhost` — `127.0.0.1` is the host that the client sends.
 3. **Add a second redirect URI on the same platform:**
 
    ```
-   ms-appx-web://microsoft.aad.brokerplugin/{HELPER_APP_ID}
+   ms-appx-web://microsoft.aad.brokerplugin/{CLIENT_APP_ID}
    ```
 
-   Put the application ID of this app in the place of `{HELPER_APP_ID}`.
+   Put the application ID of this app in the place of `{CLIENT_APP_ID}`.
    **Do not skip this step.** The tray agent prefers Windows sign-in by
    default. Without this URI, that path fails with a redirect-URI mismatch.
 4. **Advanced settings → Allow public client flows:** leave this setting
    **off**. PKCE with a registered native redirect URI does not need it.
-5. **API permissions → Add a permission → My APIs → `kerbridge-broker` →
+5. **API permissions → Add a permission → My APIs → `KerBridge broker API` →
    Delegated → `access_as_user`.** Do **not** click *Grant admin consent* if
    you did the pre-authorization in step A4. The pre-authorization makes that
    consent unnecessary.
 
 Do not create a client secret. This is a public client.
 
-### C. `kerbridge-sync` — the Graph reader
+### C. `KerBridge sync` — the Graph reader
 
-1. **New registration.** Set the name to `kerbridge-sync`. Select single
+1. **New registration.** Set the name to `KerBridge sync`. Select single
    tenant. Do not add a redirect URI.
 2. **API permissions → Add a permission → Microsoft Graph → Application
    permissions** → `User.Read.All` and `Group.Read.All` → **Add permissions** →
@@ -194,7 +194,7 @@ az ad sp create --id "$broker_api_id" >/dev/null
 az ad app update --id "$broker_api_id" --identifier-uris "api://$broker_api_id"
 ```
 
-### 2. Public client (kerbridge-client)
+### 2. Public client
 
 This block refers to the broker scope by the id that you generated. The scope
 does not exist on the API yet. That is not a problem — step 4 creates it
@@ -202,7 +202,7 @@ there.
 
 ```sh
 public_id=$(az ad app create \
-  --display-name "KerBridge helper" \
+  --display-name "KerBridge public client" \
   --sign-in-audience AzureADMyOrg \
   --public-client-redirect-uris http://127.0.0.1 \
   --required-resource-accesses "[{\"resourceAppId\":\"$broker_api_id\",\"resourceAccess\":[{\"id\":\"$scope_id\",\"type\":\"Scope\"}]}]" \
@@ -235,7 +235,7 @@ az ad app permission admin-consent --id "$sync_id"
 
 The two GUIDs are the well-known ids of those permissions.
 
-### 4. Expose the scope, pre-authorize the helper, and ask for `idtyp`
+### 4. Expose the scope, pre-authorize the client, and ask for `idtyp`
 
 This is one `az rest` PATCH. `PATCH` replaces the full `api` object, thus the
 token version, the scope, and the pre-authorization must go in one request.
@@ -255,9 +255,9 @@ az rest --method PATCH \
       "type": "User",
       "isEnabled": true,
       "adminConsentDisplayName": "Access KerBridge as the signed-in user",
-      "adminConsentDescription": "Allow the KerBridge helper to obtain a Kerberos ticket for the signed-in user.",
+      "adminConsentDescription": "Allow the KerBridge client to obtain a Kerberos ticket for the signed-in user.",
       "userConsentDisplayName": "Access KerBridge on your behalf",
-      "userConsentDescription": "Allow the KerBridge helper to obtain a Kerberos ticket for you."
+      "userConsentDescription": "Allow NAS Access to obtain a Kerberos ticket for you."
     }],
     "preAuthorizedApplications": [{
       "appId": "$public_id",

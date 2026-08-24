@@ -19,11 +19,17 @@ incorrect.
 
 | What | Why it exists | `[provider_config]` keys |
 |---|---|---|
-| **Broker API** (`kerbridge-broker`) | The audience of every `/ticket` token. It exposes the `access_as_user` scope and issues v2 tokens. It holds no credential — it only validates tokens. | `broker_api_client_id`, `scope` |
-| **Public client** (`kerbridge-client`) | The native app that does the browser sign-in with auth-code + PKCE. It is public, thus it has no secret. | `public_client_id` |
-| **Sync app** (`kerbridge-sync`) | It reads users and groups from Graph, app-only and read-only. It needs a credential. | `sync_client_id` |
+| **Broker API** (`KerBridge broker API`) | The audience of every `/ticket` token. It exposes the `access_as_user` scope and issues v2 tokens. It holds no credential — it only validates tokens. | `broker_api_client_id`, `scope` |
+| **Public client** (`KerBridge public client`) | The native app that does the browser sign-in with auth-code + PKCE. It is public, thus it has no secret. | `public_client_id` |
+| **Sync app** (`KerBridge sync`) | It reads users and groups from Graph, app-only and read-only. It needs a credential. | `sync_client_id` |
 | **Admission group** (`KerBridge Allowed On-prem Users`) | Membership admits a user to the realm. Nothing works without this group: with no admission group, sync mirrors no users, and every sign-in fails with a 403. | `admission_group` *or* `admission_group_id` — one, never both |
 | the tenant itself | | `tenant_id` |
+
+Each display name is the key it fills, without the `_id` — thus
+`KerBridge broker API` supplies `broker_api_client_id`. A display name is yours
+to select and no config value holds one, but if you select your own, keep that
+relation: the name in the portal is what tells an operator which of three
+almost identical GUIDs goes in which key.
 
 The admission group is bound by name **or** by id. If you set both values,
 sync refuses to start. The name is only for the initial binding. After the
@@ -47,12 +53,12 @@ occurs.
   different `aud` and `iss`. The broker accepts only v2 tokens, thus with the
   default it rejects *every* token. This is the most common setup failure.
 - **The broker API needs its Application ID URI** (`api://{BROKER_APP_ID}`).
-  That URI is the resource that the helper requests. If the URI is not set,
+  That URI is the resource that the client requests. If the URI is not set,
   every token request fails with `AADSTS500011`. The portal does not let you
   add a scope without it, but a tool that drives Graph directly can leave it
   not set.
 - **The public client needs the WAM redirect URI**
-  (`ms-appx-web://microsoft.aad.brokerplugin/{HELPER_APP_ID}`). Without it,
+  (`ms-appx-web://microsoft.aad.brokerplugin/{CLIENT_APP_ID}`). Without it,
   the Windows sign-in path of the tray fails with a redirect-URI mismatch.
   The loopback URI must also be `http://127.0.0.1`, not `localhost`.
 - **The sync app's Graph permissions need admin consent.** To add

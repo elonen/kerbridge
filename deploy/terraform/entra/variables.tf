@@ -15,7 +15,7 @@ variable "tenant_id" {
 }
 
 variable "scope_name" {
-  description = "The delegated scope the broker API exposes and the helper requests. The broker checks for its presence in scp on every token, so this is [provider_config] scope and the two must agree. Leave it access_as_user unless you have a reason not to."
+  description = "The delegated scope the broker API exposes and the client requests. The broker checks for its presence in scp on every token, so this is [provider_config] scope and the two must agree. Leave it access_as_user unless you have a reason not to."
   type        = string
   default     = "access_as_user"
 }
@@ -33,7 +33,7 @@ variable "public_client_redirect_uris" {
 }
 
 variable "name_prefix" {
-  description = "Prepended to the three application display names, so several KerBridge deployments in one tenant stay legible in the portal. Not part of any [provider_config] value."
+  description = "Prepended to the three application display names and the sync secret's label, so several KerBridge deployments in one tenant stay legible in the portal. Each name is the [provider_config] key it fills, minus the _id -- KerBridge broker API supplies broker_api_client_id. Not part of any [provider_config] value."
   type        = string
   default     = "KerBridge"
 }

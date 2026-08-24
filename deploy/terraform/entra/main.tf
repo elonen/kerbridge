@@ -42,15 +42,17 @@ resource "azuread_application" "broker_api" {
     # most common cause of a validator that rejects every otherwise-valid token.
     requested_access_token_version = 2
 
+    # admin_* reaches an operator, user_* reaches an end user -- hence two
+    # names for one app (GLOSSARY.md @ NAS Access).
     oauth2_permission_scope {
       id                         = random_uuid.broker_scope.result
       value                      = var.scope_name
       type                       = "User"
       enabled                    = true
       admin_consent_display_name = "Access KerBridge as the signed-in user"
-      admin_consent_description  = "Allow the KerBridge helper to obtain a Kerberos ticket for the signed-in user."
+      admin_consent_description  = "Allow the KerBridge client to obtain a Kerberos ticket for the signed-in user."
       user_consent_display_name  = "Access KerBridge on your behalf"
-      user_consent_description   = "Allow the KerBridge helper to obtain a Kerberos ticket for you."
+      user_consent_description   = "Allow NAS Access to obtain a Kerberos ticket for you."
     }
   }
 
@@ -68,7 +70,7 @@ resource "azuread_application" "broker_api" {
 
 # The Application ID URI, without which nothing works.
 #
-# The broker advertises its scope to the helper as
+# The broker advertises its scope to the client as
 # `api://{broker_api_client_id}/{scope}` (crates/kerbridge-broker/src/config.rs),
 # so that URI must resolve to this application. The portal hides the need for it:
 # *Expose an API* refuses to add a scope until you have saved an Application ID
@@ -94,7 +96,7 @@ resource "azuread_service_principal" "broker_api" {
 # PKCE, not a credential. Its client id is public_client_id, and the broker
 # checks it against azp on every token.
 resource "azuread_application" "public_client" {
-  display_name     = "${var.name_prefix} helper"
+  display_name     = "${var.name_prefix} public client"
   sign_in_audience = "AzureADMyOrg"
 
   # "Allow public client flows", explicitly off -- the provider default, stated
@@ -146,9 +148,9 @@ resource "azuread_service_principal" "public_client" {
   client_id = azuread_application.public_client.client_id
 }
 
-# Pre-authorize the helper on the broker scope, so the browser sign-in never
+# Pre-authorize the client on the broker scope, so the browser sign-in never
 # stops on a consent prompt the user could not grant anyway.
-resource "azuread_application_pre_authorized" "helper_on_broker" {
+resource "azuread_application_pre_authorized" "client_on_broker" {
   application_id       = azuread_application.broker_api.id
   authorized_client_id = azuread_application.public_client.client_id
   permission_ids       = [random_uuid.broker_scope.result]
@@ -203,7 +205,7 @@ resource "azuread_application_password" "sync" {
   count = var.create_sync_secret ? 1 : 0
 
   application_id    = azuread_application.sync.id
-  display_name      = "kerbridge-sync (terraform)"
+  display_name      = "${var.name_prefix} sync (terraform)"
   end_date_relative = var.sync_secret_end_date_relative
 }
 

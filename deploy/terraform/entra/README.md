@@ -16,10 +16,10 @@ teardown. This file is the module reference only.
 | Variable | Default | |
 |---|---|---|
 | `tenant_id` | *(required)* | Entra tenant (directory) ID. Becomes `tenant_id`. |
-| `scope_name` | `access_as_user` | The delegated scope the broker API exposes and the helper requests. Becomes `scope`; the broker checks for it in `scp`, so the two must agree. |
+| `scope_name` | `access_as_user` | The delegated scope the broker API exposes and the client requests. Becomes `scope`; the broker checks for it in `scp`, so the two must agree. |
 | `admission_group_name` | `KerBridge Allowed On-prem Users` | Display name of the admission group in Entra. Not a `[provider_config]` value: sync binds to the group's id, so `print-provider-config.sh` prints `admission_group_id` and no name key. |
 | `public_client_redirect_uris` | `["http://127.0.0.1"]` | Browser-flow redirect URIs. The WAM redirect is appended automatically — it embeds the client id Entra assigns, so it cannot be a default here. |
-| `name_prefix` | `KerBridge` | Prepended to the display names, so several deployments in one tenant stay legible. Not part of any `[provider_config]` value. |
+| `name_prefix` | `KerBridge` | Prepended to the display names and the sync secret's label, so several deployments in one tenant stay legible. Each name is the `[provider_config]` key it fills, minus the `_id`. Not part of any `[provider_config]` value. |
 | `create_sync_secret` | `false` | Whether Terraform creates the sync app's Graph secret. `true` puts a live credential in state — see the guide. |
 | `sync_secret_end_date_relative` | `17520h` | Lifetime of that secret, as a Go duration. Ignored unless `create_sync_secret`. |
 
