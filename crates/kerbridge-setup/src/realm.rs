@@ -94,6 +94,7 @@ pub fn run(dir: &Path, allow_example_realm: bool) -> Result<()> {
     // host as it found it. `make_tls` has to precede `provision` -- the options
     // it passes name the key and certificate paths -- but nothing here needs it.
     if provisioning {
+        refuse_missing_templates()?;
         refuse_old_schema()?;
         gate(&config, allow_example_realm)?;
         refuse_resolved_collision()?;
@@ -335,6 +336,28 @@ fn gate(config: &Config, allowed: bool) -> Result<()> {
     )
 }
 
+/// One of the LDIF files `samba-tool domain provision` reads. Debian ships the
+/// directory holding them in `samba-ad-provision`, separately from the tool.
+const PROVISION_TEMPLATE: &str = "/usr/share/samba/setup/provision.ldif";
+
+/// Refuse a `samba-tool` whose provisioning templates are not installed.
+///
+/// `samba-ad-dc` merely *recommends* `samba-ad-provision`, so a host installed
+/// with `--no-install-recommends` has every Samba binary and none of the input.
+/// Without this the failure arrives from inside the provisioner, as a Python
+/// traceback, after it has written an `smb.conf` of its own over the one moved
+/// aside. `kerbridge-issuerd` depends on the package; this catches the host that
+/// got Samba some other way.
+fn refuse_missing_templates() -> Result<()> {
+    if Path::new(PROVISION_TEMPLATE).exists() {
+        return Ok(());
+    }
+    bail!(
+        "{PROVISION_TEMPLATE} is missing, so this samba-tool has no templates to provision \
+         from: install the samba-ad-provision package. Nothing has been written yet."
+    )
+}
+
 /// Refuse a `samba-tool` that cannot lay down [`BASE_SCHEMA`], while there is
 /// still nothing to undo.
 ///
@@ -536,7 +559,7 @@ fn provision(config: &Config, db: &dc::Dc) -> Result<()> {
         }
     };
 
-    move_smb_conf_aside()?;
+    let archived = move_smb_conf_aside()?;
 
     let mut options = vec![
         "disable netbios = yes".to_owned(),
@@ -577,6 +600,7 @@ fn provision(config: &Config, db: &dc::Dc) -> Result<()> {
     println!("[kbsetup] provisioning {} -- this takes a while", realm.realm);
     run::plain(&argv.iter().map(String::as_str).collect::<Vec<_>>())
         .map_err(unmapped_gid_hint)
+        .map_err(|e| after_failed_provision(archived, db, e))
         .context("samba-tool domain provision")?;
 
     db.set_password("Administrator", &password).map_err(|e| {
@@ -663,13 +687,17 @@ fn unmapped_gid_hint(e: anyhow::Error) -> anyhow::Error {
 /// Which is why the refusal below names `smb.conf` and not the moved-aside copy
 /// as the file to clear. Only this function ever writes `.kerbridge-orig`, and
 /// only from what was at `smb.conf` before any provision ran, so that file is
-/// always the older and always the one to keep. A provision that panicked
-/// midway leaves an `smb.conf` of Samba's own beside it. Naming the archive as
-/// the file to delete would destroy exactly what the move exists to preserve.
-fn move_smb_conf_aside() -> Result<()> {
+/// always the older and always the one to keep. A provision that was *killed*
+/// midway leaves an `smb.conf` of Samba's own beside it -- one that failed is
+/// undone by [`after_failed_provision`] instead. Naming the archive as the file
+/// to delete would destroy exactly what the move exists to preserve.
+///
+/// Answers whether it archived anything: nothing can learn that from the
+/// filesystem afterwards, and [`after_failed_provision`] has to know.
+fn move_smb_conf_aside() -> Result<bool> {
     let current = Path::new(SMB_CONF);
     if !current.exists() {
-        return Ok(());
+        return Ok(false);
     }
     if Path::new(SMB_CONF_ORIG).exists() {
         bail!(
@@ -683,7 +711,49 @@ fn move_smb_conf_aside() -> Result<()> {
     std::fs::rename(current, SMB_CONF_ORIG)
         .with_context(|| format!("moving {SMB_CONF} to {SMB_CONF_ORIG}"))?;
     println!("[kbsetup] moved the existing {SMB_CONF} to {SMB_CONF_ORIG}");
-    Ok(())
+    Ok(true)
+}
+
+/// Undo the move, and say what the host is left holding, when `samba-tool`
+/// fails.
+///
+/// **The only place the move may be reversed**, because it is the only place
+/// both files are known: whatever sits at [`SMB_CONF`] now was written by the
+/// provisioner this run just started, and [`SMB_CONF_ORIG`] is the operator's.
+/// Left as they are, the two are a dead end -- the next run cannot tell them
+/// apart and refuses.
+///
+/// **And then what state the host is in**, which a traceback does not answer.
+/// Everything `kbsetup realm` writes ahead of the provisioner is created only
+/// when absent -- the LDAPS material, the published CA copy, the Administrator
+/// password -- so the whole question is whether a database was reached. That
+/// also decides whether a second attempt is possible: see
+/// [`dc::Dc::unfinished`].
+///
+/// Failures of the tidying itself are warned about and never fatal: the error
+/// being carried out is why the run stopped, and displacing it costs more than
+/// the file.
+fn after_failed_provision(archived: bool, db: &dc::Dc, e: anyhow::Error) -> anyhow::Error {
+    if std::fs::remove_file(SMB_CONF).is_ok() {
+        println!("[kbsetup] removed the {SMB_CONF} the failed provision wrote");
+    }
+    if archived {
+        match std::fs::rename(SMB_CONF_ORIG, SMB_CONF) {
+            Ok(()) => println!("[kbsetup] put the host's own {SMB_CONF} back"),
+            Err(err) => eprintln!("[kbsetup] warning: restoring {SMB_CONF}: {err}"),
+        }
+    }
+    match db.state() {
+        dc::State::Absent => println!(
+            "[kbsetup] no Samba database was written, so this host is as it was before the run. \
+             Fix the cause below and run `kbsetup realm` again."
+        ),
+        _ => println!(
+            "[kbsetup] the provisioner reached the Samba database before it failed, and a domain \
+             that stopped partway cannot be repaired. `kbsetup status` words the way out."
+        ),
+    }
+    e
 }
 
 /// Say in the file itself which of its settings are not a matter of taste.
@@ -748,6 +818,7 @@ fn epilogue(config: &Config) {
         "[kbsetup] Nothing here configures a firewall. ufw and nftables examples are in \
          /usr/share/doc/kerbridge-issuerd/examples/."
     );
+    println!("[kbsetup] `kbsetup status` says what is outstanding now.");
 }
 
 #[cfg(test)]

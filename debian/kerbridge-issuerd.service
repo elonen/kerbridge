@@ -28,7 +28,9 @@ ConditionPathExists=/etc/kerbridge/main.toml
 # a minute, which RestartSec=5s reaches in ~25 s. Then `failed`, where an
 # operator finds it, instead of a journal that scrolls for ever. The pair is
 # [Unit], not [Service], and both halves are needed: the interval alone still
-# leaves the stock burst of 5.
+# leaves the stock burst of 5. Nothing on the host clears such a latch by
+# itself: `kbsetup directory` and `kbsetup secrets` start what is `failed` once
+# they have written the credential that unit exits without.
 StartLimitIntervalSec=60
 StartLimitBurst=5
 

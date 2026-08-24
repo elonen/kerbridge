@@ -58,9 +58,14 @@ Description: KerBridge configuration tool, and the deployment's shared state
 
 Package: kerbridge-issuerd
 Architecture: any
+# samba-ad-provision holds the LDIF `samba-tool domain provision` reads, and
+# samba-ad-dc only *recommends* it: an install made with --no-install-recommends
+# has every binary and none of the input, and `kbsetup realm` dies partway
+# through the provision. A Depends, therefore, on every supported release.
 Depends: ${misc:Depends},
          kerbridge-config (= ${binary:Version}),
          samba-ad-dc (>= 2:4.19),
+         samba-ad-provision,
          samba-common-bin,
          python3-samba,
          samba-dsdb-modules,

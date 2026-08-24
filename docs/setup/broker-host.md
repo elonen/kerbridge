@@ -122,31 +122,39 @@ No other system reports these events:
 They always appear as `NOTIFY <severity> <event>:` lines in sync's log. A
 webhook also puts them in a channel. Set the webhook up now.
 
-### 1. Write the URL
+### 1. Name the file in the config set
+
+The URL alone delivers nothing. `url_file` names the file it goes in, and it
+ships commented out, because no deployment can be assumed to have a webhook.
+Remove the `#` in the `[notify]` table of `main.toml`. The path is the same
+string either way, because the config set names the container's view of it:
+
+```toml
+url_file = "/etc/kerbridge.secrets/notify_url"
+```
+
+### 2. Write the URL
+
+```sh
+# Debian
+sudo kbsetup secrets
+```
+
+`kbsetup secrets` asks for every credential the set names and cannot generate,
+this one included, and writes each at the owner and mode its reader needs.
+
+> **CAUTION: to write this file by hand is to own its group.** The broker and
+> sync read it as `_kerbridge` and open it at *every* start — a URL written
+> `root:root`, which is what `sudo tee` leaves, stops both daemons dead rather
+> than switching notification off. Should you place it yourself:
+> `sudo chown root:_kerbridge` and `sudo chmod 0640`, in that order, and
+> `kbsetup status` says whether the daemons can read what is there.
 
 ```sh
 # Docker Compose, from deploy/
 printf '%s' '<the webhook URL>' > secrets/notify_url
 chown root:${BROKER_GID:-10002} secrets/notify_url   # Linux only, as above
 chmod 0640 secrets/notify_url
-```
-
-```sh
-# Debian
-printf '%s' '<the webhook URL>' | sudo tee /etc/kerbridge.secrets/notify_url >/dev/null
-sudo chown root:_kerbridge /etc/kerbridge.secrets/notify_url
-sudo chmod 0640 /etc/kerbridge.secrets/notify_url
-```
-
-### 2. Name the file in the config set
-
-The file alone delivers nothing. `url_file` names it, and it ships commented
-out, because no deployment can be assumed to have a webhook. Remove the `#` in
-the `[notify]` table of `main.toml`. The path is the same string either way,
-because the config set names the container's view of it:
-
-```toml
-url_file = "/etc/kerbridge.secrets/notify_url"
 ```
 
 ### 3. Restart and test

@@ -44,6 +44,7 @@ mod secrets;
 mod status;
 #[cfg(test)]
 mod testing;
+mod units;
 mod verify;
 
 fn main() -> ExitCode {

@@ -42,7 +42,7 @@ use kerbridge_core::config::Config;
 use kerbridge_core::password::{Alphabet, generate};
 
 use crate::secrets::{self, Reader};
-use crate::{dc, ldif};
+use crate::{dc, ldif, units};
 
 /// `NORMAL_ACCOUNT | DONT_EXPIRE_PASSWORD`. Mandatory rather than cosmetic: an
 /// expired password breaks keytab-based issuance and the delegated bind.
@@ -141,6 +141,10 @@ pub fn run(dir: &Path) -> Result<()> {
             config.sources.iter().map(|s| s.name.clone()).collect::<Vec<_>>().join(" ")
         }
     );
+    // The broker and sync exit for want of the bind passwords written above, and
+    // have been in `failed` since the packages were installed.
+    units::resume_failed();
+    println!("[kbsetup] `kbsetup status` says what is outstanding now.");
     Ok(())
 }
 

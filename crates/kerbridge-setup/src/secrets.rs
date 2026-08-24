@@ -46,6 +46,8 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use kerbridge_core::config::Issuerd;
 
+use crate::units;
+
 /// The unix group through which an unprivileged daemon reads its own credential,
 /// and which owns the directories those credentials sit in.
 ///
@@ -69,6 +71,39 @@ pub fn daemon_group(issuerd: &Issuerd) -> Result<u32> {
              daemon that cannot start. Create the group, or state socket_gid instead."
         ),
     }
+}
+
+/// Why an unprivileged daemon in `gid` cannot read this file, or `None` when it
+/// can.
+///
+/// **The one fault every root-run tool is blind to.** The permission bits do not
+/// stop uid 0, so `kbsetup`, `kbmanage doctor` and a hand `cat` all read a
+/// credential the daemons are refused, and each reports the deployment healthy.
+/// The daemon meets it at startup, exits, and latches -- with the diagnosis in
+/// the journal, where the operator who wrote the file by hand is not looking.
+///
+/// A stat, not a privilege drop: the numbers the kernel would compare are all in
+/// the inode. The rule and the fix line are [`kerbridge_core::secret::read`]'s,
+/// restated over somebody else's identity -- the operator meets the two in
+/// either order, so they may not come to word it differently.
+///
+/// A file that is not there is not this function's answer: absent is
+/// [`Pasted::present`](crate::pasted::Pasted::present)'s question.
+pub fn unreadable_by(path: &Path, gid: u32) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mode = meta.mode() & 0o7777;
+    let fix = format!("chgrp {gid} {0} && chmod 0640 {0}", path.display());
+    if mode & 0o027 != 0 {
+        let bad = if mode & 0o007 != 0 { "readable by other" } else { "writable by group" };
+        return Some(format!("mode {mode:04o}, {bad} -- fix: {fix}"));
+    }
+    if meta.gid() == gid && mode & 0o040 != 0 {
+        return None;
+    }
+    Some(format!(
+        "group {}, mode {mode:04o}: the daemons read it as group {gid} and are refused -- fix: {fix}",
+        meta.gid()
+    ))
 }
 
 /// Who has to be able to read the file, which decides both numbers.
@@ -281,6 +316,9 @@ pub fn run(dir: &Path, replace: bool) -> Result<()> {
     for name in &skipped {
         println!("[kbsetup]   {name}");
     }
+    if written > 0 {
+        units::resume_failed();
+    }
     println!("[kbsetup] `kbsetup status` says what is outstanding now.");
     Ok(())
 }
@@ -407,6 +445,30 @@ mod tests {
 
         write(&path, "Kb1abc", 0, Reader::RootOnly).unwrap();
         assert_eq!(existing(&path).unwrap().as_deref(), Some("Kb1abc"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The failure a root-run check cannot feel: a credential every privileged
+    /// reader opens and no daemon can. The group asked about is this process's
+    /// own, which is the one gid a test can be sure a file may carry.
+    #[test]
+    fn a_file_the_daemon_group_cannot_read_is_named_with_its_fix() {
+        let dir = scratch("readable");
+        let mine = nix::unistd::getgid().as_raw();
+        let path = dir.join("notify_url");
+        write(&path, "https://hooks.example.site/x", mine, Reader::Group(mine)).unwrap();
+        assert_eq!(unreadable_by(&path, mine), None, "0640 in the reader's own group");
+
+        // The same file, offered to a group this process is not in: the case
+        // that arrives as `chown root:root` on a hand-written secret.
+        let other = mine + 1;
+        let said = unreadable_by(&path, other).expect("a foreign group is refused");
+        assert!(said.contains(&format!("the daemons read it as group {other}")), "{said}");
+        assert!(said.contains(&format!("chgrp {other}")), "the fix names the gid: {said}");
+
+        std::fs::set_permissions(&path, PermissionsExt::from_mode(0o644)).unwrap();
+        let said = unreadable_by(&path, mine).expect("world-readable is refused");
+        assert!(said.contains("readable by other"), "{said}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -24,6 +24,31 @@ names the tag, and it stops if that section is absent or empty.
 
 ## Unreleased
 
+- `kerbridge-issuerd` now depends on `samba-ad-provision`. Samba only
+  recommends it, so an installation that skips recommends had no templates
+  to provision the realm from, and `kbsetup realm` died partway.
+- `kbsetup realm` stops before it writes anything when those templates are
+  absent, and names the package to install.
+- A provision that fails now puts your own `/etc/samba/smb.conf` back and
+  says whether the run can be repeated. Before, it left two files and the
+  next run refused to choose between them.
+- `kbsetup realm` and `kbsetup directory` end by pointing at
+  `kbsetup status`, as `kbsetup secrets` already did.
+- `kbsetup directory` and `kbsetup secrets` now start the daemons that were
+  in `failed` for want of what they just wrote. The broker and sync spend
+  their restart budget at install time, hours before the credential they
+  exit without exists, and nothing cleared that afterwards.
+- `kbsetup status` now says when a credential is there but the daemons
+  cannot read it, and gives the `chgrp`/`chmod` that fixes it. A file
+  written `root:root` stops every daemon at start, and no root-run check
+  could feel it -- the permission bits do not stop uid 0.
+- Setting up the notification webhook now says to use `kbsetup secrets`,
+  which writes the file at the group its readers need. The old recipe had
+  you place it with `sudo tee` and correct the group afterwards.
+- `kbsetup status` now quotes the last line each failed daemon wrote, and
+  counts a failed unit as work outstanding. `systemctl status` prints ten
+  lines, and after five restarts every one of them is systemd's own, so the
+  sentence that says why was the one thing an operator could not see.
 - New `kbsetup status` says what is done, what is left, and the command for
   the next step. It writes nothing and is safe to run at any point.
 - The installation now prints that list as its last word, so an operator at

@@ -233,7 +233,9 @@ Know these things before you run it:
 - **`/etc/samba/smb.conf`.** An existing file is moved aside to
   `/etc/samba/smb.conf.kerbridge-orig`, and a new one is written. The file
   stays registered with `samba-common`'s `ucf`, so a later Samba upgrade may
-  prompt about it. Answer *keep the currently-installed version*.
+  prompt about it. Answer *keep the currently-installed version*. A provision
+  that fails puts your file back, so the command can be run again; one that is
+  killed leaves both files, and then `kbsetup realm` asks you which to keep.
 - **systemd-resolved is refused, never reconfigured.** Its stub listener holds
   `127.0.0.53:53` and collides with Samba's internal DNS. `kbsetup realm` stops
   with a message rather than change your resolver for you.
@@ -401,17 +403,29 @@ Two states are normal while you work. Neither is a fault:
 - **`kerbridge-issuerd` runs idle before you provision.** `kbsetup verify`
   answers *nothing is provisioned yet* as a warning rather than a mismatch. The
   issuer simply starts working when `kbsetup realm` gives it a realm.
-- **`kerbridge-broker` is `failed` until `kbsetup directory` runs.** Its LDAP
-  bind password does not exist until then, so it exits with
-  `reading secret …/svc_kerbridge_broker_password` and latches.
+- **`kerbridge-broker` and `kerbridge-sync` are `failed` until `kbsetup
+  directory` runs.** Their LDAP bind passwords do not exist until then, so each
+  exits with `reading secret …/svc_kerbridge_*_password` and latches. `kbsetup
+  directory` starts them itself once it has written the passwords, and `kbsetup
+  secrets` does the same for whatever was waiting on a credential you pasted —
+  so neither state outlives the step that ends it.
 
-A stopped bridge is a **failed** unit. Read the reason, then clear the counter and start the unit:
+A unit that failed for a reason no setup verb writes away stays failed. Read the
+reason, then clear the counter and start the unit:
 
 ```sh
-journalctl -u kerbridge-broker -n 30
+journalctl _SYSTEMD_UNIT=kerbridge-broker.service -n 30
 sudo systemctl reset-failed kerbridge-broker
 sudo systemctl start kerbridge-broker
 ```
+
+> **Do not read the reason out of `systemctl status`.** It prints ten lines, and
+> a unit that spent its restart budget has ten lines of systemd's own —
+> `Scheduled restart job`, `Start request repeated too quickly` — with the
+> sentence that says why pushed off the top. `-u kerbridge-broker` adds those
+> same messages to the journal query; `_SYSTEMD_UNIT=` as above matches only
+> what the daemon itself wrote. `kbsetup status` quotes that line for every
+> failed unit, so it answers this without the incantation.
 
 > **CAUTION: `reset-failed` is not optional here.** Within the 60-second window
 > a plain `systemctl start` is refused, and it does not even run

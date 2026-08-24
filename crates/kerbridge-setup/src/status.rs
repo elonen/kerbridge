@@ -23,11 +23,9 @@ use std::path::Path;
 use anyhow::Result;
 use kerbridge_core::config::Config;
 
+use crate::units::{self, UNITS};
 use crate::verify::{MATCHES, MISMATCH};
 use crate::{dc, pasted, run, secrets};
-
-/// The units a Debian deployment installs, in start order.
-const UNITS: [&str; 3] = ["kerbridge-issuerd", "kerbridge-broker", "kerbridge-sync"];
 
 /// Where the detail column starts: `"  [x] 1. "` and a 20-wide title. A
 /// continuation line is indented to it, so the report reads as one column of
@@ -224,19 +222,37 @@ fn credentials_step(config: &Config) -> Result<Step> {
     // notification off, which is supported -- so it is reported and does not
     // hold the step open.
     let required: Vec<&pasted::Pasted> = missing.iter().filter(|want| !want.optional).collect();
+
+    // A credential that is there and unreadable is worse than one that is
+    // absent: every root-run check reports it in place, and every daemon that
+    // opens it exits. Only the pasted ones are examined -- `kbsetup` wrote the
+    // rest itself, at the mode and group their reader needs.
+    let gid = secrets::daemon_group(&config.issuerd)?;
+    let mut denied = Vec::new();
+    for want in &wanted {
+        if !want.present()? {
+            continue;
+        }
+        if let Some(why) = secrets::unreadable_by(&want.path, gid) {
+            denied.push(format!("\n{:GUTTER$}{}: {why}", "", want.named()));
+        }
+    }
+
+    let mut detail = if missing.is_empty() {
+        format!("{} in place", wanted.len())
+    } else {
+        format!(
+            "{} of {} missing: {}",
+            missing.len(),
+            wanted.len(),
+            missing.iter().map(pasted::Pasted::named).collect::<Vec<_>>().join(", ")
+        )
+    };
+    detail.push_str(&denied.concat());
     Ok(Step {
         title: "your credentials",
-        state: if required.is_empty() { State::Done } else { State::Todo },
-        detail: if missing.is_empty() {
-            format!("{} in place", wanted.len())
-        } else {
-            format!(
-                "{} of {} missing: {}",
-                missing.len(),
-                wanted.len(),
-                missing.iter().map(pasted::Pasted::named).collect::<Vec<_>>().join(", ")
-            )
-        },
+        state: if required.is_empty() && denied.is_empty() { State::Done } else { State::Todo },
+        detail,
         next: (!missing.is_empty()).then(|| "kbsetup secrets".to_owned()),
     })
 }
@@ -268,14 +284,27 @@ fn units_step() -> Option<Step> {
         let done = run::attempt(&["systemctl", "is-active", unit], None).ok()?;
         found.push(format!("{unit} {}", done.stdout.trim()));
     }
+    let failed: Vec<&str> = UNITS.into_iter().filter(units::is_failed).collect();
+
+    // A failed unit stated a reason, and `systemctl status` truncates it away.
+    // Quoting it here is what stops an operator debugging this tool instead of
+    // their deployment.
+    let mut detail = found.join(", ");
+    for unit in &failed {
+        if let Some(said) = units::last_line(unit) {
+            detail.push_str(&format!("\n{:GUTTER$}{unit}: {said}", ""));
+        }
+    }
     Some(Step {
         title: "services",
-        state: State::Unknown,
-        detail: found.join(", "),
-        // Not the whole story on its own -- a unit is `failed` for as many
-        // reasons as it has start conditions -- so this names the reader rather
-        // than a remedy.
-        next: Some("journalctl -u kerbridge-broker -n 30".to_owned()),
+        // A dead daemon is work outstanding, whatever else on this host is
+        // finished -- and the exit status has to say so.
+        state: if failed.is_empty() { State::Unknown } else { State::Todo },
+        detail,
+        // The reader, never a remedy: a unit is `failed` for as many reasons as
+        // it has start conditions, and restarting one before its cause is fixed
+        // only spends the restart budget again.
+        next: failed.first().map(|unit| units::reader(unit)),
     })
 }
 
