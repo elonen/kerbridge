@@ -18,7 +18,7 @@
 use anyhow::{Result, anyhow};
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::ptr::null_mut;
+use std::ptr::{NonNull, null_mut};
 
 use windows_sys::Win32::Foundation::{HANDLE, LUID, NTSTATUS};
 use windows_sys::Win32::Security::Authentication::Identity::{
@@ -225,9 +225,9 @@ fn query_cache(lsa_handle: HANDLE, auth_pkg: u32) -> Result<Vec<CachedTicket>> {
             protocol_status as u32
         ));
     }
-    if ret_buf.is_null() {
+    let Some(resp) = NonNull::new(ret_buf) else {
         return Ok(Vec::new()); // empty cache
-    }
+    };
 
     // SAFETY: on success the package returns a KERB_QUERY_TKT_CACHE_EX_RESPONSE
     // followed by CountOfTickets entries; every UNICODE_STRING Buffer points inside
@@ -235,10 +235,10 @@ fn query_cache(lsa_handle: HANDLE, auth_pkg: u32) -> Result<Vec<CachedTicket>> {
     // before the free, so no borrowed pointer escapes.
     let mut out = Vec::new();
     unsafe {
-        let resp = &*(ret_buf as *const KERB_QUERY_TKT_CACHE_EX_RESPONSE);
-        let tickets = resp.Tickets.as_ptr();
-        for i in 0..resp.CountOfTickets as isize {
-            let t = &*tickets.offset(i);
+        let resp = resp.cast::<KERB_QUERY_TKT_CACHE_EX_RESPONSE>().as_ref();
+        let tickets =
+            std::slice::from_raw_parts(resp.Tickets.as_ptr(), resp.CountOfTickets as usize);
+        for t in tickets {
             out.push(CachedTicket {
                 client_name: ustr_vec(&t.ClientName),
                 client_realm: ustr_vec(&t.ClientRealm),

@@ -2,6 +2,7 @@
 //! no API hands over.
 
 use std::ffi::c_void;
+use std::ptr::NonNull;
 
 use windows_sys::Win32::NetworkManagement::Dns::{
     DNS_QUERY_STANDARD, DNS_RECORDW, DNS_TYPE_SRV, DnsFree, DnsFreeRecordList, DnsQuery_W,
@@ -76,8 +77,9 @@ pub fn lookup_srv(name: &str) -> Vec<Srv> {
 
     let mut out = Vec::new();
     let mut cur = head;
-    while !cur.is_null() {
-        let record = unsafe { &*cur };
+    while let Some(p) = NonNull::new(cur) {
+        // SAFETY: the list DnsQuery_W returned stays live until DnsFree below.
+        let record = unsafe { p.as_ref() };
         // The answer can carry the additional section too (the target's A
         // records), so the type has to be checked rather than assumed.
         if record.wType == DNS_TYPE_SRV {
