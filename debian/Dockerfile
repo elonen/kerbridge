@@ -129,3 +129,34 @@ COPY --from=deb /out/ /debs/
 
 FROM scratch AS dist
 COPY --from=deb /out/ /
+
+
+# The two host-side CLIs as raw binaries, for `make kbmanage` and `make
+# kbconfig`. They come off the `build` stage above, so a tree that already built
+# this Dockerfile -- the compose `debs` service, or `make debian-docker` -- has
+# compiled them and this stage only copies. Building it alone compiles all six
+# crates to get two binaries; that is the trade for not compiling them a second
+# time in the common path.
+#
+# deploy/kbmanage/Dockerfile and deploy/kbconfig/Dockerfile build the images
+# the deploy flow runs. They are not the same artifact: those are images,
+# these are files on the host.
+FROM build AS cli-check
+# From buildx. Empty means a plain `docker build`, which exports but cannot
+# assert. The `build` stage already rejects a dynamically linked binary, so only
+# the architecture is left to check.
+ARG TARGETARCH
+RUN case "$TARGETARCH" in \
+      amd64) want="x86-64";; \
+      arm64) want="aarch64";; \
+      "")    want="";; \
+      *)     echo "unsupported TARGETARCH=$TARGETARCH"; exit 1;; \
+    esac; \
+    for b in target/release/kbmanage target/release/kbconfig; do \
+      [ -z "$want" ] || file "$b" | grep -q "$want" \
+        || { echo "$b is not $TARGETARCH:"; file "$b"; exit 1; }; \
+    done
+
+FROM scratch AS cli-dist
+COPY --from=cli-check /src/target/release/kbmanage /kbmanage
+COPY --from=cli-check /src/target/release/kbconfig /kbconfig

@@ -22,8 +22,9 @@
 #               and this must. Cross-build with
 #               `make kbmanage KBMANAGE_PLATFORM=linux/amd64`, which is emulated
 #               and therefore slow -- see deploy/kbmanage/Dockerfile for why
-#               there is no cross-compilation.
-#   kbconfig -- the configuration CLI, same shape and the same platform variable.
+#               there is no cross-compilation. Exported with kbconfig in one
+#               step, off the stage that builds the debs.
+#   kbconfig -- the configuration CLI, same platform variable, same export.
 #               A separate binary on purpose: it links no LDAP client, and it is
 #               what bootstrap reads the config set with, before kbmanage has a
 #               directory to talk to.
@@ -44,7 +45,7 @@ DEPLOY := $(MAKE) -C deploy
 CLIENT_WIN := $(MAKE) -C client/kerbridge-agent-windows
 
 .DEFAULT_GOAL := build-docker
-.PHONY: all build-docker build-local docker windows macos macos-zip installer kbmanage kbconfig debian-docker up down \
+.PHONY: all build-docker build-local docker windows macos macos-zip installer kbmanage kbconfig cli-dist debian-docker up down \
         clean clean-docker-images clean-docker-volumes \
         setup setup-rustfmt setup-clippy setup-tools \
         test test-fast test-win test-mac test-build test-stack test-deb test-all
@@ -95,16 +96,16 @@ macos-zip:
 # reasoning that a native stack is right for a cloned-repo deployment. Override to
 # build for a different server: KBMANAGE_PLATFORM=linux/amd64.
 KBMANAGE_PLATFORM ?= $(shell docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null)
-kbmanage:
-	docker build -f deploy/kbmanage/Dockerfile --platform=$(KBMANAGE_PLATFORM) \
-	  --target dist --output type=local,dest=$(DIST) .
-	@file $(DIST)/kbmanage 2>/dev/null | sed 's/^/built /' || true
 
-# The other host-side CLI, on the same platform variable: one flag moves both.
-kbconfig:
-	docker build -f deploy/kbconfig/Dockerfile --platform=$(KBMANAGE_PLATFORM) \
-	  --target dist --output type=local,dest=$(DIST) .
-	@file $(DIST)/kbconfig 2>/dev/null | sed 's/^/built /' || true
+# Both CLIs come out of debian/Dockerfile's `build` stage in one export, so
+# either target name writes both files. `docker` runs before them in
+# `build-docker`, which leaves that stage in the layer cache -- this copies from
+# it rather than compiling again.
+kbmanage kbconfig: cli-dist
+cli-dist:
+	docker buildx build -f debian/Dockerfile --platform=$(KBMANAGE_PLATFORM) \
+	  --target cli-dist --output type=local,dest=$(DIST) .
+	@file $(DIST)/kbmanage $(DIST)/kbconfig 2>/dev/null | sed 's/^/built /' || true
 
 # The six debs, in Docker from end to end: the static musl binaries in the
 # pinned toolchain that ships them, then dpkg-buildpackage and lintian on

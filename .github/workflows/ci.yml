@@ -148,8 +148,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: /tmp/buildx-cache
-          key: buildx-compose-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
-          restore-keys: buildx-compose-
+          key: buildx-amd64-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
+          restore-keys: buildx-amd64-
       - run: make test-build
         env:
           KB_CACHE_FROM: type=local,src=/tmp/buildx-cache
@@ -195,14 +195,16 @@ jobs:
       # `compose ps` and the logs itself, before it removes anything, so a
       # developer watching a local run sees the same thing this job does.
       # The compose `debs` service holds the six-crate compile that every service
-      # image is built on, so one cache serves this whole job. Shared with the
-      # other amd64 compose job: whichever runs first populates it, and a second
-      # write under the same key is dropped rather than duplicated.
+      # image is built on, so one cache serves this whole job. One key for every
+      # amd64 job, because `build`, `stack` and `deb` all reach that compile
+      # through debian/Dockerfile's `build` stage: whichever job runs first
+      # populates it, and a second write under the same key is dropped rather
+      # than duplicated. arm64 keeps a key of its own -- different binaries.
       - uses: actions/cache@v4
         with:
           path: /tmp/buildx-cache
-          key: buildx-compose-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
-          restore-keys: buildx-compose-
+          key: buildx-amd64-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
+          restore-keys: buildx-amd64-
       - run: make test-stack
         env:
           KB_CACHE_FROM: type=local,src=/tmp/buildx-cache
@@ -242,8 +244,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: /tmp/buildx-cache
-          key: buildx-deb-${{ matrix.arch }}-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
-          restore-keys: buildx-deb-${{ matrix.arch }}-
+          key: buildx-${{ matrix.arch }}-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
+          restore-keys: buildx-${{ matrix.arch }}-
       - run: >
           make test-deb
           DOCKER_CACHE="--cache-from type=local,src=/tmp/buildx-cache
