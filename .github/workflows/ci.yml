@@ -7,6 +7,8 @@
 #   fast     Fast checks without Docker. Ungated: it runs the doc checks, which
 #            a prose-only push is exactly the thing that can break.
 #   windows  The cross-build gate for the client.
+#   macos    The gate for the other client half, on a Mac runner. Its tests
+#            link the real Kerberos.framework, so they run rather than compile.
 #   build    Main, manual. Every shipping artifact still builds.
 #   stack    Main, manual. A realm provisioned from scratch, a TGT issued
 #            against it, and a file read over SMB with that ticket.
@@ -109,6 +111,26 @@ jobs:
         with:
           workspaces: client -> target
       - run: make test-win
+
+  macos:
+    name: macos client (build, clippy, tests)
+    # arm64, and pinned rather than `macos-latest`: a runner image that rotates
+    # under the release job would change what ships without a commit saying so.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client -> target
+      # Unlike `test-win`, this runs the client core's tests rather than only
+      # compiling them: on a Mac they link the real Kerberos.framework and
+      # libresolv. Everything it needs -- the toolchain, the SDK, codesign --
+      # is on the runner image; `make icon` is what would want librsvg, and the
+      # .icns it writes is committed.
+      - run: make test-mac
 
   build:
     name: artifacts (images, exes, MSI)

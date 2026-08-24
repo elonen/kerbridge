@@ -13,6 +13,9 @@
 #               unsigned until the publisher signs it.
 #   macos    -- dist/NAS Access.app, the menu-bar agent. Not part of the default
 #               build and not containerized: an .app is assembled on a Mac.
+#               `macos-zip` is the same bundle as the single file a release
+#               attaches. Both are arm64, and unsigned beyond the ad-hoc
+#               signature Notification Center needs.
 #   kbmanage -- the operator CLI, a static musl binary in dist/, built for the
 #               build host's architecture by default. Not a service, so it has no
 #               compose entry: `docker compose build` never exports to the host,
@@ -41,7 +44,7 @@ DEPLOY := $(MAKE) -C deploy
 CLIENT_WIN := $(MAKE) -C client/kerbridge-agent-windows
 
 .DEFAULT_GOAL := build-docker
-.PHONY: all build-docker build-local docker windows macos installer kbmanage kbconfig debian-docker up down \
+.PHONY: all build-docker build-local docker windows macos macos-zip installer kbmanage kbconfig debian-docker up down \
         clean clean-docker-images clean-docker-volumes \
         setup setup-rustfmt setup-clippy setup-tools \
         test test-fast test-win test-mac test-build test-stack test-deb test-all
@@ -79,6 +82,13 @@ installer:
 macos:
 	@[ "$$(uname -s)" = Darwin ] || { echo "macos: needs a Mac" >&2; exit 1; }
 	$(MAKE) -C client/kerbridge-agent-macos app
+	ls -l $(DIST)
+
+# The same bundle as one file, which is what a release ships. Separate from
+# `macos`: a developer wants an .app to launch, not an archive to unpack.
+macos-zip:
+	@[ "$$(uname -s)" = Darwin ] || { echo "macos-zip: needs a Mac" >&2; exit 1; }
+	$(MAKE) -C client/kerbridge-agent-macos zip
 	ls -l $(DIST)
 
 # Defaults to the build host's platform, matching the four service images and the

@@ -6,6 +6,10 @@
 
 BIN     := kerbridge-agent
 APP     := NAS Access.app
+# A release asset is one file, and the name carries the architecture because the
+# bundle is thin: `cargo build` targets the host, and every Mac this ships to is
+# arm64.
+ZIP     := kerbridge-nas-access-arm64.app.zip
 DIST    := ../../dist
 # One version number for the product: the crate's, substituted into Info.plist.
 VERSION := $(shell sed -n '/^\[package\]/,/^\[/ s/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)
@@ -16,14 +20,15 @@ ICNS    := installer/app-icon.icns
 ICON_SIZES := 16 32 64 128 256 512 1024
 TMP     := .local-tmp/icon
 
-# `app` and `clean` below run `rm -rf "$(DIST)/$(APP)"`, and Make expands an
-# unset variable to the empty string without a word: an APP that lost its
-# definition makes that `rm -rf ../../dist/`, which is every shipping artifact
-# including the MSI. Checked at parse time, so it fails before a recipe runs.
+# `app` and `clean` below run `rm -rf` over these, and Make expands an unset
+# variable to the empty string without a word: a name that lost its definition
+# makes that `rm -rf ../../dist/`, which is every shipping artifact including
+# the MSI. Checked at parse time, so it fails before a recipe runs.
 $(if $(strip $(DIST)),,$(error DIST is empty))
 $(if $(strip $(APP)),,$(error APP is empty))
+$(if $(strip $(ZIP)),,$(error ZIP is empty))
 
-.PHONY: all build check app icon clean
+.PHONY: all build check app zip icon clean
 
 all: build
 
@@ -50,6 +55,14 @@ app: build $(ICNS)
 	codesign --force --deep --sign - "$(DIST)/$(APP)"
 	@echo "wrote $(abspath $(DIST))/$(APP) (version $(VERSION), ad-hoc signed)"
 
+# The bundle as the single file a release asset has to be. `ditto`, not `zip`:
+# it keeps the bundle's symlinks and its signature, and a `zip -r` archive comes
+# back out failing `codesign --verify`.
+zip: app
+	rm -f "$(DIST)/$(ZIP)"
+	ditto -c -k --keepParent "$(DIST)/$(APP)" "$(DIST)/$(ZIP)"
+	@echo "wrote $(abspath $(DIST))/$(ZIP)"
+
 # Regenerate bundle icon from SVG. Separate from `app` on purpose: only
 # needed when the logo changes, and it pulls in rsvg-convert. Commit the result.
 icon: $(ICNS)
@@ -69,4 +82,4 @@ $(ICNS): $(SVG)
 
 clean:
 	cargo clean
-	rm -rf $(TMP) "$(DIST)/$(APP)"
+	rm -rf $(TMP) "$(DIST)/$(APP)" "$(DIST)/$(ZIP)"

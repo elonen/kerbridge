@@ -22,6 +22,12 @@ during an upgrade.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
+## Unreleased
+
+- The release page ships the MSI only. It holds both Windows programs.
+- The release page ships the macOS agent: arm64, ad-hoc signed.
+- CI builds and tests the macOS agent on each change.
+
 ## 0.9.0
 
 - Debian packages install from a signed apt repository.

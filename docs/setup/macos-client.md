@@ -21,6 +21,12 @@ research spike `macos-ticket-injection`.
 
 Neither executable runs as root at any time.
 
+## Download it
+
+Each release attaches `kerbridge-nas-access-arm64.app.zip`. Unzip it to get
+`NAS Access.app`. The bundle is **arm64 only**, because that is the
+architecture of the runner that builds it. On an Intel Mac, build it.
+
 ## Build it
 
 ```sh
@@ -49,7 +55,7 @@ cd client/kerbridge-client && cargo build --release   # -> client/target/release
 
 ## Install it
 
-There is no installer. Copy `dist/NAS Access.app` to `/Applications` and open it.
+There is no installer. Copy `NAS Access.app` to `/Applications` and open it.
 
 Copy the app **before** you turn on *Start at login*. The registration records
 the location of the app. If you move the app after registration, macOS points

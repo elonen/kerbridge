@@ -1,5 +1,6 @@
-# One release per tag. This workflow builds both architectures, gates them with
-# the same checks `make test-deb` runs on main, and then publishes one release.
+# One release per tag. This workflow builds both Linux architectures, gates them
+# with the same checks `make test-deb` runs on main, builds the two client
+# packages, and then publishes one release.
 #
 # The trigger is a tag push, not `on: release`. A release created with
 # GITHUB_TOKEN does not fire the `release` event, so a second workflow chained to
@@ -11,8 +12,9 @@
 # The version is not written here. `make` derives it on the runner with
 # `debian/make-changelog --print-version`, which reads `git describe`, and passes
 # it into the build image -- so a tag push gives 0.10.0 and a commit after it
-# gives 0.10.0+git<date>.<sha>. Every checkout below therefore needs
-# `fetch-depth: 0`; the image itself needs no repository metadata.
+# gives 0.10.0+git<date>.<sha>. Every checkout that reaches a deb therefore
+# needs `fetch-depth: 0`; the image itself needs no repository metadata. The two
+# client jobs take their version from their crate and need no history.
 name: Release
 
 on:
@@ -90,26 +92,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      # `installer` compiles the exes again rather than reusing the ones the
-      # step above wrote. Do not join the two: the independence is what lets the
-      # MSI build on a developer's Mac with no prior `make windows`.
+      # The MSI alone. It carries both exes, so a release that also published
+      # them would ship the same code twice under names that name no version.
+      # `make windows` writes them for a developer who wants them; a release
+      # does not.
       #
       # The MSI is unsigned. Signing is the publisher's step.
-      - run: make windows
       - run: make installer
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: |
-            dist/*.exe
-            dist/*.msi
+          path: dist/*.msi
+          if-no-files-found: error
+
+  macos:
+    name: macos agent (arm64)
+    needs: gate
+    # Pinned for the reason `ci.yml` pins it: this is the runner whose
+    # architecture the shipped bundle has.
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Ad-hoc signed only, which needs no certificate and no secret. It is
+      # enough for Notification Center and nothing else: Gatekeeper quarantines
+      # the download, and the Secure Enclave key device grants need an
+      # entitlement that needs a real identity, so this bundle offers no grant.
+      # See docs/setup/rough-edges.md.
+      - run: make macos-zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.app.zip
           if-no-files-found: error
 
   publish:
     name: publish the release
     # A leg that fails or queues blocks the release. Half a release is worse
     # than none: the tag looks published, and one architecture is absent.
-    needs: [linux, windows]
+    needs: [linux, windows, macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
