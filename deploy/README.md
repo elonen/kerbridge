@@ -45,6 +45,25 @@ flowchart LR
   nas1 -->|"joined member"| realm
 ```
 
+All containers are in [`compose.yaml`](compose.yaml). `make up` builds them from
+this repository, and every base image is pinned by digest.
+
+| Service | What it does | Published |
+|---|---|---|
+| `realm` | The domain: Samba AD DC, KDC and Samba DNS. | 88 tcp+udp (KDC, all interfaces), 389 and 445 (a member joins through these), 636 LDAPS and 53 DNS (not published by default) |
+| `issuer` | The custom `issuerd`. It is the only component that makes TGTs. It runs from the `realm` image, and it shares that container's volumes and network namespace, because it needs local access to the AD databases. A Debian deployment runs the same two programs as two systemd units. | none |
+| `broker` | It validates the Entra token, finds the identity under `OU=Entra,OU=CloudIdP,<base DN>` through LDAPS, and asks `issuerd` for the ticket through a unix socket. It holds no KDC authority. It runs unprivileged, with a read-only rootfs, and it executes nothing. | 443, on behalf of `caddy` |
+| `caddy` | The TLS terminator in front of the broker, and the only component that a client connects to. It shares the broker's network namespace, so that their loopback is the one that host networking gives them in production. | — (uses the broker's) |
+| `sync` | It reads the users and groups of each configured source from MS Graph, one source after another, over its own LDAP connection. It writes them to the `realm` directory over LDAPS as `svc-kerbridge-sync-entra`. A source stays idle until `secrets/idp/<name>/credential` has content. | none |
+| `nas1` | **Optional.** A joined Samba member, so that the full path operates on one machine. It is a fixture, not a product — [`nas1` is not part of this stack](#nas1-is-not-part-of-this-stack). | 445 |
+
+`realm` and `broker` run with `cap_drop: ALL` and `no-new-privileges`. `realm`
+gets back only the capabilities that measurements showed necessary. The
+permanent state is in three Docker volumes: `samba` (domain SID, KDC keys,
+directory, SYSVOL), `etc-samba` and `caddy-data`. All other data is tmpfs, or
+the stack can make it again. To back the volumes up, see
+[Backup and restore](#backup-and-restore).
+
 ## Make targets
 
 `deploy/Makefile` holds every compose target; the root Makefile forwards to it,

@@ -5,19 +5,15 @@ admission group. If you do not want Terraform, see
 [the manual path](entra-manual.md). The manual path gives an identical result,
 by hand.
 
-This path is better for these reasons:
+This path is better for two reasons:
 
 - Terraform generates the values that must match between Entra and the
-  `[provider_config]` table of `deploy/configs/idp_entra.toml`, and then reads
-  them back directly. As a result, you do not copy a value from a portal blade
-  by hand.
-- The module also sets the items that have incorrect default values in
-  Entra. If these items are absent, the source file looks correct, but each
-  login always fails. These items are:
-  - v2 tokens
-  - the Application ID URI
-  - the WAM redirect URI
-  - the `idtyp` claim
+  `[provider_config]` table of `configs/idp_entra.toml`, and then reads them
+  back directly. So you copy no value from a portal blade by hand.
+- Terraform also sets every one of
+  [the Entra defaults that are wrong for KerBridge](entra.md#entra-defaults-that-are-wrong-for-kerbridge).
+  Each of those defaults makes every login fail, and the config set still looks
+  correct.
 
 Scope: the module is in
 [`deploy/terraform/entra/`](../../deploy/terraform/entra/) — one directory per

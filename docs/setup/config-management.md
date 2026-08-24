@@ -18,7 +18,7 @@ and they are what make an upgrade safe.
 ## What you have
 
 Your configuration is a directory, not a file. It is the
-[config set](../../deploy/GLOSSARY.md#config-set).
+config set<sup>[?](../../deploy/GLOSSARY.md#config-set)</sup>.
 
 | File | What it configures |
 |---|---|
@@ -37,9 +37,11 @@ give a program the directory, and it takes the files that it needs.
 
 **A configuration file holds your decisions, and everything else is commented out.**
 
-Each file starts as a [template](../../crates/kerbridge-config/GLOSSARY.md#template-config).
+Each file starts as a
+template<sup>[?](../../crates/kerbridge-config/GLOSSARY.md#template-config)</sup>.
 A template sets only the options that KerBridge cannot supply for you. Every
-other option is on a commented-out line, with its [default](../../crates/kerbridge-config/GLOSSARY.md#default) shown.
+other option is on a commented-out line, with its
+default<sup>[?](../../crates/kerbridge-config/GLOSSARY.md#default)</sup> shown.
 
 A commented-out line sets nothing. Two forms tell you two different things:
 
@@ -48,11 +50,12 @@ A commented-out line sets nothing. Two forms tell you two different things:
 #url_file =                 # KerBridge has no value for this option.
 ```
 
-For options that have no default, a comment above the line says
-what KerBridge does instead, and usually shows an
-[example value](../../crates/kerbridge-config/GLOSSARY.md#example-value).
+For options that have no default, a comment above the line says what KerBridge
+does instead, and usually shows an
+example value<sup>[?](../../crates/kerbridge-config/GLOSSARY.md#example-value)</sup>.
 
-An option that you set is a [configuration decision](../../crates/kerbridge-config/GLOSSARY.md#configuration-decision).
+An option that you set is a
+configuration decision<sup>[?](../../crates/kerbridge-config/GLOSSARY.md#configuration-decision)</sup>.
 KerBridge keeps your decision through every version.
 
 **Do not write a value that is already the default.** The line then looks the
@@ -132,7 +135,7 @@ outage must not stop your services from starting.
 
 A new version can add options, improve a default, or rename an option. Your
 decisions carry across all of them. The command that does it is
-[`kbconfig upgrade`](../../crates/kerbridge-config/GLOSSARY.md#upgrade-config).
+`kbconfig upgrade`<sup>[?](../../crates/kerbridge-config/GLOSSARY.md#upgrade-config)</sup>.
 
 Step 1 differs by deployment method. Steps 2 to 5 are the same either way.
 
@@ -187,10 +190,11 @@ change.
 ```
 
 Each of these is a recorded
-[migration](../../crates/kerbridge-config/GLOSSARY.md#migration). The `upgrade` command replays them every time. Therefore you
-do not have to install versions in order. A deployment that is four versions
-behind is carried forward in one step. You do not record which version wrote
-your files, and neither does KerBridge.
+migration<sup>[?](../../crates/kerbridge-config/GLOSSARY.md#migration)</sup>.
+The `upgrade` command replays them every time, so you do not have to install
+versions in order. A deployment that is four versions behind is carried forward
+in one step. You do not record which version wrote your files, and neither does
+KerBridge.
 
 Where the option was removed and not renamed, `upgrade` deletes the line and
 names it in the report. A file that keeps the line does not start, so an
@@ -236,8 +240,8 @@ An empty answer for an option that is *not* required is left at its default
 instead, and the commented line stays as it was.
 
 `kbconfig schema` writes the
-[config schema](../../crates/kerbridge-config/GLOSSARY.md#config-schema) into
-`configs/schema/`, and a `configs/.taplo.toml` that points each file at its
+config schema<sup>[?](../../crates/kerbridge-config/GLOSSARY.md#config-schema)</sup>
+into `configs/schema/`, and a `configs/.taplo.toml` that points each file at its
 document. A compatible text editor can then complete option names, show each default, and
 mark a misspelled option as you type. This needs the taplo language server.
 Helix, Neovim, and the VS Code TOML extension all run it. Both outputs are

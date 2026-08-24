@@ -1,18 +1,18 @@
 # Entra setup by hand — portal or Azure CLI
 
-This page tells you how to create the app registrations and the admission
-group by hand. The result is identical to the result of
-[the Terraform module](entra-terraform.md), including the display names:
-the portal walk-through below and the Terraform and CLI blocks all suggest
-`KerBridge broker API`, `KerBridge public client` and `KerBridge sync`. A display
-name is yours to select. No config value holds one. [`entra.md`](entra.md)
-tells you
-*what* these objects are, which `[provider_config]` values they produce, and the
-defaults that Entra sets incorrectly. This page is only the *how*.
+This page tells you how to create the app registrations and the admission group
+by hand. The result is identical to the result of
+[the Terraform module](entra-terraform.md).
+
+[`entra.md`](entra.md) tells you *what* these objects are, which
+`[provider_config]` values they produce, and
+[the defaults that Entra sets incorrectly](entra.md#entra-defaults-that-are-wrong-for-kerbridge).
+This page is the *how*. Each step below that corrects one of those defaults
+says so.
 
 Use this path if you cannot run Terraform against your tenant, or if you do not
-want to. The page is useful on both paths, because it explains what the
-Terraform does.
+want to. The page is also useful on the Terraform path, because it shows what
+the module does.
 
 ## Prerequisites
 
@@ -54,13 +54,9 @@ flowchart LR
 2. **Expose an API → Application ID URI → Add.** Accept the default
    `api://{BROKER_APP_ID}`. Save.
 
-   > **CAUTION:** Do not skip this step. The broker tells the client that its
-   > scope is `api://{BROKER_APP_ID}/access_as_user`, thus that URI must
-   > resolve to this application. The portal does not let you add a scope
-   > before you save this URI. But a tool that drives Graph directly can
-   > create the app and the scope with the URI not set. Then every token
-   > request fails with `AADSTS500011`, and no value in `configs/idp_entra.toml`
-   > looks incorrect.
+   > **CAUTION: Do not skip this step.** Without the URI, every token request
+   > fails with `AADSTS500011` —
+   > [Entra defaults that are wrong](entra.md#entra-defaults-that-are-wrong-for-kerbridge).
 
 3. **Expose an API → Add a scope**, then **Add scope**:
 
@@ -90,19 +86,17 @@ flowchart LR
    "api": { "requestedAccessTokenVersion": 2 }
    ```
 
-   **This step is mandatory.** The default is `null`, which issues v1 tokens
-   with a different `aud` and `iss`. The broker rejects every v1 token.
+   **This step is mandatory.** The default `null` issues v1 tokens, which the
+   broker rejects — see
+   [Entra defaults that are wrong](entra.md#entra-defaults-that-are-wrong-for-kerbridge).
 
 6. **Token configuration → Add optional claim → Access → `idtyp`.** With this
    claim, the broker can know if a token is a user token or an app-only
    token.
 
-> **CAUTION:** The `idtyp` claim is a security control. Entra issues an
-> app-only token with `aud = {BROKER_APP_ID}` to **any** confidential client
-> in your tenant, with no grant, no consent, and no app role. This is the
-> design of Entra, and you cannot turn it off. The presence of `scp` together
-> with `idtyp != "app"` is the *only* mark that separates a real user from
-> any service principal in your directory. Do not remove this optional claim.
+> **CAUTION: Do not remove the `idtyp` claim afterwards.** It is a security
+> control — [`entra.md`](entra.md#entra-defaults-that-are-wrong-for-kerbridge)
+> states what it defends against.
 
 Do **not** add app roles. Nothing needs them.
 
@@ -123,8 +117,8 @@ Do **not** add app roles. Nothing needs them.
    ```
 
    Put the application ID of this app in the place of `{CLIENT_APP_ID}`.
-   **Do not skip this step.** The tray agent prefers Windows sign-in by
-   default. Without this URI, that path fails with a redirect-URI mismatch.
+   **Do not skip this step.** The agent prefers Windows sign-in, and without
+   this URI that path fails with a redirect-URI mismatch.
 4. **Advanced settings → Allow public client flows:** leave this setting
    **off**. PKCE with a registered native redirect URI does not need it.
 5. **API permissions → Add a permission → My APIs → `KerBridge broker API` →
@@ -303,15 +297,11 @@ template contains.
 
 ## The sync credential
 
-- `kerbridge-sync` authenticates to Graph app-only with `sync_client_id`
-  and a **client secret**.
-- The secret is a file secret at `deploy/secrets/idp/entra/credential`. Put
-  one secret in one file, never in a config value (see
-  [Secrets (`deploy/README.md`)](../../deploy/README.md#secrets)).
-- This step is the same for each path, including Terraform. Terraform does not
-  create the secret by default.
+`kerbridge-sync` authenticates to Graph app-only, with `sync_client_id` and a
+**client secret**. You create that secret here. This step is the same on every
+path, and Terraform does not do it for you.
 
-The Azure CLI returns the *Value* of the secret directly. This prevents the
+The Azure CLI gives you the *Value* of the secret directly. This prevents the
 Value/Secret-ID error that the portal causes:
 
 ```sh
@@ -319,6 +309,10 @@ Value/Secret-ID error that the portal causes:
    --append --years 2 --query password -o tsv \
    > deploy/secrets/idp/entra/credential)
 ```
+
+Put the secret in a file, never in a config value. For the path, the owner and
+the mode that the file needs, see
+[Enable synchronization (`broker-host.md`)](broker-host.md#enable-synchronization).
 
 > **CAUTION:** In the portal, copy the *Value*, not the *Secret ID*. The two
 > columns look like GUIDs, and they are adjacent. The portal masks the *Value*
