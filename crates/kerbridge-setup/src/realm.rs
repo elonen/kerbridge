@@ -96,6 +96,7 @@ pub fn run(dir: &Path, allow_example_realm: bool) -> Result<()> {
         refuse_old_schema()?;
         gate(&config, allow_example_realm)?;
         refuse_resolved_collision()?;
+        refuse_winbind_nsswitch()?;
     }
 
     make_tls(&config)?;
@@ -391,6 +392,53 @@ fn refuse_resolved_collision() -> Result<()> {
     )
 }
 
+/// `/etc/nsswitch.conf`'s path -- fixed, like [`SMB_CONF`].
+const NSSWITCH_CONF: &str = "/etc/nsswitch.conf";
+
+/// A `passwd:`/`group:` line that already names `winbind`, before there is a
+/// domain for it to ask.
+///
+/// `docs/setup/file-server.md` §3 has an operator add `winbind` to these lines
+/// -- but for a *member* host, joined to a realm that already exists. On the DC
+/// itself, before this provision has run, winbind has no domain and no running
+/// AD service to answer it: the lookup does not fail, it blocks. Every PAM
+/// login this host does meanwhile -- this session and the console both -- can
+/// hang on a peer that never answers. Measured: exactly that, on a DC whose
+/// nsswitch already carried `winbind`, locked out console login until the
+/// provisioning process was killed.
+fn refuse_winbind_nsswitch() -> Result<()> {
+    let text = match std::fs::read_to_string(NSSWITCH_CONF) {
+        Ok(text) => text,
+        Err(_) => return Ok(()),
+    };
+    if !nsswitch_names_winbind(&text) {
+        return Ok(());
+    }
+    bail!(
+        "{NSSWITCH_CONF} already resolves passwd/group through winbind, but this realm does not \
+         exist yet. Winbind has nothing to answer with until this provision finishes and the \
+         DC's own AD service starts, so any PAM login this host does in the meantime -- this \
+         session and the console both -- can block rather than fail. Remove `winbind` from the \
+         passwd: and group: lines and provision the realm first; add it back afterward only if \
+         this host is deliberately combining the DC and file-server roles. docs/setup/file-server.md \
+         §3 is written for a separate member host that joins an already-provisioned realm, \
+         not for the DC."
+    )
+}
+
+/// Whether any `passwd:`/`group:` line lists `winbind` as a source, ignoring a
+/// trailing comment.
+fn nsswitch_names_winbind(text: &str) -> bool {
+    text.lines().any(|line| {
+        let line = line.split('#').next().unwrap_or("");
+        let Some(rest) = line.strip_prefix("passwd:").or_else(|| line.strip_prefix("group:"))
+        else {
+            return false;
+        };
+        rest.split_whitespace().any(|word| word == "winbind")
+    })
+}
+
 /// Create the realm, and give the Administrator the password the config set
 /// names.
 fn provision(config: &Config, db: &dc::Dc) -> Result<()> {
@@ -659,6 +707,20 @@ mod tests {
         assert!(gid_in_map("0 100000 65536\n3000000 200000 1000\n", SYSVOL_OWNER_GID));
         // Nothing to read is not evidence of a namespace, so it must not accuse.
         assert!(gid_in_map("", SYSVOL_OWNER_GID));
+    }
+
+    /// The file-server recipe (`docs/setup/file-server.md` §3) names `winbind`
+    /// on exactly these two lines, in either the plain or the `systemd` form.
+    /// `shadow`/`gshadow` never carry it, and a comment must not count.
+    #[test]
+    fn winbind_on_passwd_or_group_is_named() {
+        assert!(nsswitch_names_winbind("passwd:         files winbind\ngroup:          files\n"));
+        assert!(nsswitch_names_winbind(
+            "passwd:         files\ngroup:          files systemd winbind\n"
+        ));
+        assert!(!nsswitch_names_winbind("passwd:         files\ngroup:          files\n"));
+        assert!(!nsswitch_names_winbind("shadow:         files winbind\n"));
+        assert!(!nsswitch_names_winbind("# passwd:      files winbind\n"));
     }
 
     /// Derived from the database's own directory, so the certificate cannot end

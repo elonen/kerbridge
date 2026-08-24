@@ -94,6 +94,16 @@ operate file servers.
   
 ## 0. Install software
 
+> **CAUTION: Not on the DC, and not before `kbsetup realm` has finished.**
+> §3 puts `winbind` into `passwd:`/`group:` and PAM's chain reads it on every
+> login, including the console. Winbind has nothing to answer with until a
+> realm exists and the DC's own AD service is running -- so on the DC itself,
+> before provisioning finishes, that lookup blocks rather than fails, and can
+> lock every login on the host, console included, until the stuck process is
+> killed. `kbsetup realm` refuses to provision while `winbind` is already in
+> `/etc/nsswitch.conf`, for this reason. If this host combines the DC and
+> file-server roles, do §0-§3 only after `kbsetup realm` has finished.
+
 Debian:
 ```sh
 apt install samba krb5-user winbind libnss-winbind libpam-winbind

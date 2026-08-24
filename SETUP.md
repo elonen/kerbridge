@@ -418,6 +418,13 @@ In summary:
 > on every file server. Do not let it overlap 0–65533. Do not change it
 > after the deployment — the uid that owns a file is computed from it.
 
+> **CAUTION: Never do step 3 above on the DC host itself before §4
+> (*Stand up the broker host*) has provisioned the realm there.** Winbind has
+> no domain to answer with until the realm exists, so a lookup against it
+> blocks rather than fails — on the DC that can lock every login on the host,
+> console included. `kbsetup realm` already refuses to provision while
+> `winbind` is in `/etc/nsswitch.conf`, for this reason.
+
 > **CAUTION: Never restart `winbindd` during a DC outage.** It comes up
 > permanently degraded, and it does not repair itself.
 
