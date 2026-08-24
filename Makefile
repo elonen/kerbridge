@@ -124,19 +124,24 @@ kbconfig:
 # cross-building wants an answer of its own.
 KB_VERSION ?= $(shell debian/make-changelog --print-version)
 
-# Extra flags for the `docker build` calls below, empty on a developer's machine
-# and set by CI. BuildKit keeps a layer cache per builder, which a fresh runner
-# does not have, so every CI run recompiles the six crates from cold unless it
-# is handed one: `make debian-docker DOCKER_CACHE='--cache-from type=local,...
-# --cache-to type=local,...'`, with actions/cache carrying the directory between
-# runs. Nothing here depends on it -- an unset value builds exactly as before.
+# Extra flags for the `docker buildx build` call below, empty on a developer's
+# machine and set by CI. BuildKit keeps a layer cache per builder, which a fresh
+# runner does not have, so every CI run recompiles the six crates from cold
+# unless it is handed one: `make debian-docker DOCKER_CACHE='--cache-from
+# type=local,... --cache-to type=local,...'`, with actions/cache carrying the
+# directory between runs. Nothing here depends on it -- an unset value builds
+# exactly as before.
+#
+# `buildx build`, not `build`: `docker build` pins the default builder, whose
+# docker driver cannot export a cache. buildx uses the selected builder, which
+# docker/setup-buildx-action makes a docker-container one in CI.
 DOCKER_CACHE ?=
 debian-docker:
 	@# Emptied first. The version is part of every filename, so a second run
 	@# adds a generation rather than replacing one, and `apt-get install
 	@# ./*.deb` then names two versions of all six packages.
 	rm -rf $(DIST)/debian
-	docker build -f debian/Dockerfile --build-arg KB_VERSION=$(KB_VERSION) \
+	docker buildx build -f debian/Dockerfile --build-arg KB_VERSION=$(KB_VERSION) \
 	  $(DOCKER_CACHE) --target dist --output type=local,dest=$(DIST)/debian .
 	@ls -l $(DIST)/debian
 

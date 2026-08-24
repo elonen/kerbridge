@@ -217,7 +217,7 @@ fn dotted(oid: &[u8]) -> String {
 fn text(tag: u8, value: &[u8]) -> String {
     if tag == BMP_STRING {
         let units: Vec<u16> =
-            value.chunks_exact(2).map(|pair| u16::from_be_bytes([pair[0], pair[1]])).collect();
+            value.as_chunks::<2>().0.iter().map(|&pair| u16::from_be_bytes(pair)).collect();
         String::from_utf16_lossy(&units)
     } else {
         String::from_utf8_lossy(value).into_owned()

@@ -79,7 +79,7 @@ fn get_raw(root: Root, subkey: &str, value: &str, flags: u32) -> Option<Vec<u8>>
 
 /// Reinterpret a byte buffer as UTF-16 code units.
 fn as_u16(bytes: &[u8]) -> Vec<u16> {
-    bytes.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect()
+    bytes.as_chunks::<2>().0.iter().map(|&c| u16::from_le_bytes(c)).collect()
 }
 
 pub fn read_string(root: Root, subkey: &str, value: &str) -> Option<String> {

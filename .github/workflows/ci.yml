@@ -138,7 +138,12 @@ jobs:
     if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0. `make` derives KB_VERSION from `git describe`, and
+      # compose's `debs` service requires it. A shallow checkout reaches no tag,
+      # so compose refuses before any Dockerfile runs.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: docker/setup-buildx-action@v3
       - uses: actions/cache@v4
         with:
@@ -175,7 +180,12 @@ jobs:
     # the default 360 would let a hung KDC burn an hour.
     timeout-minutes: 30
     steps:
+      # fetch-depth: 0. `make` derives KB_VERSION from `git describe`, and
+      # compose's `debs` service requires it. A shallow checkout reaches no tag,
+      # so compose refuses before any Dockerfile runs.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: docker/setup-buildx-action@v3
       # Everything else it needs -- docker, rsync, openssl, curl, python3 -- is
       # on the runner image, and ci-stack.sh checks for each before it starts.
@@ -221,10 +231,10 @@ jobs:
     # The default 360 would let a stalled mirror burn six hours.
     timeout-minutes: 60
     steps:
-      # fetch-depth: 0, alone among the jobs. `make` derives the package version
-      # on the runner with `debian/make-changelog --print-version`, which reads
-      # `git describe`, and a shallow checkout reaches no tag -- the build then
-      # refuses rather than producing a package nothing can order.
+      # fetch-depth: 0. `make` derives the package version on the runner with
+      # `debian/make-changelog --print-version`, which reads `git describe`, and
+      # a shallow checkout reaches no tag -- the build then refuses rather than
+      # producing a package nothing can order.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
