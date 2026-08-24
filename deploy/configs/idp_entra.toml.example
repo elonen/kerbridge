@@ -176,7 +176,7 @@ sync_credential_file = "/etc/kerbridge.secrets/idp/entra/credential"
 # name-or-id rule. Unset is a deployment with no device-grant group and
 # therefore no working grants, whatever main.toml's device_grant_days says: the
 # broker finds the group by its marker. docs/setup/device-grants.md.
-# Example: "KerBridge Device Grants"
+# Example: "KerBridge Device Grant Users"
 #device_grant_group =
 # Example: "88889999-cccc-0000-dddd-1111eeee2222"
 #device_grant_group_id =

@@ -56,7 +56,7 @@ Two settings turn the feature on. Then run `make up`.
 device_grant_days = 30                 # 0 is off, and 0 is the default
 
 # configs/idp_entra.toml, inside [provider_config]
-device_grant_group = "KerBridge Device Grants"
+device_grant_group = "KerBridge Device Grant Users"
 #device_grant_group_id =               # alternative to the name
 ```
 

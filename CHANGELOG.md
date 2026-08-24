@@ -28,6 +28,7 @@ names the tag, and it stops if that section is absent or empty.
 - The release page ships the MSI only. It holds both Windows programs.
 - The release page ships the macOS agent: arm64, ad-hoc signed.
 - CI builds and tests the macOS agent on each change.
+- The device-grant group example is now `KerBridge Device Grant Users`.
 - `kbsetup realm` disables `winbind`, `smbd` and `nmbd`. A domain controller
   runs both daemons itself, and the standalone units stopped it from starting.
 - The deployment guide says to point the DC's resolver at the DC itself.
