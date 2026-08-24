@@ -336,6 +336,10 @@ fn log_level_in(smb_conf: &str) -> String {
 /// A password answered to `getpass`'s two prompts. `samba-tool` asks twice
 /// whenever the positional password is absent, and with no tty it reads both
 /// from stdin -- measured on the pinned baseline (Samba 4.22.10).
+///
+/// **With a tty it reads neither** -- `getpass` opens /dev/tty first, and falls
+/// back to stdin only when that open fails. That is what `run::piped` runs
+/// these in a session of their own for.
 fn twice(password: &str) -> String {
     format!("{password}\n{password}\n")
 }

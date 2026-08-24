@@ -5,7 +5,7 @@
 //! `--adminpass="$(cat ...)"` published the domain Administrator's password to
 //! every local `ps` for the length of a provision. `samba-tool` prompts twice
 //! when a password is absent from the command line and answers both prompts from
-//! stdin when there is no tty, which is what [`piped`] exists for. Any caller
+//! stdin when there is no tty -- so [`piped`] gives it none. Any caller
 //! holding a credential uses it; [`plain`] takes `&[&str]` and is only ever
 //! given values that may be read by anyone.
 //!
@@ -117,7 +117,32 @@ pub fn plain(argv: &[&str]) -> Result<String> {
 /// The same, with a credential written to the process rather than shown to the
 /// host. See the module comment.
 pub fn piped(argv: &[&str], stdin: &str) -> Result<String> {
-    finish(argv, attempt(argv, Some(stdin))?)
+    finish(argv, attempt(&detached(argv), Some(stdin))?)
+}
+
+/// `argv`, to run in a session of its own -- which is what makes the credential
+/// written to its stdin the one it reads.
+///
+/// `samba-tool` asks Python's `getpass`, and `getpass` opens /dev/tty in
+/// preference to stdin: it falls back only when that open fails. A controlling
+/// terminal is exactly what an operator running `kbsetup` at a console has, and
+/// what `docker compose run` allocates unless told `-T` -- so without this the
+/// password here is ignored and the run stops at a "New Password:" prompt no
+/// one can answer. A new session has no controlling terminal, so the open
+/// fails. `-w`, or `setsid` returns before the tool it started does, and its
+/// exit status is the tool's.
+///
+/// Measured, samba-tool 4.22 in a container with a tty: `user create` with the
+/// password on stdin blocked until it was killed, and the same line under
+/// `setsid -w` read the password and reached the directory.
+///
+/// Only the credential path takes this. `plain` keeps the operator's session,
+/// so a Ctrl-C at the console still reaches `samba-tool domain provision` --
+/// the one call here that runs for minutes.
+fn detached<'a>(argv: &[&'a str]) -> Vec<&'a str> {
+    let mut out = vec!["setsid", "-w"];
+    out.extend_from_slice(argv);
+    out
 }
 
 fn finish(argv: &[&str], done: Done) -> Result<String> {
@@ -149,6 +174,15 @@ pub fn without_password_prompts(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The prompts are answered from stdin only where /dev/tty cannot be opened.
+    #[test]
+    fn a_piped_credential_runs_in_a_session_of_its_own() {
+        assert_eq!(
+            detached(&["samba-tool", "user", "create", "svc-kerbridge-broker"]),
+            ["setsid", "-w", "samba-tool", "user", "create", "svc-kerbridge-broker"]
+        );
+    }
 
     #[test]
     fn subprocess_path_never_searches_usr_local() {

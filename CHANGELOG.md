@@ -24,6 +24,7 @@ names the tag, and it stops if that section is absent or empty.
 
 ## Unreleased
 
+- `kbsetup` no longer stops at a password prompt when it has a terminal.
 - The release page ships the MSI only. It holds both Windows programs.
 - The release page ships the macOS agent: arm64, ad-hoc signed.
 - CI builds and tests the macOS agent on each change.
