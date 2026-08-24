@@ -160,10 +160,10 @@ pub fn diagnose_endpoint(endpoint: &Endpoint) -> EndpointReport {
             "address",
             Status::Info,
             format!(
-                "{} was not looked up: --resolve named {}, and the certificate is still \
-                 judged against the name",
-                endpoint.host,
-                endpoint.via.expect("the arm tested it")
+                "not looked up: --resolve named {}. The certificate is still judged \
+                 against {}",
+                endpoint.via.expect("the arm tested it"),
+                endpoint.host
             ),
         )),
         None => return done(checks, Reachable::Broken),
@@ -181,9 +181,9 @@ pub fn diagnose_endpoint(endpoint: &Endpoint) -> EndpointReport {
                 "address",
                 Status::Fail,
                 format!(
-                    "{} does not resolve from this host: {e}. This is the name a client \
-                     puts in a URL, so either the record is missing or this host is not \
-                     the one it is published to -- --resolve names an address instead",
+                    "{} does not resolve from this host: {e}. Either the record is \
+                     missing, or this host does not see the published name -- --resolve \
+                     names an address instead",
                     endpoint.host
                 ),
             ));
@@ -201,8 +201,8 @@ pub fn diagnose_endpoint(endpoint: &Endpoint) -> EndpointReport {
                 "connect",
                 Status::Fail,
                 format!(
-                    "nothing accepted a connection on port {}: {e}. Either it is not up \
-                     yet, or what publishes that port is not running",
+                    "nothing accepted a connection on port {}: {e}. It is not up yet, \
+                     or nothing publishes that port",
                     endpoint.port
                 ),
             ));
@@ -252,10 +252,9 @@ pub fn diagnose_endpoint(endpoint: &Endpoint) -> EndpointReport {
                     "certificate",
                     Status::Fail,
                     format!(
-                        "the TLS handshake ended before a certificate was seen: {e}. The \
-                         port is open and nothing was presented on it -- an issuance still \
-                         in flight looks exactly like this, and so does a certificate file \
-                         that did not load"
+                        "the TLS handshake ended before a certificate was seen: {e}. An \
+                         issuance still in flight looks like this, and so does a \
+                         certificate file that did not load"
                     ),
                 ));
                 return done(checks, Reachable::NoSession);
@@ -317,12 +316,11 @@ fn cert_detail(endpoint: &Endpoint, fault: &CertFault, against: &str) -> String 
     match endpoint.any_cert {
         true => format!(
             "{head} -- said, not judged: whether that matters is the deployment's TLS \
-             decision, which this does not read"
+             decision, and this does not read it"
         ),
-        false => format!(
-            "{head}. A client validates against its own store, which would say the same \
-             thing this did"
-        ),
+        false => {
+            format!("{head}. A client validates against its own store, and would say the same")
+        }
     }
 }
 
@@ -338,13 +336,13 @@ fn answer_detail(endpoint: &Endpoint, answer: &Answer) -> (Status, Reachable, St
             Status::Ok,
             Reachable::Serving,
             format!(
-                "{path} answered 404 listing {}: the broker is up and wants the source in \
-                 the path, because {}. A client is enrolled against {}/<source>",
+                "{path} answered 404 listing {}: the broker is up and wants the source \
+                 in the path, because {}. A client enrolls against {}/<source>",
                 names.join(", "),
                 match names.len() {
                     1 =>
-                        "an unprefixed /config is answered only where one source makes \
-                          the answer unambiguous",
+                        "an unprefixed /config is answered only where one source makes it \
+                          unambiguous",
                     _ => "several sources make an unprefixed /config ambiguous",
                 },
                 endpoint.asked.trim_end_matches("/config")
@@ -356,17 +354,17 @@ fn answer_detail(endpoint: &Endpoint, answer: &Answer) -> (Status, Reachable, St
             Status::Warn,
             Reachable::Serving,
             format!(
-                "{path} answered 404 listing no source: the broker is up and this \
-                 deployment serves nothing yet -- main.toml's `sources` is empty"
+                "{path} answered 404 listing no source: the broker is up and serves \
+                 nothing yet -- main.toml's `sources` is empty"
             ),
         ),
         (404, None) => (
             Status::Fail,
             Reachable::Broken,
             format!(
-                "{path} answered 404 with no source list. Either nothing routes that path \
-                 to the broker -- check the reverse proxy in front of it -- or the path \
-                 carries a source segment this deployment does not serve"
+                "{path} answered 404 with no source list: either nothing routes that \
+                 path to the broker -- look at the reverse proxy -- or the path names a \
+                 source this deployment does not serve"
             ),
         ),
         // Broken now, and waiting may still fix it: the two verdicts are not the
@@ -436,8 +434,7 @@ pub fn diagnose_reach(reach: &Reach) -> ReachReport {
                 Status::Fail,
                 format!(
                     "{} does not resolve from this host: {e}. The name comes from \
-                     ldap_url in the config set above, and it has to resolve here -- \
-                     the DC resolving it for itself is not the same fact",
+                     ldap_url above, and must resolve here -- not only on the DC",
                     reach.url
                 ),
             ));
@@ -458,8 +455,8 @@ pub fn diagnose_reach(reach: &Reach) -> ReachReport {
                 Status::Fail,
                 format!(
                     "no address for {}:{} accepted a connection: {e}. The name resolves, \
-                     so this is a firewall between the two hosts, a DC not listening on \
-                     that port, or a port published to loopback only",
+                     so this is a firewall, a DC that does not listen, or a port \
+                     published to loopback only",
                     reach.host, reach.port
                 ),
             ));
@@ -485,19 +482,18 @@ pub fn diagnose_reach(reach: &Reach) -> ReachReport {
                 Status::Fail,
                 match fault {
                     CertFault::Untrusted => format!(
-                        "the CA at {ca} does not validate this server's certificate; a \
+                        "the CA at {ca} does not validate this server's certificate: a \
                          re-provisioned realm issues a new one. Copy the current CA out \
-                         of the DC again -- an LDAPS bind here trusts that file and \
-                         nothing else, so no system trust store covers for it"
+                         of the DC again -- nothing else is trusted here"
                     ),
                     CertFault::NoCa(e) => format!(
-                        "{ca} cannot be used as a CA: {e}. There is no fallback: an LDAPS \
-                         bind here trusts that file or nothing at all"
+                        "{ca} cannot be used as a CA: {e}. There is no fallback -- this \
+                         bind trusts that file or nothing"
                     ),
                     CertFault::WrongName { presented } if presented.is_empty() => format!(
-                        "the certificate validates against {ca}, but not for {}. The \
-                         realm's SAN carries the DC's FQDN, its short name and the \
-                         loopback names -- ldap_url has to use one of them",
+                        "the certificate validates against {ca}, but not for {}. Its \
+                         SAN carries the DC's FQDN, its short name and the loopback \
+                         names -- ldap_url has to use one of them",
                         reach.host
                     ),
                     CertFault::WrongName { presented } => format!(
@@ -508,8 +504,7 @@ pub fn diagnose_reach(reach: &Reach) -> ReachReport {
                     ),
                     CertFault::Expired => format!(
                         "the certificate {} presented has expired. {ca} still vouches \
-                         for it, so this is the realm's own certificate to renew and not \
-                         the CA to re-copy",
+                         for it -- renew the realm's certificate, do not re-copy the CA",
                         reach.host
                     ),
                     CertFault::Other(e) => {
@@ -530,9 +525,8 @@ pub fn diagnose_reach(reach: &Reach) -> ReachReport {
             "simple bind",
             Status::Fail,
             format!(
-                "{} could not bind: {e}. The connection and the certificate are both \
-                 good, so what is wrong is the DN or the password file the config set \
-                 above names",
+                "{} could not bind: {e}. The connection and the certificate are good, \
+                 so the fault is bind_dn or the password file above",
                 reach.bind_dn
             ),
         )),
@@ -591,15 +585,15 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
             "external identity",
             Status::Fail,
             format!(
-                "msDS-ExternalDirectoryObjectId is present but unreadable: {e}. \
-                 The broker matches the token against this value, so it admits nobody"
+                "msDS-ExternalDirectoryObjectId is present but unreadable: {e}. The \
+                 broker matches tokens against it, so it admits nobody"
             ),
         ),
         None => check(
             "external identity",
             Status::Fail,
             "no msDS-ExternalDirectoryObjectId: nothing ties this object to a cloud \
-             identity, so no token can ever resolve to it"
+             identity, so no token can resolve to it"
                 .to_owned(),
         ),
     });
@@ -610,8 +604,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
             "state",
             Status::Fail,
             format!(
-                "{s:?} for {} days -- gone from the cloud IdP and held for its SID. \
-                 Sync re-enables it by itself if the cloud IdP object comes back",
+                "{s:?} for {} days -- gone from the cloud IdP, held for its SID. Sync \
+                 re-enables it if the cloud IdP object comes back",
                 user.held_days(snap.now).map_or("?".to_owned(), |d| d.to_string())
             ),
         ),
@@ -642,8 +636,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
             "realm admission",
             Status::Fail,
             format!(
-                "not in any IdP-specific OU under {} -- no broker has this object in its \
-                 search base, so nothing can issue for it",
+                "not in any IdP-specific OU under {}: no broker's search base holds it, \
+                 so nothing can issue for it",
                 snap.cloud_idp_ou
             ),
         ),
@@ -651,8 +645,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
             "realm admission",
             Status::Fail,
             format!(
-                "no group in {ou} carries the realm-admission marker, so the broker for \
-                 that source admits nobody and its issuance is frozen"
+                "no group in {ou} carries the realm-admission marker, so that source's \
+                 broker admits nobody"
             ),
         ),
         Some((_, Some(admission)))
@@ -664,9 +658,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
             "realm admission",
             Status::Fail,
             format!(
-                "not in {} -- the broker refuses to issue a ticket at all. \
-                 Membership comes from the cloud IdP: add them to the group there and let \
-                 sync run",
+                "not in {}: the broker issues no ticket at all. Membership comes from \
+                 the cloud IdP -- add them there and let sync run",
                 admission.sam
             ),
         ),
@@ -694,7 +687,7 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
                 "device grants",
                 Status::Warn,
                 format!(
-                    "{named}, but {lapsed:?} passed the deadline stamped on it -- refused until \
+                    "{named}, but {lapsed:?} passed its stamped deadline -- refused until \
                      someone signs in at that machine again"
                 ),
             ),
@@ -702,9 +695,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
                 "device grants",
                 Status::Ok,
                 format!(
-                    "{named}; in {} and not past the deadline stamped on it. The broker's \
-                     DEVICE_GRANT_DAYS can still bring that deadline in, and is not readable \
-                     from here",
+                    "{named}; in {} and inside its stamped deadline. The broker's \
+                     DEVICE_GRANT_DAYS can bring that deadline in, and is not readable here",
                     group.sam
                 ),
             ),
@@ -712,8 +704,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
                 "device grants",
                 Status::Warn,
                 format!(
-                    "{named}, but not in {} -- every one of them is refused at its next \
-                     ticket exchange. Membership comes from the cloud IdP",
+                    "{named}, but not in {} -- each is refused at its next ticket \
+                     exchange. Membership comes from the cloud IdP",
                     group.sam
                 ),
             ),
@@ -721,8 +713,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
                 "device grants",
                 Status::Warn,
                 format!(
-                    "{named}, but no group carries the device-grant marker, so all of them \
-                     are refused"
+                    "{named}, but no group carries the device-grant marker, so all are \
+                     refused"
                 ),
             ),
         });
@@ -751,9 +743,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
                 "device delegates",
                 Status::Warn,
                 format!(
-                    "{chains} -- {} groups authorize devices as this account. `device delegate \
-                     set` keeps one, so at least one of these was written by hand, and none of \
-                     them is the record of who may do this",
+                    "{chains} -- {} groups authorize devices as this account. `device \
+                     delegate set` keeps one, so at least one was written by hand",
                     delegates.len()
                 ),
             )
@@ -761,15 +752,18 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
             check(
                 "device delegates",
                 Status::Warn,
-                format!("{chains} -- nobody is in it, so only this account can authorize a machine for itself"),
+                format!(
+                    "{chains} -- nobody is in it, so only this account can authorize a \
+                     machine for itself"
+                ),
             )
         } else if !covered {
             check(
                 "device delegates",
                 Status::Warn,
                 format!(
-                    "{chains}, but this account is not in {} -- so no machine can be authorized \
-                     for it at all, by a delegate or by itself",
+                    "{chains}, but this account is not in {} -- no machine can be \
+                     authorized for it, by a delegate or by itself",
                     grant_group.map_or("any device-grant group".to_owned(), |g| g.sam.clone())
                 ),
             )
@@ -778,9 +772,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
                 "device delegates",
                 Status::Ok,
                 format!(
-                    "{chains} -- they may authorize a machine to obtain tickets as this account. \
-                     Each of them must be admitted to the realm in their own right; the delegate \
-                     group is additional to admission, never instead of it"
+                    "{chains} -- they may authorize a machine to obtain tickets as this \
+                     account. Each must also be admitted to the realm in their own right"
                 ),
             )
         });
@@ -796,8 +789,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
         check(
             "synced groups",
             Status::Warn,
-            "in no synchronized group besides the admission group: admitted to the realm, but \
-             carrying nothing a resource group could authorize",
+            "in no synchronized group but the admission group: admitted to the realm, \
+             but carrying nothing a resource group can authorize",
         )
     } else {
         check(
@@ -813,9 +806,9 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
             "resource groups",
             Status::Fail,
             format!(
-                "none of this user's groups is nested into a group outside {}. \
-                 Nothing on a file server authorizes them: run `kbmanage group member add \
-                 <resource-group> <synced-group>`",
+                "none of this user's groups is nested outside {}, so nothing on a file \
+                 server authorizes them. Run `kbmanage group member add <resource-group> \
+                 <synced-group>`",
                 snap.cloud_idp_ou
             ),
         ));
@@ -836,9 +829,9 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
                     "resource group",
                     Status::Warn,
                     format!(
-                        "{} has groupType {} -- not domain-local. A global group's \
-                         membership is only evaluated in its own domain, and it will not \
-                         appear in the PAC of a ticket for a resource in another",
+                        "{} has groupType {} -- not domain-local. A global group is \
+                         evaluated only in its own domain, so it is missing from the PAC \
+                         for a resource in another",
                         rg.sam,
                         rg.group_type.as_deref().unwrap_or("(unset)")
                     ),
@@ -855,9 +848,8 @@ pub fn diagnose_user(snap: &Snapshot, subject: &str) -> UserReport {
         checks,
         next_step: Some(format!(
             "On the file server, not here: `id '{domain}\\{}'` must print the uid and \
-             every group above. If it does not, the break is winbind's idmap or the join, \
-             not the directory. The share ACL and the filesystem ACL are not in LDAP at \
-             all -- this tool cannot see them.",
+             every group above. If it does not, the break is winbind or the join, not the \
+             directory. This tool cannot see share or filesystem ACLs.",
             user.sam
         )),
     }
@@ -906,9 +898,8 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
             "source",
             &ou.dn,
             "holds no object: nothing has ever synced into it. Either that source's \
-             cloud credential has not been written yet -- sync skips such a source \
-             each cycle, with a warning, and mirrors the others -- or sync is not \
-             running at all. Its log says which on the next cycle",
+             cloud credential is not written yet -- sync skips such a source and \
+             mirrors the others -- or sync is not running. Its log says which",
         ));
     }
 
@@ -940,7 +931,7 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
             format!(
                 "no group under {} carries the realm-admission marker: every broker \
                  refuses every request. Never recreate it by hand -- a new group has a \
-                 new SID. Find why sync stopped marking it",
+                 new SID. Find why sync stopped",
                 snap.cloud_idp_ou
             ),
         ));
@@ -958,8 +949,8 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
                 "admission group",
                 groups.iter().map(|g| g.sam.as_str()).collect::<Vec<_>>().join(", "),
                 format!(
-                    "{n} groups in {ou} carry the realm-admission marker; that source's \
-                     broker freezes every login until one of them is unmarked"
+                    "{n} groups in {ou} carry the realm-admission marker: that source's \
+                     broker refuses every login until one is unmarked"
                 ),
             )),
         }
@@ -970,8 +961,8 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
             "admission group",
             &obj.sam,
             format!(
-                "carries the realm-admission marker but sits directly in {}, not in a \
-                 IdP-specific OU under it, so no broker's search base contains it",
+                "carries the realm-admission marker but sits directly in {}, not in an \
+                 IdP-specific OU under it, so no broker's search base holds it",
                 snap.cloud_idp_ou
             ),
         ));
@@ -996,7 +987,7 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
                         &obj.sam,
                         format!(
                             "shares its external identity with {}. The broker refuses \
-                             an ambiguous match rather than picking one",
+                             an ambiguous match",
                             dupes.join(", ")
                         ),
                     ));
@@ -1012,11 +1003,7 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
                 Status::Warn,
                 "unmanaged object",
                 &obj.sam,
-                format!(
-                    "{} carries no external identity. Sync leaves it alone; nothing \
-                     here manages it",
-                    obj.dn
-                ),
+                format!("{} carries no external identity. Sync leaves it alone", obj.dn),
             )),
         }
     }
@@ -1036,8 +1023,8 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
                         Status::Info,
                         "authorizes nothing",
                         &obj.sam,
-                        "synchronized, but nested into no group outside the IdP parent OU, so it \
-                         gates no resource",
+                        "synchronized, but nested into no group outside the IdP parent \
+                         OU, so it gates no resource",
                     ));
                 }
             }
@@ -1055,9 +1042,9 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
                 "held",
                 &obj.sam,
                 format!(
-                    "{state:?} for {days} days, keeping its SID. Nothing needs doing: \
-                     if the cloud IdP object returns, sync revives this one and its files \
-                     still resolve"
+                    "{state:?} for {days} days, keeping its SID. Nothing to do: if the \
+                     cloud IdP object returns, sync revives this one and its files still \
+                     resolve"
                 ),
             ));
         }
@@ -1072,8 +1059,8 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
                 &obj.sam,
                 format!(
                     "{state:?} but still holding the live-form sAMAccountName {:?}. \
-                     Sync frees the name at retirement; if this persists past a cycle, \
-                     sync is not running or is refusing the cycle",
+                     Sync frees the name at retirement; if this lasts a cycle, sync is \
+                     not running or is refusing it",
                     obj.sam
                 ),
             ));
@@ -1091,8 +1078,9 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
                     "dangling nesting",
                     &obj.sam,
                     format!(
-                        "quarantined, but still nested into {}. It grants nothing -- its \
-                         members were cleared -- yet it reads as live in `group list`",
+                        "quarantined, but still nested into {}. Its members were \
+                         cleared, so it grants nothing, yet it reads as live in \
+                         `group list`",
                         nested.join(", ")
                     ),
                 ));
@@ -1107,7 +1095,7 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
                 "resource group scope",
                 &rg.sam,
                 format!(
-                    "groupType {} -- a resource group should be domain-local so it is \
+                    "groupType {} -- a resource group has to be domain-local, so it is \
                      evaluated where the resource is",
                     rg.group_type.as_deref().unwrap_or("(unset)")
                 ),

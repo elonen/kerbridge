@@ -1015,11 +1015,16 @@ impl Renderer {
             return;
         }
         println!("{}", report.target);
-        for c in &report.checks {
-            let indent = " ".repeat(26);
-            println!("  {} {:<18} {}", mark(c.status), c.label, wrap(&c.detail, 54, &indent));
+        self.chain(&report.checks);
+    }
+
+    /// One link per block. A wrapped detail runs several lines, so without the
+    /// blank line between them the chain reads as one paragraph.
+    fn chain(&self, checks: &[doctor::Check]) {
+        let indent = " ".repeat(26);
+        for c in checks {
+            println!("  {} {:<18} {}\n", mark(c.status), c.label, wrap(&c.detail, 54, &indent));
         }
-        println!();
     }
 
     /// One line: what the walk reached, and why it stopped there.
@@ -1041,11 +1046,7 @@ impl Renderer {
             return print_json(report);
         }
         println!("{}", report.target);
-        for c in &report.checks {
-            let indent = " ".repeat(26);
-            println!("  {} {:<18} {}", mark(c.status), c.label, wrap(&c.detail, 54, &indent));
-        }
-        println!();
+        self.chain(&report.checks);
     }
 
     fn user_report(&self, report: &doctor::UserReport) {
@@ -1053,15 +1054,12 @@ impl Renderer {
             return print_json(report);
         }
         println!("{}", report.dn.as_deref().unwrap_or(&report.subject));
-        for c in &report.checks {
-            let indent = " ".repeat(26);
-            println!("  {} {:<18} {}", mark(c.status), c.label, wrap(&c.detail, 54, &indent));
-        }
+        self.chain(&report.checks);
         if let Some(next) = &report.next_step {
-            println!("\n  {}", wrap(next, 74, "  "));
+            println!("  {}\n", wrap(next, 74, "  "));
         }
         if report.worst() == Status::Ok {
-            println!("\n  Every link this tool can see is intact.");
+            println!("  Every link this tool can see is intact.");
         }
     }
 
@@ -1079,13 +1077,13 @@ impl Renderer {
         sorted.sort_by_key(|f| order(f.status));
         for f in sorted {
             println!("{} {:<20} {}", mark(f.status), f.kind, f.subject);
-            println!("       {}", wrap(&f.detail, 70, "       "));
+            println!("       {}\n", wrap(&f.detail, 70, "       "));
         }
         let plural = |n: usize, one: &str| {
             if n == 1 { one.to_owned() } else { format!("{one}s") }
         };
         println!(
-            "\n{} managed {} under {}, {} resource {}.",
+            "{} managed {} under {}, {} resource {}.",
             snap.cloud.len(),
             plural(snap.cloud.len(), "object"),
             snap.cloud_idp_ou,

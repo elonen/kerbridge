@@ -590,11 +590,25 @@ pub async fn probe(cfg: &Config) -> Reach {
                 let _ = ldap.unbind().await;
                 Ok(())
             }
-            Err(e) => Err(format!("{e:#}")),
+            Err(e) => Err(one_line(&e, &cfg.bind_dn)),
         },
-        Err(e) => Err(format!("{e:#}")),
+        Err(e) => Err(one_line(&e, &cfg.bind_dn)),
     });
     reach
+}
+
+/// The error chain on one line, without the repetitions `{e:#}` would carry:
+/// `ldap3` states its result in the error's own `Display` and again in that
+/// error's source, and the bind DN is already the doctor row's label.
+fn one_line(e: &anyhow::Error, bind_dn: &str) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for cause in e.chain().map(ToString::to_string) {
+        if cause == format!("binding as {bind_dn}") || parts.iter().any(|p| p.contains(&cause)) {
+            continue;
+        }
+        parts.push(cause);
+    }
+    parts.join(": ")
 }
 
 /// Link 4, and the one that actually fails in the field. The handshake is run
