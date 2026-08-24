@@ -62,8 +62,16 @@ Suites: ./
 Signed-By: /etc/apt/keyrings/kerbridge.asc
 EOF
 sudo apt update
-sudo apt install kerbridge
+sudo apt install --no-install-recommends kerbridge
 ```
+
+`--no-install-recommends` matters here: `krb5-user` Recommends `krb5-config`, and
+krb5-config asks its own "Default Kerberos version 5 realm" debconf question --
+worded independently of, and asked right after, kerbridge-config's own realm
+question above. Nothing reads its answer: KDC location lives in
+`/etc/krb5.conf.d/kerbridge.conf`, which `kbsetup realm` writes, and
+`kerbridge-issuerd` creates a bare `/etc/krb5.conf` itself when krb5-config never
+ran (`crates/kerbridge-setup/src/krb5.rs`, `debian/kerbridge-issuerd.postinst`).
 
 `Suites: ./` is not a placeholder to fill in. This is a flat repository — the
 indices sit at the base URI with no `dists/` tree, because a release's assets
@@ -89,7 +97,7 @@ says so rather than guess a version. Install them with `apt` rather than
 `dpkg -i`, so the distro dependencies — Samba above all — are resolved for you:
 
 ```sh
-sudo apt install ./kerbridge*.deb
+sudo apt install --no-install-recommends ./kerbridge*.deb
 ```
 
 Nothing verifies these. They carry no signature of their own — only the

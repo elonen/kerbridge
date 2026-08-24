@@ -340,10 +340,10 @@ run one again after a failure and it continues where it stopped.
 ### Debian packages
 
 ```sh
-sudo apt install ./kerbridge*.deb   # answers the install questions, writes /etc/kerbridge
-sudo kbsetup realm                  # provisions the domain, its CA and certificate
-sudo kbsetup directory              # the OUs, the service accounts, the delegation
-sudo $EDITOR /etc/kerbridge/*.toml  # only if you left a question unanswered
+sudo apt install --no-install-recommends ./kerbridge*.deb   # answers the install questions, writes /etc/kerbridge
+sudo kbsetup realm                                          # provisions the domain, its CA and certificate
+sudo kbsetup directory                                      # the OUs, the service accounts, the delegation
+sudo $EDITOR /etc/kerbridge/*.toml                          # only if you left a question unanswered
 ```
 
 The first line installs files you already have. To take them from the signed apt
