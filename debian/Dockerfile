@@ -14,11 +14,16 @@
 
 # Same digest as deploy/broker/Dockerfile and the realm image.
 FROM rust@sha256:3c38f3f82c2f3d73da3b38e18d279393a04cb43ddded0e35088a8c3324d40900 AS build
-RUN apk add --no-cache musl-dev gcc file
+# binutils is for the `readelf` the audit-section assertion below runs.
+RUN apk add --no-cache musl-dev gcc file binutils
 
 # Licence notices for the static binaries, from the lockfile that built them.
 # Version-pinned: unpinned, the text a release ships depends on the build date.
 RUN cargo install cargo-about --locked --version 0.8.4
+# `cargo auditable` writes the dependency list into a `.dep-v0` ELF section, so
+# `cargo audit bin` and the usual scanners can read a static binary they would
+# otherwise report as having no dependencies at all. Costs ~2 KB per binary.
+RUN cargo install cargo-auditable --locked --version 0.7.0
 
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
@@ -32,23 +37,46 @@ COPY debian/stage-prebuilt debian/about.toml debian/about.hbs ./debian/
 # format", and every build in a container is cold. The service images take the
 # same path.
 #
-# Then the assertion the broker image makes, for all six: a dynamically linked
-# binary installs only on the release it was built on.
-RUN for p in kerbridge-config kerbridge-manage kerbridge-setup \
+# deploy/kbmanage/Dockerfile explains the flags: `--target` keeps RUSTFLAGS off
+# the proc-macros, and it is what makes the aarch64 build static-PIE rather than
+# a fixed-address ET_EXEC.
+#
+# Then the assertions, for all six. A dynamically linked binary installs only on
+# the release it was built on. A non-PIE binary loads at a fixed address. A
+# binary with no `.dep-v0` section reads to every scanner as one with no
+# dependencies, which is worse than not scanning it -- `cargo auditable` failing
+# open is silent.
+RUN case "$(rustc -vV | sed -n 's/^host: //p')" in \
+      x86_64-*)  triple="x86_64-unknown-linux-musl";; \
+      aarch64-*) triple="aarch64-unknown-linux-musl";; \
+      *)         echo "unsupported build host" >&2; exit 1;; \
+    esac; \
+    echo "$triple" > /triple; \
+    for p in kerbridge-config kerbridge-manage kerbridge-setup \
              kerbridge-broker kerbridge-sync kerbridge-issuerd; do \
-      cargo build --release -p "$p" || exit 1; \
+      RUSTFLAGS="-C relocation-model=pic -C link-self-contained=yes -C link-arg=-static-pie" \
+      cargo auditable build --release --target "$triple" -p "$p" || exit 1; \
     done \
  && for b in kbconfig kbmanage kbsetup kerbridge-broker kerbridge-sync issuerd; do \
-      file "target/release/$b" | grep -q "dynamically linked" \
+      f="target/$triple/release/$b"; \
+      file "$f" | grep -q "dynamically linked" \
         && { echo "$b is not statically linked" >&2; exit 1; }; \
-      true; \
+      file "$f" | grep -q "static-pie" \
+        || { echo "$b is not static-pie" >&2; exit 1; }; \
+      readelf -S "$f" | grep -q "\.dep-v0" \
+        || { echo "$b carries no audit data" >&2; exit 1; }; \
     done
 
+# `/triple` carries the target directory across layers: a RUN cannot set an ENV,
+# and the name is known only once rustc has been asked. Naming a target also
+# moves the build scripts' output, and `stage-prebuilt` collects the man pages
+# they generate -- so both steps below must read that directory, not
+# `target/release`.
 RUN cargo about generate --config debian/about.toml debian/about.hbs \
-      > target/release/THIRD-PARTY-NOTICES
+      > "target/$(cat /triple)/release/THIRD-PARTY-NOTICES"
 
 # Fills debian/prebuilt/, taking the notices from the target directory.
-RUN debian/stage-prebuilt target/release
+RUN debian/stage-prebuilt "target/$(cat /triple)/release"
 
 
 FROM debian:trixie AS deb

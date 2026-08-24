@@ -798,53 +798,29 @@ async fn verify(
 /// The one verification routine in this file, and it is RSA. `primitive` came
 /// from [`jwks::algorithm`], so it is an allowlisted algorithm by construction
 /// rather than by a check somewhere above.
+///
+/// ring takes the two components as JWKS states them, so no key encoding is
+/// written here. Do not reintroduce one: hand-built ASN.1 in this routine is
+/// the single defect that would forge any identity.
 fn verify_rsa(
     key: &RsaKey,
-    primitive: &'static dyn ring::signature::VerificationAlgorithm,
+    primitive: &'static ring::signature::RsaParameters,
     signed: &[u8],
     signature: &[u8],
 ) -> bool {
-    let der = rsa_public_key_der(&key.modulus, &key.exponent);
-    ring::signature::UnparsedPublicKey::new(primitive, der).verify(signed, signature).is_ok()
+    ring::signature::RsaPublicKeyComponents {
+        n: trim_leading_zeros(&key.modulus),
+        e: trim_leading_zeros(&key.exponent),
+    }
+    .verify(primitive, signed, signature)
+    .is_ok()
 }
 
-/// DER `RSAPublicKey ::= SEQUENCE { modulus INTEGER, publicExponent INTEGER }`.
-///
-/// ring takes a key in this encoding; JWKS states the same key as two
-/// base64url integers. Twenty lines of ASN.1 is the whole distance between
-/// them, and it is the only reason a JWT library would be needed at all.
-fn rsa_public_key_der(modulus: &[u8], exponent: &[u8]) -> Vec<u8> {
-    let mut content = der_unsigned_integer(modulus);
-    content.extend_from_slice(&der_unsigned_integer(exponent));
-    let mut out = vec![0x30];
-    der_length(&mut out, content.len());
-    out.extend_from_slice(&content);
-    out
-}
-
-fn der_unsigned_integer(bytes: &[u8]) -> Vec<u8> {
+/// ring wants each component big-endian with no leading zero. RFC 7517 does not
+/// forbid an IdP from publishing one, so this does not assume it away.
+fn trim_leading_zeros(bytes: &[u8]) -> &[u8] {
     let first_significant = bytes.iter().position(|&b| b != 0).unwrap_or(bytes.len());
-    let value = &bytes[first_significant..];
-    let mut content = Vec::with_capacity(value.len() + 1);
-    // DER integers are signed, so a leading bit set means a zero byte in front.
-    if value.first().is_none_or(|&b| b & 0x80 != 0) {
-        content.push(0x00);
-    }
-    content.extend_from_slice(value);
-    let mut out = vec![0x02];
-    der_length(&mut out, content.len());
-    out.extend_from_slice(&content);
-    out
-}
-
-fn der_length(out: &mut Vec<u8>, len: usize) {
-    if len < 0x80 {
-        out.push(len as u8);
-    } else if len <= 0xff {
-        out.extend_from_slice(&[0x81, len as u8]);
-    } else {
-        out.extend_from_slice(&[0x82, (len >> 8) as u8, len as u8]);
-    }
+    &bytes[first_significant..]
 }
 
 #[cfg(test)]
@@ -1260,26 +1236,28 @@ pub mod tests {
     }
 
     #[test]
-    fn encodes_der_integers_the_way_asn1_requires() {
-        // High bit set -> a zero byte is prepended so the integer stays positive.
-        assert_eq!(der_unsigned_integer(&[0x80, 0x01]), vec![0x02, 0x03, 0x00, 0x80, 0x01]);
-        // High bit clear -> no padding.
-        assert_eq!(der_unsigned_integer(&[0x01, 0x00, 0x01]), vec![0x02, 0x03, 0x01, 0x00, 0x01]);
-        // Leading zeros are not part of the value.
-        assert_eq!(der_unsigned_integer(&[0x00, 0x00, 0x7f]), vec![0x02, 0x01, 0x7f]);
-        assert_eq!(der_unsigned_integer(&[]), vec![0x02, 0x01, 0x00]);
+    fn a_component_is_trimmed_to_what_ring_accepts() {
+        assert_eq!(trim_leading_zeros(&[0x00, 0x00, 0x7f]), &[0x7f]);
+        assert_eq!(trim_leading_zeros(&[0x01, 0x00, 0x01]), &[0x01, 0x00, 0x01]);
+        // No significant byte at all: an empty slice, not a panic.
+        assert_eq!(trim_leading_zeros(&[0x00, 0x00]), &[] as &[u8]);
+        assert_eq!(trim_leading_zeros(&[]), &[] as &[u8]);
     }
 
+    /// The same key and signature, with the modulus stated both ways: bare, and
+    /// with the leading zero RFC 7517 permits. A verifier that handed the padded
+    /// form straight to ring would refuse a token the IdP signed correctly.
     #[test]
-    fn encodes_der_lengths_across_the_form_boundaries() {
-        let mut out = vec![];
-        der_length(&mut out, 0x7f);
-        assert_eq!(out, vec![0x7f]);
-        out.clear();
-        der_length(&mut out, 0x80);
-        assert_eq!(out, vec![0x81, 0x80]);
-        out.clear();
-        der_length(&mut out, 0x0101);
-        assert_eq!(out, vec![0x82, 0x01, 0x01]);
+    fn a_modulus_published_with_a_leading_zero_still_verifies() {
+        let body = std::fs::read_to_string(fixture_dir().join("jwks.json")).unwrap();
+        let mut key = crate::jwks::parse(&body).unwrap().remove("fixture-key-2026-07").unwrap();
+        let jwt = token("positive_delegated.jwt");
+        let (signed, sig) = jwt.rsplit_once('.').unwrap();
+        let signature = crate::b64url(sig).unwrap();
+        let primitive = crate::jwks::algorithm("RS256").unwrap();
+
+        assert!(verify_rsa(&key, primitive, signed.as_bytes(), &signature), "bare modulus");
+        key.modulus.insert(0, 0x00);
+        assert!(verify_rsa(&key, primitive, signed.as_bytes(), &signature), "padded modulus");
     }
 }

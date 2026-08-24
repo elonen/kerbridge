@@ -22,8 +22,20 @@ during an upgrade.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
-## Unreleased
+## 0.9.1
 
+- Every shipped binary is now position-independent on arm64, as it already
+  was on amd64. A fixed load address made address-space randomization do
+  nothing for the main program.
+- Every shipped binary now carries its dependency list in a `.dep-v0`
+  section, so `cargo audit bin` and the usual scanners can read a static
+  binary they used to report as carrying no dependencies at all.
+- The token verifier no longer encodes the RSA public key itself. It hands
+  the two published integers to `ring`, which takes the hand-written ASN.1
+  out of the most security-critical routine in the project.
+- The warning about unreachable signing keys no longer says that logins are
+  failing. Cached keys keep working, which is the intent, and the old
+  sentence sent an operator after an outage that was not happening.
 - `kerbridge-issuerd` now depends on `samba-ad-provision`. Samba only
   recommends it, so an installation that skips recommends had no templates
   to provision the realm from, and `kbsetup realm` died partway.

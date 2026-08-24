@@ -11,30 +11,51 @@
 # BuildKit lints a constant platform here and suggests $BUILDPLATFORM, so the
 # value stays in the Makefile.
 FROM rust@sha256:3c38f3f82c2f3d73da3b38e18d279393a04cb43ddded0e35088a8c3324d40900 AS build
-RUN apk add --no-cache musl-dev gcc file
+# binutils is for the `readelf` the audit-section assertion below runs.
+RUN apk add --no-cache musl-dev gcc file binutils
+# `cargo auditable` writes the dependency list into a `.dep-v0` ELF section, so
+# `cargo audit bin` and the usual scanners can read a static binary they would
+# otherwise report as having no dependencies at all. Costs ~2 KB. Version-pinned
+# for the reason cargo-about is in debian/Dockerfile.
+RUN cargo install cargo-auditable --locked --version 0.7.0
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-# Assert what was asked for is what came out. On x86_64 a musl release build is
-# static-PIE, which `file` calls "static-pie linked" and `ldd` reports with a
-# loader line, not the "Not a valid dynamic program" the non-PIE aarch64 form
-# emits -- so test for "not dynamically linked", which is phrasing-stable across
-# targets. TARGETARCH comes from buildx via --platform; checking the binary
-# against it catches a base image that ignored the request.
+# Assert what was asked for is what came out: a static-PIE binary of the
+# requested architecture. TARGETARCH comes from buildx via --platform; checking
+# the binary against it catches a base image that ignored the request. An empty
+# TARGETARCH means a plain `docker build` with no buildx -- the build still runs,
+# it just cannot assert the architecture.
 #
-# An empty TARGETARCH means a plain `docker build` with no buildx: the build
-# still runs, it just cannot assert.
+# `--target` is required, not cosmetic. Without it cargo applies RUSTFLAGS to the
+# proc-macro crates too, and async-trait then fails with "cannot produce
+# proc-macro ... does not support these crate types". Naming the target splits
+# host flags from target flags, and moves the binary to target/<triple>/release/
+# -- hence the copy back to the path the export stage reads.
+#
+# x86_64-musl is static-PIE on its own and the flags change nothing there.
+# aarch64-musl is a plain ET_EXEC without them: fixed load address, no ASLR on
+# the main image. `-C relocation-model=pic` alone does not fix it; the link
+# argument is the part that does.
 ARG TARGETARCH
 RUN case "$TARGETARCH" in \
-      amd64) want="x86-64";; \
-      arm64) want="aarch64";; \
-      "")    want="";; \
+      amd64) want="x86-64";  triple="x86_64-unknown-linux-musl";; \
+      arm64) want="aarch64"; triple="aarch64-unknown-linux-musl";; \
+      "")    want="";        triple="$(rustc -vV | sed -n 's/^host: //p')";; \
       *)     echo "unsupported TARGETARCH=$TARGETARCH"; exit 1;; \
     esac; \
-    cargo build --release -p kerbridge-manage \
+    RUSTFLAGS="-C relocation-model=pic -C link-self-contained=yes -C link-arg=-static-pie" \
+    cargo auditable build --release --target "$triple" -p kerbridge-manage \
+ && mkdir -p target/release \
+ && cp "target/$triple/release/kbmanage" target/release/kbmanage \
  && { [ -z "$want" ] || file target/release/kbmanage | grep -q "$want"; } \
- && ! file target/release/kbmanage | grep -q "dynamically linked" \
- || { echo "kbmanage is not a static $TARGETARCH binary:"; file target/release/kbmanage; exit 1; }
+ && file target/release/kbmanage | grep -q "static-pie" \
+ || { echo "kbmanage is not a static-pie $TARGETARCH binary:"; file target/release/kbmanage; exit 1; }
+
+# A binary with no `.dep-v0` reads to every scanner as one with no dependencies,
+# which is worse than not scanning it. `cargo auditable` failing open is silent.
+RUN readelf -S target/release/kbmanage | grep -q "\.dep-v0" \
+ || { echo "kbmanage carries no audit data" >&2; exit 1; }
 
 FROM scratch AS dist
 COPY --from=build /src/target/release/kbmanage /kbmanage

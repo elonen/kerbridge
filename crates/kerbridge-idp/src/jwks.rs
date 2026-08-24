@@ -22,9 +22,12 @@ use kerbridge_notify::{Event, Notifier, Severity};
 use serde::Deserialize;
 use tokio::sync::RwLock;
 
-/// How long a fetched document is trusted. Refreshed early only on an unknown
-/// `kid`, so a scheduled rollover costs no polling and an unscheduled one still
-/// resolves within a request.
+/// How old a cached document may be before a request tries to refresh it first.
+/// Refreshed early only on an unknown `kid`, so a scheduled rollover costs no
+/// polling and an unscheduled one still resolves within a request.
+///
+/// **A refresh trigger, not an expiry.** If that refresh fails, the keys already
+/// held keep verifying -- see [`Jwks::with_key`].
 const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 /// Floor between unknown-`kid` refreshes after a *successful* fetch. Without it
 /// the refresh is a free outbound request for anyone who can reach `POST /ticket`.
@@ -68,7 +71,12 @@ impl RsaKey {
 /// every row is served by the one key type above and the one verification
 /// routine in `entra.rs`. An algorithm over a different key type (`ES*`,
 /// `EdDSA`) is a second key type and a second routine, not a row here.
-const ALGORITHMS: [(&str, &dyn ring::signature::VerificationAlgorithm); 6] = [
+///
+/// The `RsaParameters` element type holds that rule at compile time: nothing
+/// symmetric and nothing over another key type can be written into this table.
+/// Widening it to `dyn VerificationAlgorithm` would give the rule back to
+/// convention.
+const ALGORITHMS: [(&str, &ring::signature::RsaParameters); 6] = [
     ("RS256", &ring::signature::RSA_PKCS1_2048_8192_SHA256),
     ("RS384", &ring::signature::RSA_PKCS1_2048_8192_SHA384),
     ("RS512", &ring::signature::RSA_PKCS1_2048_8192_SHA512),
@@ -81,7 +89,7 @@ const ALGORITHMS: [(&str, &dyn ring::signature::VerificationAlgorithm); 6] = [
 /// whether an algorithm is permitted without being handed the very thing it
 /// would verify with, so nothing can pass the check and then reach a different
 /// primitive.
-pub fn algorithm(alg: &str) -> Option<&'static dyn ring::signature::VerificationAlgorithm> {
+pub fn algorithm(alg: &str) -> Option<&'static ring::signature::RsaParameters> {
     ALGORITHMS.iter().find(|(name, _)| *name == alg).map(|&(_, primitive)| primitive)
 }
 
@@ -168,7 +176,15 @@ impl Jwks {
         })
     }
 
-    /// Run `f` against the key for `kid`, refreshing once if it is unknown.
+    /// Run `f` against the key for `kid`, refreshing once if it is unknown or
+    /// the document is older than [`MAX_AGE`].
+    ///
+    /// **A failed refresh does not withdraw the keys.** Whatever is cached still
+    /// verifies, however old it is. Failing closed would stop every login in the
+    /// realm whenever the IdP is unreachable, and an aged key is not an
+    /// attacker's key: only the IdP ever held the private half, so a token
+    /// signed with a retired key was issued while that key was live.
+    /// `SECURITY.md`, "The token verifier is hand-written", records the choice.
     ///
     /// Takes a closure rather than handing out the key because the key lives
     /// behind the lock; cloning a modulus per request to avoid that would be
@@ -246,11 +262,13 @@ impl Jwks {
                     backoff.as_secs()
                 );
                 if failures >= ALERT_AFTER_FAILURES {
-                    // Still-valid cached keys mean logins work and this is a
-                    // warning; past `MAX_AGE` they are no longer trusted and
-                    // every login is failing, which is a different sentence.
+                    // Logins work in both cases -- `with_key` does not withdraw
+                    // an aged key. What escalates is how long the deployment has
+                    // been authenticating on keys nothing could confirm. Neither
+                    // sentence may say "expired" or "failing": an operator who
+                    // reads that goes hunting an outage that is not happening.
                     let (severity, what) = if stale {
-                        (Severity::Error, "the cached signing keys have expired")
+                        (Severity::Error, "serving signing keys long past the refresh limit")
                     } else {
                         (Severity::Warning, "serving cached signing keys")
                     };
@@ -434,6 +452,41 @@ mod tests {
             assert!(failure_backoff(failures) <= MIN_REFRESH_INTERVAL, "{failures}");
         }
         assert_eq!(failure_backoff(999), MIN_REFRESH_INTERVAL);
+    }
+
+    /// The fail-open `with_key` documents: a document past `MAX_AGE` whose
+    /// refresh cannot succeed still verifies. Asserting it is what stops a later
+    /// reading of `MAX_AGE` as an expiry from quietly becoming one -- that change
+    /// would break this test rather than every login in a deployment whose IdP
+    /// went unreachable for a day.
+    #[tokio::test]
+    async fn an_aged_document_still_verifies_when_the_refresh_fails() {
+        // A host booted less than MAX_AGE ago cannot express the instant, and
+        // the property does not depend on the wall clock. Nothing to assert.
+        let Some(aged) = Instant::now().checked_sub(MAX_AGE + Duration::from_secs(1)) else {
+            return;
+        };
+        let body =
+            std::fs::read_to_string(crate::entra::tests::fixture_dir().join("jwks.json")).unwrap();
+        let jwks = Jwks {
+            // Unreadable, so the refresh `with_key` triggers is certain to fail.
+            source: JwksSource::File("/nonexistent/jwks.json".into()),
+            timeout: Duration::from_secs(1),
+            keys: RwLock::new(Keys {
+                by_kid: parse(&body).unwrap(),
+                fetched_at: aged,
+                // In the past, so `retry_after` does not skip the attempt.
+                retry_after: aged,
+                consecutive_failures: 0,
+            }),
+            notifier: Arc::new(kerbridge_notify::Notifier::disabled("broker")),
+        };
+
+        assert_eq!(
+            jwks.with_key("fixture-key-2026-07", |key| key.modulus.len()).await,
+            Some(256),
+            "an aged document was withdrawn -- MAX_AGE is a refresh trigger, not an expiry"
+        );
     }
 
     #[test]

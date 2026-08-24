@@ -2,17 +2,17 @@
 # install unchanged on every supported release, which a libc6-linked binary
 # cannot do, and there is no Debian-packaged musl runtime to depend on instead.
 #
-# Two lines, not one, because lintian sees a different shape per architecture
-# and fires a different tag. On amd64 a musl release build is static-PIE --
-# ET_DYN with a PT_DYNAMIC and no NEEDED entries -- and
-# lintian's Binaries::Static skips its tag for anything whose file type reads
-# as a shared object or pie executable, so Binaries::Prerequisites reports a
-# shared library missing its dependencies instead. On arm64 the same build is a
-# plain ET_EXEC and the expected tag fires.
+# One line, unqualified, because every architecture is built static-PIE --
+# ET_DYN with a PT_DYNAMIC and no NEEDED entries. lintian's Binaries::Static
+# skips its `statically-linked-binary` tag for anything whose file type reads as
+# a shared object or pie executable, so Binaries::Prerequisites reports a shared
+# library missing its dependencies instead, on every architecture alike.
 #
-# Measured on lintian 2.116.3 and 2.122.0, identically.
-# Re-check either half with `file` on the built binary and
-# `lintian --show-overrides <deb>`: the tag that fires on this architecture
-# shows as an `O:` line, and the other one is simply not evaluated.
-kerbridge-broker [amd64]: shared-library-lacks-prerequisites [usr/sbin/kerbridge-broker]
-kerbridge-broker [arm64]: statically-linked-binary [usr/sbin/kerbridge-broker]
+# A build that produced a plain ET_EXEC would fire `statically-linked-binary`
+# and leave this override unused. debian/Dockerfile asserts static-pie for every
+# binary, so that fails there first.
+#
+# Measured on lintian 2.116.3 and 2.122.0, identically. Re-check with `file` on
+# the built binary and `lintian --show-overrides <deb>`: the tag shows as an
+# `O:` line.
+kerbridge-broker: shared-library-lacks-prerequisites [usr/sbin/kerbridge-broker]

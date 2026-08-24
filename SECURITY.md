@@ -237,11 +237,11 @@ every device grant you did not create.
 
 ### 3. The token verifier is hand-written
 
-**Risk.** KerBridge uses **no JWT library**. `crates/kerbridge-idp/src/entra.rs`
-verifies the token against `ring` directly, and builds the DER encoding of the
-RSA public key by hand from the JWKS integers. This is the single most
-security-critical routine in the project, and it is bespoke code in a project
-whose code is mostly agent-written.
+**Risk.** KerBridge uses **no JWT library**.
+`crates/kerbridge-idp/src/entra.rs` splits the token, resolves the algorithm,
+and applies every claim rule itself, calling `ring` for the signature. This is
+the single most security-critical routine in the project, and it is bespoke
+code in a project whose code is mostly agent-written.
 
 **What limits it.**
 
@@ -249,7 +249,10 @@ whose code is mostly agent-written.
   verification primitive *before* it loads any key. Only `RS*` and `PS*` are
   in the list. `none` and every `HS*` algorithm are absent, and **no symmetric
   verification routine exists anywhere in the crate**. An algorithm-confusion
-  attack has nothing to call.
+  attack has nothing to call. The allowlist is typed as ring's `RsaParameters`,
+  so a symmetric entry does not compile.
+- **No key parsing is written here.** The verifier hands ring the two JWKS
+  integers as `RsaPublicKeyComponents`. There is no hand-built ASN.1.
 - The code verifies the signature over the exact bytes that arrived, sliced
   from the raw token. It does not re-encode the header or the claims.
 - If a JWK states its own `alg`, a token that names a different `alg` for that
@@ -275,6 +278,18 @@ whose code is mostly agent-written.
   - a refresh rate limit of 5 min after a success;
   - a 1 MiB document cap, applied chunk by chunk;
   - a fatal failure at startup, rather than a silent one.
+- **The 24 h cache is a refresh trigger, not an expiry.** Past it, the broker
+  tries to fetch a new document before it serves a request. If that fetch
+  fails, the keys it already holds keep verifying tokens, for as long as the IdP
+  stays unreachable. The operator gets an error-level notification after three
+  consecutive failures.
+
+  This is a deliberate choice of availability over freshness. Failing closed
+  would mean an IdP outage stops every login in the realm, and an aged key buys
+  an attacker nothing: the IdP is the only party that ever held the private
+  half, so a token signed with a retired key still had to be issued while that
+  key was live. The lever against a *stolen* identity is the account, not the
+  signing key — see risk 5.
 
 **Known gap.** The JOSE header `typ` claim is **not checked**. The header parser
 reads only `alg` and `kid`. No attack is known through this, because `aud`,
