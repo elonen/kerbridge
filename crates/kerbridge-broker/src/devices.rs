@@ -1,10 +1,9 @@
-//! The device-grant surface: `GET /{source}/nonce` and `/{source}/devices`.
+//! The device-grant routes: `GET /{source}/nonce` and `/{source}/devices`.
 //!
-//! None of it decides admission of its own -- it only ever registers, lists or
-//! removes a key, and the directory answers the rest on every exchange. Every
-//! write it implies goes through `issuerd`, so the broker's LDAP identity stays
-//! read-only: a broker that could write the directory could grant itself
-//! admission.
+//! Nothing here decides admission. These routes only register, list or remove a
+//! key; the directory answers the rest, on every exchange. Every write goes
+//! through `issuerd`, thus the broker's LDAP identity stays read-only: a broker
+//! that could write the directory could grant itself admission.
 
 use std::sync::Arc;
 
@@ -25,15 +24,15 @@ use crate::http::{
 use crate::problems::{directory_failure, grant_write_failure, resolved_cleanly};
 use crate::state::{AppState, SourceState};
 
-/// A fresh single-use nonce for a device assertion.
+/// `GET /{source}/nonce`: a fresh single-use nonce for a device assertion.
 ///
-/// Deliberately unauthenticated, like `GET /{source}/config`: it hands out
-/// sixteen random bytes, which tells a caller nothing and lets nobody in. What
-/// bounds it is the store ceiling and Caddy in front of both routes.
+/// Unauthenticated on purpose, like `GET /{source}/config`. It hands out sixteen
+/// random bytes, which tells a caller nothing and lets nobody in. The store
+/// ceiling bounds it, and Caddy bounds both routes.
 ///
-/// One store for the whole process: a nonce is unforgeable randomness with a
-/// deadline and carries no identity, so which source spends it is decided by the
-/// assertion wrapped around it and not by where it came from.
+/// One store for the whole process. A nonce is unforgeable randomness with a
+/// deadline and carries no identity, thus the assertion around it decides which
+/// source spends it, not where the nonce came from.
 pub async fn nonce(State(state): State<Arc<AppState>>, Path(source): Path<String>) -> Response {
     let outcome = (|| {
         state.source(&source)?;
@@ -61,17 +60,17 @@ pub async fn nonce(State(state): State<Arc<AppState>>, Path(source): Path<String
 pub struct RegisterRequest {
     alg: String,
     /// The raw uncompressed public point, base64url. The broker derives the
-    /// thumbprint from it rather than taking one, so what is stored is always a
-    /// digest of a key that was actually presented.
+    /// thumbprint from it and never accepts one, thus what is stored is always a
+    /// digest of a key that the client presented.
     key: String,
     label: String,
-    /// Whom this key is authorized for. Absent is the caller themselves;
-    /// present and different needs the delegate group.
+    /// Whom this key is authorized for. Absent means the caller themselves.
+    /// Present and different needs the delegate group.
     #[serde(default, rename = "for")]
     target: Option<String>,
 }
 
-/// The same target, for the two routes that carry no body.
+/// The same target, as a query parameter, for the two routes with no body.
 #[derive(Deserialize)]
 pub struct TargetQuery {
     #[serde(rename = "for")]
@@ -82,27 +81,25 @@ pub struct TargetQuery {
 struct DeviceView {
     /// The operator handle, and what `DELETE /devices/{id}` takes.
     grant_id: String,
-    /// The account's own `kb1|` value -- what a device must claim to be
-    /// resolved. Stated by the server rather than derived by the client, because
-    /// the encoding has exactly one implementation and a client that spelled it
-    /// differently would be refused on every exchange with nothing to point at.
+    /// The account's own `kb1|` value. A device must claim it to resolve, and
+    /// the server states it so that no client re-derives the encoding.
     ///
-    /// Under delegation it is also the *only* place the client learns whose
-    /// grant this is: the caller presented their own token and never spelled the
-    /// target's identity. Persisting it is what makes a later rename of the
-    /// target harmless to a machine already holding a grant.
+    /// Under delegation it is the *only* place the client learns whose grant
+    /// this is: the caller presented their own token and never spelled the
+    /// target's identity. A client that stores it survives a rename of the
+    /// target.
     identity: String,
     label: String,
     added: u64,
-    /// Absent until the grant has been used. Day-granular by construction -- see
+    /// Absent until the grant is used. Day-granular by construction -- see
     /// [`kerbridge_core::grant::needs_touch`].
     #[serde(skip_serializing_if = "Option::is_none")]
     last_seen: Option<u64>,
-    /// When the device must next see a browser sign-in. Already clamped by the
-    /// current `configs/main.toml` `device_grant_days`, so this is what will
-    /// actually happen and not merely what was stamped.
+    /// When the device next needs a browser sign-in. Already clamped by the
+    /// current `device_grant_days` in `configs/main.toml`, thus this is what
+    /// happens and not only what was stamped.
     sign_in_required_by: u64,
-    /// Whether the knob has moved that deadline in below the stamped one.
+    /// True when the setting moved that deadline in below the stamped one.
     clamped: bool,
 }
 
@@ -120,17 +117,16 @@ impl DeviceView {
     }
 }
 
-/// Authorize this device to skip the browser sign-in.
+/// `POST /{source}/devices`: authorize a device to skip the browser sign-in.
 ///
-/// The Entra login *is* the authorization: this runs immediately after one, on a
-/// token the broker has just validated for an account it has just confirmed is
-/// synced, enabled, admitted and in the grant group. No second admission
-/// decision is invented; an existing one is lent to a key for a bounded
-/// period.
+/// The Entra login *is* the authorization. This runs immediately after one, on a
+/// token that the broker just validated, for an account it just confirmed is
+/// synced, enabled, admitted and in the grant group. It invents no second
+/// admission decision; it lends an existing one to a key, for a bounded period.
 ///
 /// With a `for`, the login authorizes the key for *that* account instead, and
-/// the delegate group is the second thing checked. The ticket this key later
-/// obtains is the target's; nothing here issues one for the caller.
+/// the delegate group is the second check. The ticket that this key later
+/// obtains is the target's. Nothing here issues one for the caller.
 pub async fn register_device(
     State(state): State<Arc<AppState>>,
     Path(source): Path<String>,
@@ -168,8 +164,8 @@ pub async fn register_device(
             .await
             .map_err(grant_write_failure)?;
 
-        // The reply is rendered from the grant that was just written rather than
-        // assembled beside it, so the deadline a client is shown comes through
+        // The reply renders the grant that was just written, and is not
+        // assembled beside it, so that the deadline a client sees comes through
         // `effective_end` like every other one.
         let grant = DeviceGrant {
             label: grant::sanitize_label(&body.label),
@@ -194,9 +190,9 @@ pub async fn register_device(
     }
 }
 
-/// The devices this user -- or, with a `for`, the account they are a delegate
-/// of -- has authorized. Read straight off that directory object, so it is the
-/// same source `kbmanage device list` reads.
+/// `GET /{source}/devices`: the devices that this user authorized, or, with a
+/// `for`, the ones the account they are a delegate of authorized. Read straight
+/// off that directory object, thus the same source `kbmanage device list` reads.
 pub async fn list_devices(
     State(state): State<Arc<AppState>>,
     Path(source): Path<String>,
@@ -224,12 +220,12 @@ pub async fn list_devices(
     }
 }
 
-/// Remove one device.
+/// `DELETE /{source}/devices/{id}`: remove one device.
 ///
-/// Removing *another* device needs an Entra token, because a compromised machine
-/// must not be able to knock the user's other devices offline. Removing
-/// *itself* does not: leaving is not an attack, and the rule is self-enforcing
-/// because the grant path never produces an Entra token.
+/// To remove *another* device needs an Entra token: a compromised machine must
+/// not be able to knock the user's other devices offline. To remove *itself*
+/// does not. To leave is not an attack, and the rule enforces itself, because
+/// the grant path never produces an Entra token.
 pub async fn revoke_device(
     State(state): State<Arc<AppState>>,
     Path((source, id)): Path<(String, String)>,
@@ -247,7 +243,6 @@ pub async fn revoke_device(
                 format!("{id:?} is not a grant handle"),
             ));
         }
-        // Two credential paths, and only the token one can be delegated.
         let (account, delegate) = match proof(&headers) {
             Some(Proof::DeviceGrant(assertion)) => {
                 let account =
@@ -294,11 +289,12 @@ pub async fn revoke_device(
     }
 }
 
-/// A machine removing itself, on the one credential that cannot be delegated.
+/// Resolve a machine that removes itself, on the one credential that cannot be
+/// delegated.
 ///
-/// Deliberately does not require the grant group -- a user dropped from it still
-/// gets a clean sign-out rather than a stale entry -- which is why it resolves
-/// here instead of through [`grant_holder`].
+/// It does not require the grant group, on purpose: a user dropped from that
+/// group still gets a clean sign-out instead of a stale entry. That is why it
+/// resolves here and not through [`grant_holder`].
 async fn self_revocation(
     state: &AppState,
     src: &SourceState,
@@ -306,9 +302,9 @@ async fn self_revocation(
     id: &str,
     target: Option<&str>,
 ) -> Result<Account, Failure> {
-    // A machine may name only its own identity -- the same rule that already
-    // binds it to its own thumbprint -- so a target here is a malformed request
-    // rather than a refused one.
+    // A machine may name only its own identity, the same rule that already
+    // binds it to its own thumbprint. A target here is thus a malformed request
+    // and not a refused one.
     if target.is_some() {
         return Err(Failure::new(
             StatusCode::BAD_REQUEST,
@@ -336,13 +332,13 @@ async fn self_revocation(
     }
 }
 
-/// The account a `/devices` request acts on, and whether this caller may act on
-/// it. Every route that is not a self-revocation starts here.
+/// The account that a `/devices` request acts on, and whether this caller may
+/// act on it. Every route that is not a self-revocation starts here.
 ///
-/// One helper for all three on purpose: the rule is that the target is checked
-/// for the device-grant group and the caller for admission plus, when they
-/// differ, the target's delegate group -- and three routes drifting apart on
-/// that would drift silently and in the wrong direction.
+/// One helper for all three, on purpose. The rule: check the target for the
+/// device-grant group, and the caller for admission plus, when the two differ,
+/// the target's delegate group. Three routes that drifted apart on that would
+/// drift silently, and in the wrong direction.
 async fn grant_holder(
     state: &AppState,
     src: &SourceState,
@@ -351,9 +347,9 @@ async fn grant_holder(
 ) -> Result<(Authorized, i64), Failure> {
     enabled(&state.config.device_grants)?;
     let now = now()?;
-    // Creating or listing grants needs a browser sign-in at the cloud IdP. A
-    // device grant is deliberately not enough: a machine must not be able to
-    // enroll more machines, or one compromise would become permanent by itself.
+    // To create or list grants needs a browser sign-in at the cloud IdP. A
+    // device grant is not enough, on purpose: a machine must not enroll more
+    // machines, or one compromise would make itself permanent.
     let Some(Proof::Bearer(token)) = proof(headers) else {
         return Err(Failure::new(
             StatusCode::UNAUTHORIZED,
@@ -375,8 +371,8 @@ async fn grant_holder(
     }
 }
 
-/// The audit line's second party, present only when there is one. Per the
-/// design this log *is* the record of who authorized what: nothing durable in
+/// The second party of the audit line, present only when there is one. Per the
+/// design, this log *is* the record of who authorized what: nothing durable in
 /// the directory names the delegate.
 fn by(delegate: Option<&str>) -> String {
     delegate.map_or(String::new(), |sam| format!(" by={sam}"))

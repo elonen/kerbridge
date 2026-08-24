@@ -41,7 +41,7 @@ access, so the broker never needs a writable LDAP identity.
 - Destroy the temporary material, always. Commands are an argv vector with
   bounded time and output; errors never carry key material outward.
   `issuerd.toml`'s `max_inflight` refuses past the cap before the thread and
-  the three forked root subprocesses exist.
+  the forked root subprocesses exist.
 - **Which `kinit`, and which `samba-tool`.** The environment those subprocesses
   get is built here rather than filtered, and its `PATH` is
   `/usr/sbin:/usr/bin:/sbin:/bin`. `/usr/local` is left out: on a host rather
@@ -56,7 +56,7 @@ access, so the broker never needs a writable LDAP identity.
 
 ## How a device grant is recorded
 
-Three more verbs — `GrantDevice`, `RevokeGrant`, `TouchGrant` — and their
+More verbs — `GrantDevice`, `RevokeGrant`, `TouchGrant` — and their
 narrowness is the point. What makes it safe to put an internet-facing broker in
 front of a domain administrator is not this process's privilege, which is
 unavoidable, but that every verb names one account by SID and one attribute

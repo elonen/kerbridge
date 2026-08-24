@@ -73,7 +73,7 @@ message says both what changed and what is still wrong.
 
 ### placeholder
 
-A `%NAME%` in the notification `template` naming one of seven substitutable
+A `%NAME%` in the notification `template` naming one of the substitutable
 values: `%EVENT%`, `%SEVERITY%`, `%COMPONENT%`, `%REALM%`, `%TIMESTAMP%`,
 `%MESSAGE%`, `%DETAIL%`. Every substituted value is escaped as a JSON string,
 so nothing a tenant can name can reshape the body.

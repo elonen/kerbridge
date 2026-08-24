@@ -39,7 +39,7 @@ feature; it is what prevents the worst failure mode the research found.
 
 Two moving parts:
 
-- the Win32 UI, and `WinHost` — the eight methods
+- the Win32 UI, and `WinHost` — the methods
   `kerbridge_client::agent::Host` asks for
 - the administrator one-shots, which run as a separate elevated process
 
@@ -52,12 +52,12 @@ is which, and why each is shaped that way, is on the modules themselves;
 
 ## States
 
-There is no state enum. The surface is a **description layer** over five
+There is no state enum. The surface is a **description layer** over the
 independent values the core reports — `condition`, `blockers`, `actions`,
 `in_flight` and `next_attempt_at_earliest` — none of which masks another, and
-`condition` is a pure function of three local facts: a *usable* ticket is held,
+`condition` is a pure function of local facts: a *usable* ticket is held,
 this machine is supposed to be working here, and a silent renewal can land.
-[`../DESIGN.md`](../DESIGN.md) is authoritative and carries the five conditions,
+[`../DESIGN.md`](../DESIGN.md) is authoritative and carries the conditions,
 the derivation, the transition table, the words and the icon.
 
 The icon is the logo in the taskbar's own ink, with weight carrying whether

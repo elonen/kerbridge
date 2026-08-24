@@ -115,7 +115,7 @@ is rendered from a [template source](#template-source), and the committed
 
 A template is also where an answer is *placed*: `init --set` and `upgrade` both
 rewrite the one line that names the option and leave every other line alone. So
-a template names each option exactly once, in one of three forms, and each form
+a template names each option exactly once, in one of these forms, and each form
 shows a value of the option's own type — the example a required option is
 written with, the default a commented one names, or the `# Example:` above a
 line that shows neither.

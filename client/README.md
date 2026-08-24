@@ -30,9 +30,9 @@ CLI you debug with cannot disagree about what the broker said, and that two
 platforms cannot disagree with each other about what keeps a ticket alive.
 
 **The line runs through the window, not through the platform.** The re-injection
-schedule is what stops the worst measured failure mode, and the eleven translated
+schedule is what stops the worst measured failure mode, and the translated
 string tables are the product's voice; neither is Windows' business, so both are
-in the core. A platform supplies the eight methods behind `agent::Host` — wake
+in the core. A platform supplies the methods behind `agent::Host` — wake
 the UI thread, notify, report an outcome, say that an elevation has started, name
 the primary action, raise the status window, open a path, ask the OS for a token
 — and that is the whole of what the core knows about it.
@@ -47,7 +47,7 @@ sentence rather than by omission.
 
 The arms themselves are gathered in `src/windows/` and `src/macos/`, one file per
 subject, so reading what the client does on one platform does not mean visiting
-nine directories. Neither folder is a module — each file is reached by `#[path]`
+every subject directory. Neither folder is a module — each file is reached by `#[path]`
 from the subject that owns it — so the grouping costs the module tree nothing.
 
 **The CLI ships too.** `kerbridge` is not a development tool that escaped; it is

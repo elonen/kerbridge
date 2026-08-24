@@ -1,6 +1,6 @@
 # Design » Components
 
-The four containers of the KerBridge stack, and what each one is denied.
+The containers of the KerBridge stack, and what each one is denied.
 [`DESIGN.md`](../../DESIGN.md) is the index and holds the goal, the deployment
 assumptions and the security boundaries.
 
@@ -56,7 +56,7 @@ certificate to get the token. This agrees with a deliberate property of
 KerBridge: nothing must reach it from the Internet. ACME defaults to DNS-01 for
 the same reason.
 
-The exchange carries three things that need confidentiality:
+The exchange carries these things that need confidentiality:
 
 - **The request** is a bearer token with no channel binding. An attacker who
   reads it in flight can replay it until `exp` and get a TGT.
@@ -69,7 +69,7 @@ The exchange carries three things that need confidentiality:
 - **`GET /config`** is unauthenticated and names the authority that the client
   will trust. Only TLS gives it integrity.
 
-One construction removes all three risks: a **sender-constrained token with a
+One construction removes all of them: a **sender-constrained token with a
 PKINIT hand-off**. It works as follows:
 
 - The IdP binds an ephemeral key, which the client made, into the token as

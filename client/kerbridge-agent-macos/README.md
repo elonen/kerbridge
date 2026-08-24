@@ -32,7 +32,7 @@ reconnect then works. The agent disables the repair code:
 
 **No confirmation dialogs.** Windows needs dialogs for enrollment, repair, and
 device grants. macOS has none of these. `Host::elevating` is empty.
-`Host::finished` is unreachable. Three action labels name Windows. They are
+`Host::finished` is unreachable. Some action labels name Windows. They are
 unreachable. `RealmNotRegistered` cannot occur. `enroll::state` always returns
 `Enrolled`.
 

@@ -33,7 +33,7 @@ checked only when the container exists.
 The DN containment rule deciding which side of the IdP parent OU a target is on,
 written to survive case, whitespace, and a DN that merely contains the
 OU's text. It is not "no writes inside the IdP parent OU": resource-group
-writes must be outside, and the four verbs that do reach in — `entra delete`,
+writes must be outside, and the verbs that do reach in — `entra delete`,
 `entra rename`, `entra unpin`, `device revoke` — must be inside, and nothing
 else may be.
 <!-- refs: `kerbridge_manage::validate::assert_outside_entra`, `assert_inside_entra`, `kerbridge_core::dn::dn_is_at_or_within` -->
@@ -124,7 +124,7 @@ conventional ADUC meaning, *who owns this group*, which delegates nothing.
 
 ### reachable
 
-The verdict on the `endpoint link`, in the four shapes a caller acts on
+The verdict on the `endpoint link`, in the shapes a caller acts on
 differently — serving, settling, no session, broken — which `kbmanage endpoint`
 carries out as exit 0, 2, 3 and 1. Not a `status (kbmanage)`: a poll loop has to
 tell "not yet" from "broken", and a TLS session that never formed is an issuance
@@ -200,7 +200,7 @@ place is a measured bug.
 
 ### status (kbmanage)
 
-The four-valued verdict on one `doctor` check or finding: `Ok`, `Warn`, `Fail`,
+The verdict on one `doctor` check or finding: `Ok`, `Warn`, `Fail`,
 `Info`. Only `Fail` makes the command exit non-zero; `Warn` means working, but
 not as designed.
 <!-- refs: `kerbridge_manage::doctor::Status` -->

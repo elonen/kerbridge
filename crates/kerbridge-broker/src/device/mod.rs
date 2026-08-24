@@ -1,15 +1,14 @@
 //! Device-grant assertions: the second identity proof `POST /ticket` accepts.
 //!
-//! A granted device proves possession of a key instead of presenting a cloud
-//! IdP token. This module does exactly that much -- it turns a signed assertion into
-//! a claimed [`ExternalIdentity`] and the thumbprint of the key that signed it.
-//! It decides nothing about admission: the directory still answers all of that,
-//! on every exchange, which is why revocation semantics are unchanged from the
-//! browser path.
+//! A granted device proves that it holds a key, instead of a cloud IdP token.
+//! This module does exactly that much: it turns a signed assertion into a
+//! claimed [`ExternalIdentity`] and the thumbprint of the key that signed it. It
+//! decides nothing about admission. The directory answers all of that, on every
+//! exchange, thus revocation behaves as it does on the browser path.
 //!
-//! That seam is the one `DESIGN.md` @ External identity model already names --
-//! "a direct provider adapter can emit the same `ExternalIdentity`" -- so nothing
-//! downstream of here can tell the two proofs apart.
+//! `DESIGN.md` @ External identity model names this seam -- "a direct provider
+//! adapter can emit the same `ExternalIdentity`" -- thus nothing downstream of
+//! here can tell the two proofs apart.
 //!
 //! # The wire format
 //!
@@ -17,29 +16,28 @@
 //! <base64url(payload JSON)>.<base64url(signature)>
 //! ```
 //!
-//! Two parts, not three: there is no header, because there is nothing for a
-//! header to negotiate. The algorithm is not the client's to choose -- the stored
-//! grant names it, one entry today, and a value naming an algorithm this build
-//! cannot verify has no key material as far as this build is concerned. A JOSE
-//! header would only reintroduce the `alg` confusion the token verifier is
-//! structured to make unreachable.
+//! There is no header, because a header has nothing to negotiate.
+//! The client does not choose the algorithm: the stored grant names
+//! it, one entry today, and an algorithm that this build cannot verify has no
+//! key material as far as this build knows. A JOSE header would only bring back
+//! the `alg` confusion that the token verifier makes unreachable.
 //!
-//! The signature is ECDSA P-256 with SHA-256 in the fixed `r || s` form -- what
-//! CNG's `NCryptSignHash` produces -- over the ASCII bytes of the encoded
-//! payload, exactly as presented rather than over anything re-encoded.
+//! The signature is ECDSA P-256 with SHA-256, in the fixed `r || s` form that
+//! CNG's `NCryptSignHash` produces. It covers the ASCII bytes of the encoded
+//! payload exactly as presented, never a re-encoding of them.
 //!
 //! # What the payload binds
 //!
 //! - `key` -- the raw uncompressed public point. The broker stores only a
-//!   thumbprint, so the key itself has to arrive with the assertion.
-//! - `identity` -- the `kb1|` value the client claims to be. Claiming someone
-//!   else's fails, because the thumbprint must be present on the object claimed;
-//!   see `DESIGN.md` @ Device grants.
-//! - `nonce` -- a one-shot value this broker issued. The replay window.
-//! - `aud` -- this deployment, so an assertion captured here cannot be presented
-//!   to another broker.
-//! - `exp` -- a short ceiling on top of the nonce, so a stockpiled assertion is
-//!   stale as well as spent.
+//!   thumbprint, thus the key itself must arrive with the assertion.
+//! - `identity` -- the `kb1|` value that the client claims to be. A claim on
+//!   someone else's identity fails, because the thumbprint must also be on the
+//!   object claimed. See `DESIGN.md` @ Device grants.
+//! - `nonce` -- a one-shot value that this broker issued. The replay window.
+//! - `aud` -- this deployment, thus an assertion captured here cannot be
+//!   presented to another broker.
+//! - `exp` -- a short ceiling on top of the nonce, thus a stockpiled assertion
+//!   is stale as well as spent.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -56,9 +54,9 @@ const P256_POINT_LEN: usize = 65;
 /// Fixed-form ECDSA P-256: `r || s`, 32 bytes each.
 const P256_SIGNATURE_LEN: usize = 64;
 
-/// How far ahead of now an assertion may claim to be valid. The nonce already
-/// makes each one single-use; this stops a device from stockpiling a year's supply
-/// against nonces it collected in an afternoon.
+/// How far ahead of now an assertion may claim to be valid, in seconds. The
+/// nonce already makes each assertion single-use. This stops a device from a
+/// stockpile of a year's assertions over nonces it collected in an afternoon.
 const MAX_ASSERTION_LIFETIME: i64 = 300;
 
 fn reject(msg: impl Into<String>) -> Reject {
@@ -74,19 +72,19 @@ struct Payload {
     exp: i64,
 }
 
-/// What a verified assertion establishes: who the client says it is, and which
-/// key said so. Both still have to be checked against the directory.
+/// A verified assertion, reduced to two things: who the client says it is, and
+/// which key said so. The directory must still check both.
 #[derive(Debug)]
 pub struct DeviceProof {
     pub identity: ExternalIdentity,
     pub thumbprint: String,
 }
 
-/// Verify an assertion, consuming its nonce.
+/// Verify an assertion and spend its nonce.
 ///
-/// The signature is checked before the nonce is spent, so an unsigned flood
-/// cannot exhaust the store -- and a *replayed* valid assertion still fails,
-/// because its nonce is already gone.
+/// The signature is checked before the nonce is spent, thus an unsigned flood
+/// cannot empty the store. A *replayed* valid assertion still fails, because its
+/// nonce is already gone.
 pub fn verify(
     assertion: &str,
     audience: &str,
@@ -135,9 +133,9 @@ pub fn verify(
     Ok(DeviceProof { identity, thumbprint: thumbprint(&key) })
 }
 
-/// The stored form of a public key: base64url-unpadded SHA-256 over the raw
+/// The stored form of a public key: unpadded base64url of SHA-256 over the raw
 /// uncompressed point. One derivation, here, because the tray computes the same
-/// thing before registering and a disagreement would deny every granted login.
+/// value before it registers, and a disagreement would deny every granted login.
 pub fn thumbprint(key: &[u8]) -> String {
     b64url_encode(ring::digest::digest(&ring::digest::SHA256, key).as_ref())
 }
@@ -147,17 +145,17 @@ fn b64url_encode(bytes: &[u8]) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
-/// Nonces this broker has issued and not yet seen used.
+/// The nonces that this broker issued and has not seen spent.
 ///
 /// One-shot and short-lived, which is the whole replay defense: an assertion is
-/// bound to a value only this process handed out, and spending it removes it.
-/// Held in memory on purpose -- a restart invalidates every outstanding nonce,
-/// and a client that finds one refused asks for another.
+/// bound to a value that only this process handed out, and a spend removes it.
+/// In memory on purpose -- a restart invalidates every outstanding nonce, and a
+/// client that finds one refused asks for another.
 pub struct Nonces {
     ttl: Duration,
-    /// Outstanding nonces, bounded. Past the ceiling `GET /nonce` refuses rather
-    /// than evicting: evicting would let a flood of requests invalidate the
-    /// nonce a legitimate device is about to use.
+    /// The ceiling on outstanding nonces. Above it, `GET /nonce` refuses and
+    /// does not evict: eviction would let a flood of requests invalidate the
+    /// nonce that a legitimate device is about to use.
     max: usize,
     inner: Mutex<HashMap<String, i64>>,
 }
@@ -167,7 +165,7 @@ impl Nonces {
         Self { ttl, max, inner: Mutex::new(HashMap::new()) }
     }
 
-    /// A fresh nonce, or `None` if too many are outstanding.
+    /// A fresh nonce, or `None` when too many are outstanding.
     pub fn issue(&self, rng: &ring::rand::SystemRandom, now: i64) -> Option<String> {
         let mut bytes = [0u8; 16];
         rng.fill(&mut bytes).ok()?;
@@ -183,8 +181,8 @@ impl Nonces {
         Some(nonce)
     }
 
-    /// Spend a nonce. `false` if it was never issued, has expired, or has
-    /// already been used -- all three are one answer to the client.
+    /// Spend a nonce. `false` when it was never issued, has expired, or was
+    /// already spent -- the client hears one answer for all three.
     fn consume(&self, nonce: &str, now: i64) -> bool {
         let mut inner = self.inner.lock().expect("nonce store");
         inner.remove(nonce).is_some_and(|expiry| expiry > now)
@@ -195,11 +193,11 @@ impl Nonces {
     }
 }
 
-/// Is this an operator-typed grant handle -- eight hex digits, as
+/// Is this an operator-typed grant handle: eight hex digits, as
 /// `kerbridge_core::grant::short_id` renders one?
 ///
-/// The handle reaches a comparison and a log line, never a filter, but it
-/// arrives in a URL path and a permissive check here would put arbitrary client
+/// The handle reaches a comparison and a log line, never a filter. But it
+/// arrives in a URL path, and a permissive test here would put arbitrary client
 /// text in both.
 pub fn is_grant_handle(id: &str) -> bool {
     id.len() == 8 && id.bytes().all(|c| c.is_ascii_hexdigit())

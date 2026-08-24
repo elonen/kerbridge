@@ -23,7 +23,7 @@
 #
 # It is derived from `git describe`, never from Cargo.toml, which sidesteps the
 # five-manifest version drift for release purposes entirely. `--match 'v*'` is
-# load-bearing: the repository carries tags that name no release -- `apt` marks
+# required: the repository carries tags that name no release -- `apt` marks
 # the signed repository, and git describe honours a lightweight tag -- and the
 # nearest of those would otherwise become the version. That needs tags in
 # the checkout -- `fetch-depth: 0` in CI. A tree with no `.git` at all, an export

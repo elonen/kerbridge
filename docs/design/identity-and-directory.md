@@ -97,7 +97,7 @@ Each user carries `(OA;;RPWP;77b5b886-…;;PS)` — SELF write of the
 Personal-Information set — as an *explicit* ACE from the class default.
 Inherited ACEs are ordered after explicit ones, and the access check grants on
 the first match. Thus a deny that is inherited from the OU is never reached. The
-measurement covered all four ways: deny by attribute GUID, deny by property set,
+measurement covered every way: deny by attribute GUID, deny by property set,
 object created before the ACE, and object created after it. SELF write succeeded
 each time.
 
@@ -252,7 +252,7 @@ bound against the parent OU, because their question is only whether a DN is
 sync-owned. That question has no reason to know which IdP an account came from,
 and a ticket is a ticket.
 
-The IdP-specific OU is not filing. Three things make it necessary:
+The IdP-specific OU is not filing. These things make it necessary:
 
 - **Role markers resolve by an exactly-one subtree search.** The broker finds
   the admission group by `kbrole1|realm-admission`, under its own search base. If
@@ -270,7 +270,7 @@ The IdP-specific OU is not filing. Three things make it necessary:
   different. Objects that fail the match are reported and never touched, and that
   is what makes a shared OU only wasteful and not destructive.
 
-Three things stay single: the `sAMAccountName` namespace, which is domain-wide,
+These things stay single: the `sAMAccountName` namespace, which is domain-wide,
 and thus each sync's collision scan already sees each other source's names; the
 UPN suffix; and the resource OU, where an operator nests groups from any source
 together.
@@ -422,7 +422,7 @@ are escalation primitives *within* a directory whose whole population this
 credential already owns, and whose only purpose is to have tickets issued from
 it.
 
-The cost is real and recurring: sixteen ACEs that carry schema GUIDs, re-derived
+The cost is real and recurring: the ACEs that carry schema GUIDs, re-derived
 each time that sync learns to write another attribute, and each mismatch aborts
 `make up`.
 

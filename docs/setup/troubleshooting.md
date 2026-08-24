@@ -1,11 +1,11 @@
 # When it does not work
 
 Companion to [step 8 (*Verify end to end*) in SETUP.md](../../SETUP.md#8-verify-end-to-end).
-Read the first section *before* you start to debug a ticket problem. Three commands
+Read the first section *before* you start to debug a ticket problem. Some commands
 that look harmless will destroy a correct ticket. Then you will search for a
 fault that you caused yourself.
 
-## Three commands that will ruin your test
+## Commands that will ruin your test
 
 - **`klist get <spn>`** destroys a valid injected TGT. This was measured, and
   it occurs each time.
@@ -36,7 +36,7 @@ restart the redirector.
 | Symptom | Cause |
 |---|---|
 | `make ready` says `endpoint` failed on the certificate | The cause can be slow issuance only — wait, then run it again. If not, the cause is the strategy's material: [`compose-deployment.md`](compose-deployment.md#supply-the-certificate) |
-| Every sign-in is rejected, and nothing in the config set looks wrong | The broker API issues v1 tokens. This is the most common setup failure: [`entra.md`](entra.md#four-defaults-that-are-wrong-for-kerbridge) |
+| Every sign-in is rejected, and nothing in the config set looks wrong | The broker API issues v1 tokens. This is the most common setup failure: [`entra.md`](entra.md#entra-defaults-that-are-wrong-for-kerbridge) |
 | A token request fails with `AADSTS500011` | The broker API has no Application ID URI |
 | Windows sign-in fails with a redirect-URI mismatch | The public client does not have the WAM redirect URI |
 | Sync logs 403 on every Graph read | Admin consent was not given for `User.Read.All` / `Group.Read.All` |

@@ -216,8 +216,8 @@ from a real run.
   not read from a display string). Thus the identity also survives the TGS
   exchange, not only the injected TGT.
 
-  The tray was measured the same night, on the same machine, and all four
-  paths hold:
+  The tray was measured the same night, on the same machine, and every
+  path holds:
 
   - At startup, the tray refuses a ticket that is not the grant's own, and
     gets a new one instead of adopting it.

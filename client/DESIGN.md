@@ -174,7 +174,7 @@ Authorization: Bearer <oidc access token, aud = broker>
 ```
 
 The client discriminates on the **status code and the body**, never on
-reachability. The three measured shapes are:
+reachability. The measured shapes are:
 
 | What the client sees | What it means |
 |---|---|
@@ -231,7 +231,7 @@ to look. Neither folder is a Rust module: each file is reached by `#[path]` from
 the subject that owns it, so the grouping costs the module tree nothing.
 
 **An agent crate owns its platform's windows and nothing else.** It supplies the
-eight methods of `agent::Host` — wake the UI thread, notify, report an outcome,
+methods of `agent::Host` — wake the UI thread, notify, report an outcome,
 say that an elevation has started, name the primary action, raise the status
 surface, open a path, and ask the OS for a token — and the core knows nothing
 else about it.
@@ -367,9 +367,9 @@ whatever the client asks for.
 
 The word is **delegated user**, not *pinned*. The registry key and the config
 field keep their names, but *pin* collides with `kbmanage`'s
-`kbstate1|namepinned|` and is already overloaded four ways.
+`kbstate1|namepinned|` and is already overloaded.
 
-Three things follow, and the first is the whole point:
+These things follow, and the first is the whole point:
 
 - **A delegated sign-in authorizes, and it never injects.** The browser proves
   the person at the keyboard, and not the account that the machine works as. So
@@ -436,7 +436,7 @@ whole thing off on macOS in one line and keeps `#[cfg]` out of the agent.
 
 ## The status model
 
-The core reports five independent values, and **there is no precedence
+The core reports several independent values, and **there is no precedence
 anywhere**. A single ordered enum can only report the loudest of several
 concurrently true facts. The fault this model prevents is a surface that reports
 one true fact and hides another.
@@ -449,7 +449,7 @@ one true fact and hides another.
 | `in_flight` | what is running |
 | `next_attempt_at_earliest` | the soonest time at which the agent tries again |
 
-Four things must **not** become states. Each has been one, and each cost the
+These things must **not** become states. Each has been one, and each cost the
 model an axis:
 
 - **Delegation is not a state.** It changes `actions` and the verb in the
@@ -473,9 +473,9 @@ model an axis:
 | `WillStop` | a usable ticket, but the supply is gone, so access stops at a known time |
 | `Stopped` | no ticket, and this machine is supposed to be working |
 
-### The three facts
+### The facts
 
-`condition` is a pure function of three local facts.
+`condition` is a pure function of local facts.
 
 **T — the machine holds a *usable* ticket, not merely a ticket.**
 
@@ -524,7 +524,7 @@ a refresh token in memory, or a native sign-in that is enabled*.
 
 The native term is the only unknowable one, because a silent success **is** the
 test for a usable OS credential. The machine finds out when it tries, and
-`Stopped` catches it when the try fails. `Supply` names which of the three stands
+`Stopped` catches it when the try fails. `Supply` names which one stands
 behind the next renewal, in the order the worker tries them: `Grant`,
 `WindowsSignIn`, `BrowserSignIn` or `None`.
 
@@ -605,8 +605,8 @@ fact.
 
 **Only unentailed blockers are emitted.** `NoBrokerUrl` entails every blocker
 downstream of it, and `RealmNotRegistered` never appears without a known realm,
-so a first-run machine emits exactly `{NoBrokerUrl}` and not four entries of which
-three are consequences. Without that rule every surface invents its own
+so a first-run machine emits exactly `{NoBrokerUrl}` and not that entry with its
+consequences. Without that rule every surface invents its own
 precedence, and the model then has two unwritten precedence chains instead of
 none.
 `RealmNotRegistered` together with `NoSupply` is **not** entailment: both are
@@ -618,9 +618,9 @@ lines up between them, and `message` is the detail channel that a blocker never
 restates.
 
 `NetworkError` merges *unreachable*, *TLS refused*, *rate-limited* and *5xx*,
-because those class by **how they clear** and not by what caused them: all four
+because those class by **how they clear** and not by what caused them: all of them
 clear on a retry, and the distinct sentences stay in `message`. This merges what
-[Failure classes](#failure-classes) separates into four, consciously, on the
+[Failure classes](#failure-classes) separates, consciously, on the
 recoverability reading.
 
 `NtlmFallback` is the agent's diagnosis and appears only when the fallback is
@@ -659,7 +659,7 @@ and share one label, *Retry* can wear *Authorize this PC for svc-builder*. So
   `GrantRefused`, where to authorize again is the one thing that cannot help, and
   `RealmUnknown`, which waits.
 - **Nothing that gets or spends a ticket is offered while `usable` is false** —
-  not `SignIn`, not `ReinjectTicket`, not `CreateGrant`. Three measured reasons:
+  not `SignIn`, not `ReinjectTicket`, not `CreateGrant`. The measured reasons:
   the ticket cannot work; enrollment from cold needs a restart, which discards
   any ticket obtained first; and this is the one state measured to *destroy* a
   ticket, where a failed `klist get` evicted a still-valid TGT.
@@ -711,7 +711,7 @@ expiring* never renders beside *authorization expires in…*. They coexist only 
 `Flaky`, where both are true about different subjects, and there the ticket clock
 leads because it is the nearer deadline.
 
-**The identity line has three rules and no state table.**
+**The identity line follows rules, not a state table.**
 
 - **Delegated → the grant target, always.** It is the only identity available
   before a ticket exists, and on a delegated machine the principal is the
@@ -752,7 +752,7 @@ machine in a grants-off deployment, and it is better than an invented offer.
 ## Words
 
 Sentence case throughout, and no trailing punctuation. The English copy is the
-source and the other ten tables are generated from it. All of it is in
+source and the other tables are generated from it. All of it is in
 `strings/`; `present.rs` chooses which string a state gets.
 
 | `Condition` | Headline |
@@ -832,7 +832,7 @@ names the mechanism and that keyword is what has to reach the support request.
 
 The tag is the sysadmin's handle and the sentence is the end user's consequence:
 two audiences, one line, no conditional, and the tag must not restate the
-sentence. Four rules produce them:
+sentence. These rules produce them:
 
 1. **Say what happened, in the real term** — TLS, WAM, Kerberos, NTLM,
    `LanmanWorkstation`, the hostname, the realm. The user quotes these terms to
@@ -847,7 +847,7 @@ sentence. Four rules produce them:
 **There is no per-failure headline.** `condition`, `blockers` and `message` leave
 no slot for one, and there is one failure title per *operation*.
 
-**Four nouns, ruled once**
+**The nouns, ruled once**
 
 - **"this device"** everywhere. It is Microsoft's own term in this sense, and
   both agents share the table. The scope is stated exactly once, where it can
@@ -874,7 +874,7 @@ badge and no "while you were out" list.
 Two gates, in order.
 
 **Gate 1 — is it worth an announcement at all?** Do not announce a successful
-operation, with three exemptions: the condition improved from a fault; a lengthy
+operation, with these exemptions: the condition improved from a fault; a lengthy
 user-started operation finished and its outcome has nowhere else to land; or it
 is a fault or the grant deadline.
 
@@ -928,7 +928,7 @@ the repair notification, where SMB sessions genuinely are the subject.
 
 ## The icon
 
-Four looks for five conditions, and both axes are the model's own facts.
+Fewer looks than conditions, and both axes are the model's own facts.
 `kerbridge_client::icon` holds the mapping, the geometry, the halo and the glyph
 threshold, and both agents render from it.
 
@@ -1049,7 +1049,7 @@ Two consequences of that table are traps, and one accessor owns each of them:
 
 - **`Settings::windows_sign_in` is the stored flag `&& cfg!(windows)`.** The flag
   defaults to on and travels with `config.toml`, so to read it raw made a Mac
-  claim a supply that cannot exist, and five things downstream went wrong at once
+  claim a supply that cannot exist, and several things downstream went wrong at once
   — including a *Renew now* that provably cannot get a ticket.
 - **`device::AVAILABLE` is false on macOS**, so the offer is absent from the
   model and not filtered out of the surface.

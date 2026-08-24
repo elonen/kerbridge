@@ -1,6 +1,6 @@
 # kerbridge-core — what the components agree on
 
-Three kinds of thing, in descending order of how loudly a disagreement would
+These kinds of thing, in descending order of how loudly a disagreement would
 fail.
 
 **Formats**, which must match byte for byte: the provider-neutral
@@ -27,7 +27,7 @@ The readers and the writers are separate programs that never talk to each other.
 `kerbridge-broker` looks it up minutes later, `kbmanage` reads the same markers a
 month after that. A second spelling anywhere does not raise an error — it makes
 the account unfindable or the admission group unrecognized, silently, and only for
-some of the readers. One implementation, linked by all four, is the whole point;
+some of the readers. One implementation, linked by every reader, is the whole point;
 a private copy on either side is a divergence waiting to happen.
 
 That argument is strongest for the formats and weakest for the vocabulary, and

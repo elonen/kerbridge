@@ -48,7 +48,7 @@ continue to get Kerberos [tickets](GLOSSARY.md#ticket) with no sign-in — for e
 
 ### On Entra:
 
-You register three [Entra apps](GLOSSARY.md#entra-app):
+You register these [Entra apps](GLOSSARY.md#entra-app):
 
 - `kerbridge-broker`: supplies authentication for the KerBridge [broker](GLOSSARY.md#broker) server component
 - `kerbridge-client`: supplies authentication for the systray [agent](GLOSSARY.md#agent) on workstation
@@ -167,7 +167,7 @@ strategies, and what the Windows client does with a ticket after it holds one.
 
 KerBridge works for me. The UX is fairly polished, and most of the design uses
 well-known standards. But the solution is experimental and non-standard. A
-seasoned sysadmin/programmer developed it, but with heavy LLM assistance in
+seasoned sysadmin/programmer developed it, but with heavy [LLM assistance](SECURITY.md#software-design-and-llm-written-code) in
 all phases from research to hardening. There are no warranties or guarantees of any
 kind. This is Open Source Software: use it at your own risk, do security audits, and post
 reports and fixes if you find that something is broken.

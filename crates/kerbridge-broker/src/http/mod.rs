@@ -1,9 +1,8 @@
-//! The vocabulary every route speaks: the one failure type, the two identity
-//! proofs, and the few checks that belong to no single route.
+//! The vocabulary every route speaks: failure type, identity proofs, and
+//! the checks that belong to no single route.
 //!
-//! Deliberately a leaf -- nothing here reaches [`crate::state::AppState`], so
-//! what the routes share cannot quietly grow into a second place the process is
-//! wired together.
+//! This module is a leaf on purpose: nothing here must read
+//! [`crate::state::AppState`].
 
 use axum::Json;
 use axum::http::{HeaderMap, StatusCode};
@@ -14,9 +13,8 @@ use serde_json::json;
 use crate::config::DeviceGrantConfig;
 
 /// Every failure is one of these. The client sees the status and a short
-/// reason; the detail goes to the log under the same request id, because a
-/// caller who is told exactly which check refused them has been told how to
-/// pass it.
+/// reason. The detail goes to the log under the same request id: a caller who
+/// learns exactly which check refused them has learned how to pass it.
 pub struct Failure {
     pub status: StatusCode,
     pub client: &'static str,
@@ -42,13 +40,13 @@ pub fn refuse(route: &str, request_id: &str, failure: Failure) -> Response {
         .into_response()
 }
 
-/// Every rejected identity proof is one status and one sentence, whichever check
-/// failed and whichever proof it was: a caller told exactly which check refused
-/// them has been told how to pass it.
+/// A refusal of an identity proof. Always one status and one sentence, whichever
+/// check failed and whichever proof it was.
 pub fn unauthorized(detail: impl Into<String>) -> Failure {
     Failure::new(StatusCode::UNAUTHORIZED, "invalid identity proof", detail)
 }
 
+/// Unix time, in seconds. A clock before the epoch is a 500.
 pub fn now() -> Result<i64, Failure> {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).map_err(|e| {
@@ -56,14 +54,15 @@ pub fn now() -> Result<i64, Failure> {
     })
 }
 
-/// An identity may only be used under the source it was minted by.
+/// Refuse an identity that arrived at a different source than the one that
+/// minted it.
 ///
-/// A bearer token cannot fail this: the adapter that verified it stamps its own
-/// source name into the identity, so the two agree by construction. A
-/// device-grant assertion is the case that needs it -- it carries an encoded
-/// identity and is verified against a deployment-wide audience, so nothing else
-/// stops one minted under source A from being spent at source B's path, where
-/// B's admission group would be the one consulted.
+/// A bearer token cannot fail this test: the adapter that verified the token
+/// stamps its own source name into the identity, thus the two agree by
+/// construction. The device-grant assertion is the case that needs the test. It
+/// carries an encoded identity and is verified against a deployment-wide
+/// audience, thus nothing else stops an assertion minted under source A from
+/// being spent at the path of source B, where B's admission group would decide.
 pub fn same_source(source: &Source, identity: &ExternalIdentity) -> Result<(), Failure> {
     if identity.source() == source {
         return Ok(());
@@ -74,9 +73,9 @@ pub fn same_source(source: &Source, identity: &ExternalIdentity) -> Result<(), F
     )))
 }
 
-/// Refuse everything device-grant if the deployment has the feature off. The
-/// tray never asks, because `GET /{source}/config` says `days: 0`; this is what
-/// answers anything else that does.
+/// Refuse every device-grant route when the deployment has the feature off. The
+/// tray never asks, because `GET /{source}/config` says `days: 0`. This answers
+/// anything else that asks.
 pub fn enabled(grants: &DeviceGrantConfig) -> Result<(), Failure> {
     if grants.enabled() {
         return Ok(());
@@ -94,11 +93,11 @@ pub enum Proof<'a> {
     DeviceGrant(&'a str),
 }
 
-/// Parse the `Authorization` scheme. Exactly one must match; anything else is
-/// `None`, so an unrecognized scheme is rejected outright rather than falling
-/// through to a weaker check.
+/// Parse the `Authorization` header into the proof it carries. Exactly one
+/// scheme must match; anything else is `None`. An unknown scheme is thus refused
+/// outright and does not fall through to a weaker check.
 ///
-/// RFC 6750 says the scheme is case-insensitive; Windows and curl disagree about
+/// RFC 6750 makes the scheme case-insensitive. Windows and curl disagree about
 /// which case they send.
 pub fn proof(headers: &HeaderMap) -> Option<Proof<'_>> {
     let value = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
@@ -116,8 +115,9 @@ pub fn proof(headers: &HeaderMap) -> Option<Proof<'_>> {
     None
 }
 
-/// Correlates the client's error response with the server's log lines. Random
-/// rather than sequential so it carries no information about traffic volume.
+/// A fresh id that ties the client's error response to the server's log lines.
+/// Random and not sequential, thus it tells a client nothing about traffic
+/// volume.
 pub fn request_id(rng: &ring::rand::SystemRandom) -> String {
     use ring::rand::SecureRandom;
     let mut bytes = [0u8; 8];

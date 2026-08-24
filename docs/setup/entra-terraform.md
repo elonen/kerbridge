@@ -1,19 +1,19 @@
 # Entra setup with Terraform
 
-This is the easy way to create the [three app registrations](entra.md) and the
+This is the easy way to create the [app registrations](entra.md) and the
 admission group. If you do not want Terraform, see
 [the manual path](entra-manual.md). The manual path gives an identical result,
 by hand.
 
 This path is better for these reasons:
 
-- Terraform generates the six values that must match between Entra and the
+- Terraform generates the values that must match between Entra and the
   `[provider_config]` table of `deploy/configs/idp_entra.toml`, and then reads
   them back directly. As a result, you do not copy a value from a portal blade
   by hand.
-- The module also sets the four items that have incorrect default values in
+- The module also sets the items that have incorrect default values in
   Entra. If these items are absent, the source file looks correct, but each
-  login always fails. The four items are:
+  login always fails. These items are:
   - v2 tokens
   - the Application ID URI
   - the WAM redirect URI
@@ -71,7 +71,7 @@ cp terraform.tfvars.example terraform.tfvars     # set tenant_id
 terraform init
 terraform plan                                   # a real dry run -- read it
 terraform apply
-./print-provider-config.sh                                   # print the 6 values to paste
+./print-provider-config.sh                                   # print the values to paste
 ```
 
 ```mermaid
@@ -87,7 +87,7 @@ flowchart LR
 
 `print-provider-config.sh` **writes no file** — it prints, and you paste. It:
 
-- prints exactly the six `[provider_config]` values, as a TOML fragment on
+- prints exactly the `[provider_config]` values, as a TOML fragment on
   stdout, and the steps that follow on stderr. Pasting the fragment into
   `deploy/configs/idp_entra.toml` is your step: the script cannot know whether
   that file exists yet or where its table starts.
@@ -151,7 +151,7 @@ encrypts the data at rest.
 
 ## Teardown
 
-`terraform destroy` removes the three apps, the group, and the consent.
+`terraform destroy` removes the apps, the group, and the consent.
 
 - **Throwaway test tenant** — you can do this freely.
 - **Live tenant** — when you delete the group, its object id is lost. A group

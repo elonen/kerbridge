@@ -188,7 +188,7 @@ another host, or if you manage the directory remotely.
 > only if it is really necessary, for example when you must use ACME `HTTP-01`
 > for your TLS strategy.
 
-The other three ports each have a `*_BIND` variable in `.env`. The variable
+The other ports each have a `*_BIND` variable in `.env`. The variable
 keeps each port off the interfaces that must not serve it. `LDAPS_BIND` is
 loopback-only by default. `MEMBER_BIND` and `KDC_BIND` are open, because a
 member must be able to join the DC, and a client must be able to reach the KDC.

@@ -5,7 +5,7 @@ it with `curl`. That leaves one thing untested by anything: **the client's own
 sign-in**. `kerbridge-client` does authorization-code + PKCE against whatever
 `/config` advertises, and no test drives it.
 
-This serves the three endpoints that flow needs, and issues tokens the broker's
+This serves the endpoints that flow needs, and issues tokens the broker's
 verifier accepts unmodified. It exists so a Windows or macOS client can be taken
 through a real sign-in without a tenant.
 
@@ -83,7 +83,7 @@ were served from: the address and the issuer are separate strings.
 
 ## Choosing who signs in
 
-The users default to the three `seed-demo.sh` creates, with the same object ids,
+The users default to the ones `seed-demo.sh` creates, with the same object ids,
 so the identities line up with the directory:
 
 | name | role in the bench |

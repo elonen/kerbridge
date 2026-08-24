@@ -1,7 +1,7 @@
 # The up-front decisions
 
 Detail for [step 1 (*Decide the names*) in SETUP.md](../../SETUP.md#1-decide-the-names).
-Make these seven decisions before you install anything. Each decision is frozen at the
+Make these decisions before you install anything. Each decision is frozen at the
 first provisioning, or is expensive to change later.
 
 | Decision | Frozen by | Cost of changing it later |
@@ -112,7 +112,7 @@ The broker endpoint (`https://kerbridge.example.site`) relays Kerberos tickets
 to workstations. Thus it needs a TLS certificate.
 
 A [Docker Compose deployment](../../GLOSSARY.md#docker-compose-deployment)
-brings its own Caddy and terminates TLS with it, in one of three strategies:
+brings its own Caddy and terminates TLS with it, in one of these strategies:
 
 | Strategy | Choose when |
 |---|---|

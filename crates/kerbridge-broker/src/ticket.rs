@@ -1,7 +1,7 @@
-//! `POST /{source}/ticket` -- the exchange the whole service exists for.
+//! `POST /{source}/ticket`: exchange an identity proof for a TGT.
 //!
-//! Either identity proof arrives here, and the two meet at the same directory
-//! lookup, so the admission path is one path by construction rather than by
+//! Both identity proofs arrive here, and the two meet at the same directory
+//! lookup. The admission path is thus one path by construction, not by
 //! discipline.
 
 use std::sync::Arc;
@@ -35,12 +35,12 @@ pub async fn ticket(
 ) -> Response {
     let request_id = request_id(&state.rng);
     let started = Instant::now();
-    // Claimed before any work and released however the request ends. Refused
-    // rather than queued: a queue is the same unbounded work with a delay in
-    // front of it, and the helper already knows to back off on a 429.
+    // Claimed before any work, and released however the request ends. Refused
+    // and not queued: a queue is the same unbounded work with a delay in front
+    // of it, and the helper already backs off on a 429.
     //
-    // One budget for the whole process, not one per source: what it protects is
-    // the single directory and the single issuer behind all of them.
+    // One budget for the whole process, not one per source. It protects the
+    // single directory and the single issuer behind all of them.
     let outcome = match state.inflight.try_acquire() {
         Ok(_permit) => match state.source(&source) {
             Ok(src) => issue(&state, src, &headers, &request_id).await,
@@ -75,6 +75,7 @@ pub async fn ticket(
     }
 }
 
+/// Verify the proof, resolve the account, and get a TGT for it.
 async fn issue(
     state: &AppState,
     src: &SourceState,
@@ -104,7 +105,7 @@ async fn issue(
     same_source(&src.source, &identity)?;
 
     // Safe to log: a source and a subject are directory coordinates, not
-    // credentials. The token they arrived in is never logged.
+    // credentials. The token that carried them is never logged.
     eprintln!(
         "[broker] AUTH  {request_id} {}{}",
         identity.label(),
@@ -114,8 +115,8 @@ async fn issue(
         ))
     );
 
-    // A device grant satisfies the admission group *and* the grant group; a
-    // bearer token satisfies the first alone.
+    // A device grant must satisfy the admission group *and* the grant group. A
+    // bearer token must satisfy the first alone.
     let lookup = match &device {
         Some(_) => src.directory.resolve_for_grant(&identity).await,
         None => src.directory.resolve(&identity).await,
@@ -128,10 +129,10 @@ async fn issue(
         Err(e) => return Err(directory_failure(state, &identity, e).await),
     };
 
-    // The grant itself: present on this object, and inside its effective window.
-    // Both are re-read here rather than trusted from the assertion, which is
-    // what keeps `kbmanage device revoke` and the duration knob working within
-    // one ticket lifetime, exactly like every other revocation lever.
+    // The grant itself: on this object, and inside its effective window. Both
+    // are re-read here and not trusted from the assertion. That is what keeps
+    // `kbmanage device revoke` and the duration setting effective within one
+    // ticket lifetime, like every other revocation lever.
     let live = match &device {
         Some(thumbprint) => Some(live_grant(state, &account, thumbprint, now)?),
         None => None,
@@ -165,11 +166,12 @@ async fn issue(
     Ok(TicketResponse { principal: ticket.principal, ccache_b64: ticket.ccache_b64 })
 }
 
-/// The grant this assertion claims, if the directory still agrees it is usable.
+/// The grant that this assertion claims, if the directory still agrees that it
+/// is usable.
 ///
-/// **401, not 403.** A revoked, expired or clamped grant means the client's
-/// correct next move is a browser sign-in, which is what 401 says to the tray.
-/// 403 means the identity is fine and re-authenticating will not help -- true of
+/// **401, not 403.** After a revoked, expired or clamped grant, the correct next
+/// move for the client is a browser sign-in, and 401 is what says that to the
+/// tray. 403 means the identity is good and a new sign-in does not help: true of
 /// "not in the grant group", false of every case here.
 fn live_grant<'a>(
     state: &AppState,
@@ -192,12 +194,12 @@ fn live_grant<'a>(
     Ok(grant)
 }
 
-/// Stamp the grant's last-use day, if the schedule says to.
+/// Stamp the last-use day of the grant, if the schedule asks for it.
 ///
 /// Fire and forget by design: a failed stamp must never fail a ticket exchange,
-/// because it is a display stamp and not data. `issuerd` re-evaluates the
-/// schedule against the stored value before writing, so a race between two
-/// devices on one account costs a wasted call rather than a double write.
+/// because the stamp is for display and is not data. `issuerd` re-evaluates the
+/// schedule against the stored value before it writes, thus a race between two
+/// devices on one account costs a wasted call and not a double write.
 async fn touch(
     state: &AppState,
     account: &Account,

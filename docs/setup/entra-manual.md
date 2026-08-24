@@ -1,13 +1,13 @@
 # Entra setup by hand — portal or Azure CLI
 
-This page tells you how to create the three app registrations and the admission
+This page tells you how to create the app registrations and the admission
 group by hand. The result is identical to the result of
-[the Terraform module](entra-terraform.md), except for the three display names:
+[the Terraform module](entra-terraform.md), except for the display names:
 the portal walk-through below uses `kerbridge-broker`, `kerbridge-client` and
 `kerbridge-sync`, and Terraform and the CLI blocks use `KerBridge broker API`,
 `KerBridge helper` and `KerBridge sync`. A display name is yours to select. No
 config value holds one. [`entra.md`](entra.md) tells you
-*what* these objects are, which six `[provider_config]` values they produce, and the four
+*what* these objects are, which `[provider_config]` values they produce, and the
 defaults that Entra sets incorrectly. This page is only the *how*.
 
 Use this path if you cannot run Terraform against your tenant, or if you do not
@@ -21,9 +21,9 @@ Terraform does.
   Privileged Role Administrator role or the Global Administrator role.
 - A note that you keep during the procedure. You need:
   - the **tenant ID**;
-  - the **Application (client) ID** of each of the three registrations;
+  - the **Application (client) ID** of each registration;
   - one secret.
-- All three registrations are single-tenant ("Accounts in this organizational
+- Every registration is single-tenant ("Accounts in this organizational
   directory only" / `AzureADMyOrg`).
 
 ## What you build
@@ -75,9 +75,9 @@ flowchart LR
    | State | `Enabled` |
 
    The two user-consent fields appear only when *Who can consent* is `Admins
-   and users`. The portal makes them mandatory then. No user sees these four
+   and users`. The portal makes them mandatory then. No user sees these
    strings while step 4 pre-authorizes the client, but Terraform sets the same
-   four, so keep them the same.
+   ones, so keep them the same.
 
 4. **Expose an API → Authorized client applications → Add a client
    application.** Enter the **`kerbridge-client` application ID from section
@@ -168,8 +168,8 @@ no admission group and mirrors no users. Then every sign-in fails with a 403.
 - Each block captures the generated id into a shell variable, and the last
   block prints the `[provider_config]` lines. Thus this path can supply the
   config directly — it works as the wizard script.
-- Two steps use `az rest` against Graph, because the convenience commands of
-  the CLI do not cover them. The portal does those two steps more easily.
+- Some steps use `az rest` against Graph, because the convenience commands of
+  the CLI do not cover them. The portal does those steps more easily.
 
 ### 0. Pick the tenant and a scope id
 
@@ -281,7 +281,7 @@ group_id=$(az ad group create \
   --query id -o tsv)
 ```
 
-### 6. The six `[provider_config]` values
+### 6. The `[provider_config]` values
 
 ```sh
 cat <<TOML

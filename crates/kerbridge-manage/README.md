@@ -10,7 +10,7 @@ broken link.
 ## Why it exists
 
 - **RSAT/ADUC is the alternative, and it is worse for this.** It is a Windows
-  install for three group operations, and it authenticates as the realm
+  install for a few group operations, and it authenticates as the realm
   `Administrator` with a password. `kbmanage` runs from a shell as `svc-kerbridge-manage`
   over LDAPS, delegated to write `OU=Resources` and to do nothing in the IdP parent OU
   but read and delete-child.

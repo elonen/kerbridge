@@ -1,8 +1,8 @@
 //! Broker configuration, and the document it publishes to helpers.
 //!
-//! The whole of it comes from the config set; secrets arrive as the files it
-//! names, never as values -- a password in a config file is a password in every
-//! backup of it.
+//! All of it comes from the config set. Secrets arrive as the files that the
+//! set names, never as values: a password in a config file is a password in
+//! every backup of that file.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -18,10 +18,11 @@ pub struct Config {
     pub kdcs: Vec<String>,
     pub services: Vec<String>,
     pub ldap_url: String,
-    /// The domain root. Accounts are searched from here whatever source they
-    /// belong to: the identity filter already names the source, and searching
-    /// per-source subtrees would make two objects claiming one identity across
-    /// two OUs invisible rather than [`crate::directory::Denied::Ambiguous`].
+    /// The domain root. Every account search starts here, whatever source the
+    /// account belongs to: the identity filter already names the source. A
+    /// search of per-source subtrees would hide two objects that claim one
+    /// identity across two OUs, instead of
+    /// [`crate::directory::Denied::Ambiguous`].
     pub ldap_base_dn: String,
     pub ldap_bind_dn: String,
     pub ldap_bind_password: String,
@@ -32,22 +33,22 @@ pub struct Config {
     pub timeout: Duration,
     pub max_inflight: usize,
     pub audit_log_file: Option<PathBuf>,
-    /// Passed to `kerbridge-notify` verbatim. Read from `main.toml` rather than
-    /// per component, because an operator wiring up a channel is wiring up one.
+    /// Passed to `kerbridge-notify` verbatim. Read from `main.toml` and not per
+    /// component: an operator who sets up a channel sets up one channel.
     pub notify: kerbridge_core::config::Notify,
     pub device_grants: DeviceGrantConfig,
-    /// Every source this process serves, in the order `main.toml` lists them.
-    /// May be empty: a realm mid-bootstrap has no source yet, and a broker that
-    /// refused to start would take the deployment's only running service with
-    /// it.
+    /// Every source that this process serves, in the order that `main.toml`
+    /// lists them. May be empty: a realm part-way through bootstrap has no
+    /// source yet, and a broker that refused to start would take down the only
+    /// running service of the deployment.
     pub sources: Vec<SourceConfig>,
 }
 
 /// One source, as this process serves it.
 ///
-/// The name is three things at once -- the URL segment a request arrives on, the
-/// source field of every identity this adapter mints, and the OU those accounts
-/// live in -- which is exactly why it is stated once, in the config set, and
+/// The name is three things at once: the URL segment that a request arrives on,
+/// the source field of every identity that this adapter mints, and the OU that
+/// those accounts live in. It is thus stated once, in the config set, and
 /// derived everywhere else.
 pub struct SourceConfig {
     pub source: Source,
@@ -57,37 +58,37 @@ pub struct SourceConfig {
     pub ou: String,
 }
 
-/// The device-grant options, off by default so an operator who does nothing gets
-/// nothing -- the way the rest of the stack fails closed.
+/// The device-grant options. Off by default: an operator who does nothing gets
+/// nothing, the way the rest of the stack fails closed.
 pub struct DeviceGrantConfig {
-    /// How long a device may go without a human proving the identity to Entra
+    /// How long a device may go before a human proves the identity to Entra
     /// again. **Not** the revocation window: every lever in `DESIGN.md`
-    /// @ Ticket policy still takes at most one ticket lifetime, because each is
-    /// re-checked on the exchange path. `0` turns the feature off, and turns off
-    /// every outstanding grant with it -- the clamp in
-    /// [`kerbridge_core::grant::DeviceGrant::effective_end`] is evaluated on
-    /// every exchange, so "I disabled it and it stayed on" cannot happen.
+    /// @ Ticket policy still takes at most one ticket lifetime, because the
+    /// exchange path re-checks each one. `0` turns the feature off, and turns
+    /// off every outstanding grant with it. Every exchange evaluates the clamp
+    /// in [`kerbridge_core::grant::DeviceGrant::effective_end`], thus "I
+    /// disabled it and it stayed on" cannot happen.
     pub days: u32,
-    /// A safety bound rather than policy: what stops a compromised broker from
-    /// looping `GrantDevice` and ballooning an object. Configurable because one
+    /// A safety bound and not policy: it stops a compromised broker from a loop
+    /// of `GrantDevice` calls that inflates an object. Configurable because one
     /// service account across twenty build machines is the economical shape --
     /// Entra licenses per user -- and a small constant would break the exact
-    /// deployment this feature exists for. `issuerd` enforces it; this copy is
-    /// what the tray is told.
+    /// deployment that this feature exists for. `issuerd` enforces the bound;
+    /// this copy is what the tray hears.
     pub max_per_user: usize,
-    /// What an assertion must name to be accepted here, so one captured against
-    /// this deployment cannot be presented to another.
+    /// An assertion must name this value to be accepted here. An assertion
+    /// captured against this deployment thus cannot be presented to another.
     ///
-    /// Derived from the realm rather than configured. The broker has no
-    /// knowledge of its own public URL -- Caddy terminates TLS and `listen` is
-    /// loopback -- and a separate setting would be a string the tray's copy has
-    /// to match exactly. The realm is already the deployment's identity, and the
+    /// Derived from the realm, not configured. The broker does not know its own
+    /// public URL -- Caddy terminates TLS and `listen` is loopback -- and a
+    /// separate setting would be a string that the tray's copy must match
+    /// exactly. The realm is already the identity of the deployment, and the
     /// tray reads this value straight out of `GET /{source}/config`.
     ///
-    /// Deployment-wide rather than per source, because that is what it names.
-    /// What keeps a grant minted under one source from being spent under
-    /// another is [`crate::same_source`], which compares the identity the
-    /// assertion decodes to against the source the request arrived on.
+    /// Deployment-wide and not per source, because that is what it names.
+    /// [`crate::http::same_source`] is what stops a grant minted under one
+    /// source from being spent under another: it compares the identity that the
+    /// assertion decodes to against the source that the request arrived on.
     pub audience: String,
 }
 
@@ -98,17 +99,18 @@ impl DeviceGrantConfig {
 }
 
 /// The `GET /{source}/config` body. The helper bootstraps from a broker URL
-/// alone and discovers everything else here, which is what keeps it ignorant of
+/// alone and discovers everything else here. That keeps the helper ignorant of
 /// whether the realm behind this broker is Samba, MIT, or anything else.
 #[derive(Serialize)]
 pub struct Discovery {
-    /// Where this source's other routes are, as a reference to resolve against
-    /// the URL this document was fetched from -- `/entra`, not an absolute URL.
+    /// Where the other routes of this source are. A reference to resolve
+    /// against the URL that this document came from -- `/entra`, not an absolute
+    /// URL.
     ///
-    /// Relative because nothing here knows the deployment's public address: the
-    /// broker listens on loopback behind Caddy, so an absolute answer could only
-    /// be rebuilt from the `Host` header, and whoever sets that header could then
-    /// re-base the client onto another origin.
+    /// Relative, because nothing here knows the public address of the
+    /// deployment: the broker listens on loopback behind Caddy. An absolute
+    /// answer could only come from the `Host` header, and whoever sets that
+    /// header could then move the client to another origin.
     pub base_url: String,
     pub oidc: OidcDiscovery,
     pub kerberos: KerberosDiscovery,
@@ -116,10 +118,10 @@ pub struct Discovery {
     pub device_grant: DeviceGrantDiscovery,
 }
 
-/// What a helper needs to know about device grants before offering one. `days`
-/// of 0 is the whole answer for a deployment with the feature off: the tray
-/// hides the button, and takes the duration in its own strings from this value
-/// rather than hardcoding one.
+/// The device-grant facts a helper needs before it offers one. `days` of 0 is
+/// the whole answer for a deployment with the feature off: the tray hides the
+/// button. The tray also takes the duration in its own strings from this value,
+/// instead of a hardcoded one.
 #[derive(Serialize)]
 pub struct DeviceGrantDiscovery {
     pub days: u32,
@@ -130,20 +132,21 @@ pub struct DeviceGrantDiscovery {
 #[derive(Serialize)]
 pub struct KerberosDiscovery {
     pub realm: String,
-    /// May be empty: with `_kerberos._udp.<realm>` published, enrollment
-    /// registers the realm without pinning a KDC, which is the shape that
-    /// survives a DC being replaced.
+    /// May be empty. With `_kerberos._udp.<realm>` published, enrollment
+    /// registers the realm and pins no KDC, which is the shape that survives a
+    /// replaced DC.
     pub kdcs: Vec<String>,
-    /// Escape hatch: plain host/suffix entries for `ksetup /addhosttorealmmap`
-    /// when a service lives outside the realm's DNS zone. Empty in the common
-    /// layout, where the DNS-suffix heuristic maps same-zone hosts unmapped.
+    /// Escape hatch: plain host or suffix entries for
+    /// `ksetup /addhosttorealmmap`, for a service outside the realm's DNS zone.
+    /// Empty in the common layout, where the DNS-suffix heuristic maps
+    /// same-zone hosts with no entry.
     pub services: Vec<String>,
 }
 
 impl Config {
-    /// The `GET /{source}/config` body. The `oidc` half comes from the adapter
-    /// verbatim: which scopes to ask for, and in what syntax, is a provider fact
-    /// and not one this file is allowed to have an opinion about.
+    /// Build the `GET /{source}/config` body. The `oidc` half comes from the
+    /// adapter verbatim: which scopes to ask for, and in what syntax, is a fact
+    /// about the provider, and this file may hold no opinion about it.
     pub fn discovery(&self, oidc: OidcDiscovery, source: &str) -> Discovery {
         Discovery {
             base_url: format!("/{source}"),
@@ -162,11 +165,11 @@ impl Config {
         }
     }
 
-    /// The whole config set, reduced to what this process serves.
+    /// Read the whole config set, and reduce it to what this process serves.
     ///
-    /// Every source's `[provider_config]` is parsed here rather than at first
-    /// use: a typo in one would otherwise surface as one source's logins
-    /// failing, long after the operator stopped watching the deploy.
+    /// Every `[provider_config]` parses here and not at first use. A typo in one
+    /// would otherwise show up as the failed logins of one source, long after
+    /// the operator stopped watching the deploy.
     pub fn load(dir: &Path) -> Result<(Self, Vec<String>)> {
         let set = kerbridge_core::config::Config::load(dir)?;
         let (main, realm, broker) = (set.main, set.realm, set.broker);
@@ -216,27 +219,27 @@ impl Config {
     }
 }
 
-/// The audience a device assertion must name. Opaque to both ends and compared
-/// byte for byte; its only job is to keep an assertion captured against one
-/// deployment from being presented to another.
+/// The audience that a device assertion must name. Opaque to both ends and
+/// compared byte for byte. Its only job: an assertion captured against one
+/// deployment cannot be presented to another.
 fn device_grant_audience(realm: &str) -> String {
     format!("kerbridge://{realm}")
 }
 
 /// Refuse a listen address outside loopback.
 ///
-/// This process speaks plain HTTP; Caddy terminates TLS and reaches it over the
-/// loopback the two share by living in one network namespace. A non-loopback
-/// bind therefore serves `POST /{source}/ticket` in the clear -- on the bench to
-/// the bridge, and under production host networking to every interface on the
-/// box. `DESIGN.md` @ Security boundaries: "The broker accepts traffic only on
-/// host loopback."
+/// This process speaks plain HTTP. Caddy terminates TLS and reaches the broker
+/// over the loopback that the two share, because they live in one network
+/// namespace. A bind outside loopback thus serves `POST /{source}/ticket` in the
+/// clear: on the bench to the bridge, and under production host networking to
+/// every interface on the box. `DESIGN.md` @ Security boundaries: "The broker
+/// accepts traffic on host loopback only."
 ///
 /// `deploy/scripts/config/check-env.sh` refuses the same thing before the
-/// container starts, and this is deliberately the same rule rather than a
-/// stricter one: the script cannot help anyone who runs the binary directly,
-/// and two checks that disagreed would be worse than either alone. The port is
-/// free to move -- nothing publishes it; the address is not.
+/// container starts. The rule here is the same one and not a stricter one: the
+/// script cannot help anyone who runs the binary directly, and two checks that
+/// disagreed would be worse than either alone. The port is free to move --
+/// nothing publishes it. The address is not.
 fn require_loopback(listen: &str) -> Result<()> {
     // Split at the *last* colon: an IPv6 literal is full of the others.
     let host = listen.rsplit_once(':').map_or(listen, |(host, _)| host);

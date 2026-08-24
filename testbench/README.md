@@ -6,12 +6,12 @@ Nothing here is production code, for testing only.
 
 | Path | What | Read by |
 |---|---|---|
-| `entra-token/` | 17 signed JWTs + `jwks.json`: one positive delegated token and 16 negatives (wrong tenant/audience/`azp`/scope, missing `scp` or `oid`, `idtyp=app`, expired, future `nbf`, unknown kid, `alg:none`, HS256 confusion, malformed tid, iss/tid mismatch, v1 shape, non-JWT garbage). The script also generates a second positive for a different `oid`, which only the live run below uses — see the note there. | `kerbridge-idp/src/entra.rs`, and `deploy/scripts/bench/ci-stack.sh` |
-| `graph-sync/` | 20 recorded-shape Graph exchanges — delta init/incremental/paging, soft and hard delete, 410 Gone, 429 throttle, transitive members, admission-group ambiguity, syncable-rule cases. | `kerbridge-sync/src/graph/mod.rs`, `graphclient.rs` |
-| `planner/` | 13 golden files, each `{desired, current, plan, error}` — retention, quarantine, admission-group-deleted freeze, partial-read refusal, ambiguous-identity conflict, role-marker restamp. | `kerbridge-sync/src/planner/mod.rs`, `graph/mod.rs` |
+| `entra-token/` | signed JWTs + `jwks.json`: one positive delegated token and 16 negatives (wrong tenant/audience/`azp`/scope, missing `scp` or `oid`, `idtyp=app`, expired, future `nbf`, unknown kid, `alg:none`, HS256 confusion, malformed tid, iss/tid mismatch, v1 shape, non-JWT garbage). The script also generates a second positive for a different `oid`, which only the live run below uses — see the note there. | `kerbridge-idp/src/entra.rs`, and `deploy/scripts/bench/ci-stack.sh` |
+| `graph-sync/` | recorded-shape Graph exchanges — delta init/incremental/paging, soft and hard delete, 410 Gone, 429 throttle, transitive members, admission-group ambiguity, syncable-rule cases. | `kerbridge-sync/src/graph/mod.rs`, `graphclient.rs` |
+| `planner/` | golden files, each `{desired, current, plan, error}` — retention, quarantine, admission-group-deleted freeze, partial-read refusal, ambiguous-identity conflict, role-marker restamp. | `kerbridge-sync/src/planner/mod.rs`, `graph/mod.rs` |
 | `tls/` | Two certificates, covering both arms of every branch the client's X.509 reader has: private-CA-issued vs self-signed, subjectAltName vs none, UTCTime vs GeneralizedTime, ASCII vs UTF8String. Nothing presents or trusts these — they are bytes to parse. | `kerbridge-client/src/tls.rs` |
 
-The three `make_fixtures` scripts stay because they are the only way to
+The `make_fixtures` scripts stay because they are the only way to
 regenerate their corpus:
 
 - `entra-token/make_fixtures.py` is **run live** by `make test-stack`:
@@ -37,7 +37,7 @@ identifiers in the fixtures are synthetic.
 
 ## `deploy/bench.env` — the bench's own fixtures, and why they are not here
 
-The development bench has a cast too — three seeded accounts with their object
+The development bench has a cast too — seeded accounts with their object
 ids, `mockidp`'s tenant id, and the example file server's name and address — and
 it is tracked, in [`../deploy/bench.env`](../deploy/bench.env). Fixtures in this
 directory's sense: every identifier synthetic, the same on every bench that has
@@ -77,7 +77,7 @@ them, and [`../docs/setup/entra-manual.md`](../docs/setup/entra-manual.md) is th
 | `devicecode.py` | Device-code flow for a delegated admin Graph token. |
 | `pkce.py` | Auth code + PKCE for a *user* token, loopback redirect. `client/kerbridge-client/src/oidc.rs` is the port of this, and `kerbridge.exe --token-file` still takes the `access_token` it writes. |
 | `setup_directory.py`, `setup_directory2.py` | Build the user, group and membership zoo the sync follow-ups need. The disposable tenant was deleted; a new one has to be rebuilt before any `exp_*` script runs. |
-| `exp_delta.py`, `exp_delta2.py`, `exp_misc.py` | Pointed at the three Graph items still open: the 410 `Location` shape, real throttling values, and the delta propagation-lag bound. |
+| `exp_delta.py`, `exp_delta2.py`, `exp_misc.py` | Pointed at the Graph items still open: the 410 `Location` shape, real throttling values, and the delta propagation-lag bound. |
 | `exp_final.py`, `exp_graph_reads.py`, `exp_xstream.py` | The read-shape, guest-claim and cross-stream-cursor instruments, kept as the worked examples of driving `graph.py` against a tenant. |
 
 Every `exp_*` script loads `config.json` and `directory.json`, which the previous

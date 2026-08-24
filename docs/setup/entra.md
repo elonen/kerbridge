@@ -9,9 +9,9 @@ itself is one of:
 - **[entra-terraform.md](entra-terraform.md)** — recommended.
 - **[entra-manual.md](entra-manual.md)** — the portal walk-through, or `az`.
 
-## The six `[provider_config]` values
+## The `[provider_config]` values
 
-The three Entra app registrations and the group produce **six values** that
+The Entra app registrations and the group produce the values that
 `configs/idp_entra.toml`'s `[provider_config]` table must contain. Each value
 must match what Entra issued. A client id with a typing error, or a stale
 group id, denies every login. Usually no value in the config set looks
@@ -36,10 +36,10 @@ statement, that allows sync to ignore the changed name. Sync then retires
 every user that the new group does not admit. This retirement is what a
 repoint means.
 
-## Four defaults that are wrong for KerBridge
+## Entra defaults that are wrong for KerBridge
 
-These defaults break a deployment with no error message. Terraform sets all
-four correctly. The manual guide identifies each one at the step where it
+These defaults break a deployment with no error message. Terraform sets them
+all correctly. The manual guide identifies each one at the step where it
 occurs.
 
 - **The broker API must issue v2 tokens.** The default for

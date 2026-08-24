@@ -34,7 +34,7 @@ Binds as `svc-kerbridge-manage`, which `kbsetup directory` creates with two
 deliberately different grants:
 
 - **resource OU** — write
-- **`OU=CloudIdP`** — delete-child, plus write on exactly three attributes
+- **`OU=CloudIdP`** — delete-child, plus write on exactly these attributes
   (`sAMAccountName`, `userPrincipalName`, `extensionName`) for the rename below.
   Nothing else: that OU is `kerbridge-sync`'s, and the per-attribute form
   means this identity cannot reach `msDS-ExternalDirectoryObjectId`, which
@@ -198,7 +198,7 @@ Two ways, and the difference matters:
 ## From Windows with RSAT
 
 `samba-tool` on the DC is the other supported path. This section is for when you
-nonetheless want ADUC — it works, but four separate things are in the way, none
+nonetheless want ADUC — it works, but several separate things are in the way, none
 of them obvious.
 
 Where each applies:

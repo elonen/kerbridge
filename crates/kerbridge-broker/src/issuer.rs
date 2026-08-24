@@ -1,17 +1,15 @@
 //! Client for `issuerd`, over its Unix socket.
 //!
 //! The framing and the message types come from `kerbridge-core`, so this side
-//! cannot drift from the daemon's. The socket call itself is synchronous and
-//! runs on the blocking pool: issuing a ticket shells out to `samba-tool` and
-//! `kinit` inside the realm container, so it is genuinely blocking work, and
-//! reusing the proven `read_frame`/`write_frame` beats an async transcription
-//! of them.
+//! cannot drift from the daemon's. The socket call is synchronous and runs on
+//! the blocking pool: to issue a ticket, `issuerd` runs `samba-tool` and
+//! `kinit` in the realm container, thus the call blocks for real.
 //!
-//! Three outcomes leave here and stay distinct all the way out, because the
-//! helper discriminates on them (`docs/windows-testbench.md`): a ticket, a
-//! refusal, and an issuer that could not be reached. Collapsing the last two
-//! would make a policy denial and an outage look identical to whoever is
-//! diagnosing one.
+//! Three outcomes leave here and stay distinct all the way out: a ticket, a
+//! refusal, and an issuer that this process could not reach. The helper
+//! discriminates on the three (`docs/windows-testbench.md`). If the last two
+//! became one, a policy denial and an outage would look the same to whoever
+//! diagnoses one.
 
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -20,6 +18,7 @@ use std::time::Duration;
 use anyhow::{Context, anyhow};
 use kerbridge_core::issuer::{IssueRequest, Request, Response, Ticket, read_frame, write_frame};
 
+/// How to reach `issuerd`. Each call opens its own connection; there is no pool.
 pub struct Issuer {
     socket: PathBuf,
     timeout: Duration,
@@ -53,9 +52,9 @@ impl Issuer {
         }
     }
 
-    /// A directory write. Every grant verb answers `Done` or an error; anything
-    /// else means the two ends disagree about the protocol, which is an outage
-    /// rather than a refusal.
+    /// Send a directory write. Every grant verb answers `Done` or an error. Any
+    /// other answer means the two ends disagree about the protocol, which is an
+    /// outage and not a refusal.
     pub async fn write(&self, request: Request) -> Result<(), IssuerError> {
         match self.call(request).await? {
             Response::Done { .. } => Ok(()),
@@ -72,7 +71,6 @@ impl Issuer {
     }
 }
 
-/// The issuer answered, but not to the question that was asked.
 fn unexpected(response: &Response) -> IssuerError {
     let shape = match response {
         Response::Ok(_) => "a ticket",

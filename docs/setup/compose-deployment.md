@@ -4,7 +4,7 @@ One of the two ways to bring up the KerBridge server in
 [step 4 (*Stand up the broker host*) in SETUP.md](../../SETUP.md#4-stand-up-the-broker-host).
 The other is [`debian-deployment.md`](debian-deployment.md).
 
-The server runs as the `kerbridge` Compose project: five images built from this
+The server runs as the `kerbridge` Compose project: images built from this
 repository, with Caddy and the Samba AD DC among them. Everything on this page
 is that project. What is true whichever method you chose —
 enabling synchronization, operator notification, backup — is in
@@ -34,8 +34,8 @@ lines you change. Read it once, then this page for the settings themselves.
   "${f%.example}"; done`) and make sure that each `[provider_config]` value in
   `configs/idp_entra.toml` is correct. Terraform's `print-provider-config.sh` prints them.
   If you did the manual setup, copy them yourself from the Entra portal. For
-  the six values and the purpose of each, see
-  [`entra.md`](entra.md#the-six-providerconfig-values).
+  each value and its purpose, see
+  [`entra.md`](entra.md#the-providerconfig-values).
 - Set `TLS_STRATEGY` and make sure that certificate issuance works. The next
   section tells you how.
 
@@ -154,12 +154,12 @@ Stack is up.
 <details>
 <summary>What <code>make up</code> does, in order</summary>
 
-1. It does three preflight checks: the `.env` values, the TLS material, and
+1. It does preflight checks: the `.env` values, the TLS material, and
    the secret permissions.
 2. It generates the host-side secrets into `deploy/secrets/generated/`.
 3. It provisions the domain in Samba AD.
 4. It creates `OU=CloudIdP` with `OU=Entra` inside it, `OU=Resources`, and
-   three service accounts:
+   the service accounts:
    `svc-kerbridge-broker`, which is the read-only LDAP identity of the broker
    and needs no delegation, and `svc-kerbridge-sync-entra` and
    `svc-kerbridge-manage` with theirs.

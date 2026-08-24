@@ -115,8 +115,8 @@ Notes:
     The [Docker Compose deployment](GLOSSARY.md#docker-compose-deployment)
     brings its own Samba in a container, so there the host distribution is
     yours to choose.
-  - We did not measure the resource requirements. The stack is four small
-    containers plus a Samba AD DC. A VM with 2 vCPU and 4 GB was sufficient.
+  - We did not measure the resource requirements. The stack is a few small
+    containers and a Samba AD DC. A VM with 2 vCPU and 4 GB was sufficient.
 - **Outbound internet access** from that host to
   `login.microsoftonline.com:443`, `graph.microsoft.com:443`, and to your
   ACME/DNS provider if you use one.
@@ -143,7 +143,7 @@ builds them from this repository. Every base image is pinned by digest.
 | `nas1` | **Optional.** A fixture and demonstration, not a product. A joined Samba member, so that the full path operates on one machine. It lives in [`compose.nas.yaml`](deploy/compose.nas.yaml) and starts only with `make up NAS=1`. When it starts, it takes the DC's port `:445` and uses it for the smbd file share. Then no other Kerberos service can join the AD. Recommendation: join your own file server on a different IP address — step 5. | 445 |
 
 `realm` and `broker` run with `cap_drop: ALL` and `no-new-privileges`. `realm`
-gets back only the five capabilities that measurements showed necessary. The
+gets back only the capabilities that measurements showed necessary. The
 permanent state is in these Docker volumes:
 
 - `samba` (domain SID, KDC keys, directory, SYSVOL)
@@ -189,7 +189,7 @@ really necessary:
 
 ## 2. Register three applications in Entra
 
-You make three registrations and one security group, all in your one tenant.
+You make these registrations and one security group, all in your one tenant.
 **The apps are read-only in Entra.** No app is an administrator:
 
 1. **Broker API app** — makes sure that tokens addressed to it are valid. It
@@ -211,14 +211,14 @@ Select one path. The two paths give the same result:
 | | |
 | --- | --- |
 | **[Terraform](docs/setup/entra-terraform.md)** — recommended | `terraform apply && ./print-provider-config.sh` creates all of it, and prints a `[provider_config]` block to paste into `deploy/configs/idp_entra.toml`. It needs `az login` to your tenant. |
-| **[By hand](docs/setup/entra-manual.md)** | The steps in the portal, plus an `az` script that prints the same six values. Use this path if the Azure CLI cannot connect to your tenant, or if you want to see each step. |
+| **[By hand](docs/setup/entra-manual.md)** | The steps in the portal, plus an `az` script that prints the same values. Use this path if the Azure CLI cannot connect to your tenant, or if you want to see each step. |
 
 On both paths, you must also put the **sync credential** in place as a file
 secret. No path does this for you —
 [The sync credential (entra-manual.md)](docs/setup/entra-manual.md#the-sync-credential).
 
-Go to **→ [entra.md](docs/setup/entra.md)** — the six `[provider_config]` values
-that the three apps supply, and **four Entra defaults that are wrong for
+Go to **→ [entra.md](docs/setup/entra.md)** — the `[provider_config]` values
+that the apps supply, and **the Entra defaults that are wrong for
 KerBridge**.
 These defaults break a deployment with no error message. Read it if you used
 the manual path, or if a sign-in is rejected later.
@@ -272,9 +272,9 @@ Two ways to run the server, and this is the one step that differs. Neither is
 the default — pick the one that fits how you run everything else.
 
 - **[Docker Compose deployment](GLOSSARY.md#docker-compose-deployment)** —
-  five containers built from this repository, bringing their own Caddy and
+  containers built from this repository, with their own Caddy and
   Samba AD DC.
-- **[Debian deployment](GLOSSARY.md#debian-deployment)** — six `.deb` packages,
+- **[Debian deployment](GLOSSARY.md#debian-deployment)** — `.deb` packages,
   daemons under systemd, on the distro's own `samba-ad-dc`.
 
 Both need the same two decisions written down: the realm identity, which is
@@ -340,7 +340,7 @@ run one again after a failure and it continues where it stopped.
 ### Debian packages
 
 ```sh
-sudo apt install ./kerbridge*.deb   # answers seven questions, writes /etc/kerbridge
+sudo apt install ./kerbridge*.deb   # answers the install questions, writes /etc/kerbridge
 sudo kbsetup realm                  # provisions the domain, its CA and certificate
 sudo kbsetup directory              # the OUs, the service accounts, the delegation
 sudo $EDITOR /etc/kerbridge/*.toml  # only if you left a question unanswered
@@ -350,7 +350,7 @@ The first line installs files you already have. To take them from the signed apt
 repository instead, and get `apt upgrade` with them, add the source first —
 [`debian-deployment.md`](docs/setup/debian-deployment.md#from-the-apt-repository).
 
-The seven install-time questions are the realm, the LDAPS URL, and the five
+The install-time questions are the realm, the LDAPS URL, and the
 Entra values from step 2; answer them and the config set is written for you. The
 packages install files and start daemons — they never provision a domain, which
 is what `kbsetup realm` is for, and never edit a configuration file you already
@@ -480,7 +480,7 @@ comes from the SID, and it is the permanent control.
 Go to **→ [Authorize a cloud identity (file-server.md)](docs/setup/file-server.md#6-authorize-a-cloud-identity)** —
 the reason that the domain-local step is your only revocation control that is
 faster than the ticket lifetime; the `samba-tool` equivalents; and **when a
-membership change becomes effective** (four layers can each hide a
+membership change becomes effective** (several layers can each hide a
 revocation).
 
 ---
@@ -572,7 +572,7 @@ not ask for administrator rights on this platform.
 > [Known rough edges](docs/setup/rough-edges.md).
 
 Go to **→ [macos-client.md](docs/setup/macos-client.md)** — the meanings of
-the three icon states in the menu bar; the managed preference that
+the icon states in the menu bar; the managed preference that
 preconfigures a fleet; the locations of the configuration and the logs; and
 the parts that are not built yet.
 
@@ -644,7 +644,7 @@ options, which include a connection to your own monitoring (for example,
 Zabbix) in place of a chat channel. Details here: [operator notifications](deploy/README.md#operator-notification).
 
 **→ [troubleshooting.md](docs/setup/troubleshooting.md)** — read this *before*
-you debug. Three `klist` commands destroy a working ticket, and then you look
+you debug. Some `klist` commands destroy a working ticket, and then you look
 for a fault that you caused. The page also tells you about the NTLM fallback
 after a ticket expires, and it has a symptom-to-cause table for each step.
 
@@ -666,7 +666,7 @@ after a ticket expires, and it has a symptom-to-cause table for each step.
    ```sh
    make down                    # stop and remove the containers
    make clean                   # host build output; reports what Docker still holds
-   make clean-docker-images     # the five built images
+   make clean-docker-images     # the built images
    make clean-docker-volumes    # the data. Irreversible.
    ```
 
@@ -684,7 +684,7 @@ after a ticket expires, and it has a symptom-to-cause table for each step.
    `/etc/kerbridge.secrets/` stay**, and so do the audit logs under
    `/var/log/kerbridge/`. The `_kerbridge` group and the two system users stay
    as well — `deluser` is not available to a postrm, and a uid reallocated
-   later would inherit whatever files still carry it. Remove all three by hand
+   later would inherit whatever files still carry it. Remove them by hand
    if you are certain nothing else does.
 
 > **CAUTION: `make clean-docker-volumes` destroys the domain SID**, and with

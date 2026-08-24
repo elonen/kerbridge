@@ -1,6 +1,6 @@
 # kerbridge-setup — `kbsetup`, the tool that makes the thing exist
 
-One binary, three verbs, all of them idempotent.
+One binary. Every verb is idempotent.
 
 ```
 kbsetup realm [--allow-example-realm]   provision if absent; verify and refuse if present
@@ -21,13 +21,13 @@ test — so the operator-facing tier spans two directories, `kbconfig` and
 ## setup → config → manage
 
 `kbsetup` brings a deployment into existence, `kbconfig` owns its config set,
-`kbmanage` runs it day to day. Three tools, three lifecycle phases — and three
-different privilege positions, which is why they are three programs. This one
+`kbmanage` runs it day to day. One tool per lifecycle phase, and each has a
+different privilege position. That is why they are separate programs. This one
 runs as root on the domain controller and creates things that cannot be
 uncreated; `kbmanage` runs on an operator's own workstation as themselves;
 `kbconfig` runs before either has anything to talk to.
 
-## Three verbs, not one command and not four
+## Why the verbs are separate
 
 - **`realm` and `directory` are separate** because their lifecycles are. The
   realm is created once and never again; `directory` is re-run every time
@@ -40,7 +40,7 @@ uncreated; `kbmanage` runs on an operator's own workstation as themselves;
   is no realm; verifying is what it does when there is. A third state sits
   between them: a `sam.ldb` with no [provision
   stamp](../../GLOSSARY.md#provision-stamp) beside it is a run that stopped
-  partway, and all three verbs refuse it. GLOSSARY.md lists the
+  partway, and every verb refuses it. GLOSSARY.md lists the
   spelling `kbsetup provision` under `avoid`.
 - **There is no `kbdirectory` and no `kbrealm`.** One binary.
 
@@ -49,7 +49,7 @@ uncreated; `kbmanage` runs on an operator's own workstation as themselves;
 It stops where the questions stop. `kbsetup verify` answers *does durable state
 match the config set*; `kbmanage doctor` answers *can this identity reach that
 file server*; `kbconfig check` answers *is the config set internally coherent*.
-Three questions, three tools, and a fourth checker does not grow.
+One question per tool, and no further checker grows.
 
 It also seeds no users and no groups. A `kerbridge-sync` owns each source OU's
 content and creates the admission group with its marker; `kbsetup directory`

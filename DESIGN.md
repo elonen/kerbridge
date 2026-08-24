@@ -15,7 +15,7 @@ boundaries. The topic pages under [`docs/design/`](docs/design/) hold the rest.
 
 | Page | What it answers |
 |---|---|
-| [Components](docs/design/components.md) | What each of the four containers is, and what it is denied |
+| [Components](docs/design/components.md) | What each container is, and what it is denied |
 | [Identity and directory](docs/design/identity-and-directory.md) | What a cloud identity is, how a token becomes one, and who owns which object in Samba AD |
 | [Tickets](docs/design/tickets.md) | How one sign-in becomes a TGT, who holds KDC authority, what bounds a ticket, and how a machine gets one without a browser |
 | [API and network](docs/design/api-and-network.md) | The wire contract, and the ports, resolvers and firewall zones that carry it |

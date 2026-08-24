@@ -47,8 +47,8 @@ expired on purpose.
 ### generator
 
 A script, the only sanctioned way to change the [corpus](#corpus) it owns.
-There are three; the planner corpus has none, its cases being hand-written
-golden files.
+One per generated corpus; the planner corpus has none, its cases being
+hand-written golden files.
 <!-- refs: `make_fixtures.py` / `make_fixtures.sh`, one per generated corpus: `entra-token`, `graph-sync`, `tls` -->
 <!-- avoid: script -->
 
@@ -70,7 +70,7 @@ a second [positive](#positive), which the committed corpus does not.
 ### negative
 
 A token [fixture](#fixture-test-corpus) that must be refused, named for the
-single defect it carries. Sixteen are committed.
+single defect it carries.
 <!-- refs: names `neg_wrong_tenant`, `neg_expired`, `neg_alg_none`, … -->
 <!-- avoid: bad token, invalid token -->
 

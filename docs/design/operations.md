@@ -330,10 +330,10 @@ v1 events, and their repeat policy:
 | `issuer-refused` — `issuerd` refused an account the broker admitted, so the two disagree. Keyed per account | broker | persisting |
 | `identity-ambiguous` — two directory objects carry one external identity. Keyed per identity | broker | persisting |
 
-The six `<role>-group-<fault>` events above are one family. Each one names a
+The `<role>-group-<fault>` events above are one family. Each one names a
 single condition with a single way out: create and mark a group, unmark the
 extras, or make the configuration and the marker agree. They are separate
-problems, and not one problem that is keyed by the reason, because the three
+problems, and not one problem that is keyed by the reason, because the
 faults change into each other without passing through health. A realm with no
 marked group acquires a second one and is now ambiguous, and it was never right.
 Thus whichever service concludes one of them clears the rest of the family in the
@@ -376,7 +376,7 @@ condition can clear it:
 | `graph-credential-expiring` | a deadline back beyond 30 days |
 | `graph-credential-expired` | a token acquisition that succeeds |
 | `admission-group-missing` | a plan that built with no admission-group alert (sync); a directory lookup that completed (broker) |
-| `admission-group-ambiguous`, `admission-group-misconfigured` | a cycle that read the marker state and found a different one of the three, or none (sync); a directory lookup that completed (broker, `-ambiguous` only) |
+| `admission-group-ambiguous`, `admission-group-misconfigured` | a cycle that read the marker state and found a different one of them, or none (sync); a directory lookup that completed (broker, `-ambiguous` only) |
 | `grant-group-missing`, `grant-group-ambiguous` | a directory lookup that completed |
 | `grant-group-misconfigured` | a plan that built with no device-grant alert |
 | `device-grants-expiring` | a cycle in which no grant is inside the window |
@@ -393,7 +393,7 @@ account is not fixed when the first one works. Each other event clears across
 each of its subjects, because its subject describes the symptom and not a stable
 thing.
 
-The broker's seven conditions are all latent. The broker is request-driven, and
+The broker's conditions are all latent. The broker is request-driven, and
 thus both the raise and the clear wait for somebody to log in. On a quiet
 deployment, an operator can learn at 09:00 about a directory that stopped
 answering overnight. The `idp-*` conditions are raised only if a token arrives
@@ -409,7 +409,7 @@ authentication. Thus it is a secret file, and not an `.env` value.
 
 Notification has two consumers, and not one:
 
-- **Sync** raises the credential, cycle, plan and apply events, the three
+- **Sync** raises the credential, cycle, plan and apply events, the
   admission problems, and `grant-group-misconfigured`. That is the one fault in
   the family that only sync can see, because only sync reads the operator's
   configuration beside the marker.
@@ -430,7 +430,7 @@ Notification has two consumers, and not one:
   `kerbridge-core`, which `issuerd` links.
 
 Sync keeps an audit file of its own, on its own mount, for the same reason as the
-other two services and with one more behind it: it is the daemon that *creates*
+other services and with one more behind it: it is the daemon that *creates*
 the objects. A ticket expires in hours and a device grant in days, but an account
 that sync mints owns files and is a Kerberos principal until somebody retires it.
 Nothing else in the deployment says who was given one.
@@ -449,16 +449,17 @@ the configured threshold is crossed.
 
 ## Test architecture
 
-There are four tiers, cheapest first, because each one needs more of the world
-than the last: nothing, a cross-compiler, Docker, and a provisioned realm. The
-`Makefile` is authoritative, and `make test-all` runs all four.
+The tiers are in order, cheapest first, because each one needs more of the
+world than the last: nothing, a cross-compiler, Docker, and a provisioned
+realm. The `Makefile` is authoritative, and `make test-all` runs them all.
 
 | Target | Needs | What it covers |
 |---|---|---|
 | `make test` (= `test-fast`) | stable Rust | `cargo test --workspace`, `cargo clippy -D warnings`, `shellcheck` over the deployment's scripts, a doc-link checker that resolves every relative markdown link and `#anchor` in the tree, and the Windows client's *pure-logic* unit tests — `krbcred.rs`'s DER encoding and `discovery.rs`'s URL rules — built for the host triple. Those need no Windows and no MinGW: nothing in a test references the Win32 FFI, so the linker never pulls those modules out of the rlib |
 | `make test-win` | MinGW-w64 | the Windows client as a Windows artifact: a clean cross-build to `x86_64-pc-windows-gnu` plus clippy. What this covers and `test-fast` cannot is the **link** — that the shipping binary really builds against the Win32 FFI. LSA, ccache injection and the message loop are not testable on any host, and are checked on a real client by hand |
-| `make test-build` | Docker | every shipping artifact still builds: four service images, both `.exe`s, the operator CLI and the MSI. The only thing that notices a pinned digest that stopped resolving |
+| `make test-build` | Docker | every shipping artifact still builds: the service images, both `.exe`s, the operator CLI and the MSI. The only thing that notices a pinned digest that stopped resolving |
 | `make test-stack` | Docker | the whole server path against a realm provisioned from an empty volume: sign-in proof to a file read over SMB, no tenant and no secret. Runs in a disposable copy of the tree with its own project, names, subnet and port, so it is safe beside a running bench |
+| `make test-deb` | Docker | the Debian packages themselves: `lintian` at build time, then an install, a purge and `piuparts` on trixie and noble, and a check that bookworm and jammy refuse `kerbridge-issuerd` |
 
 `test-fast` opens with `cargo fmt --all --check` over both workspaces. The style
 is rustfmt's default with `use_small_heuristics = "Max"`. `rustfmt.toml` is at the
@@ -469,7 +470,7 @@ The boundaries that those tiers exercise, and where each one lands:
 - The Entra token verifier, with local JWKS and claim fixtures — unit.
 - Provider-neutral external identity normalization — unit, in `kerbridge-core`.
 - The Entra reconciliation planner, as a pure desired/current-state comparison —
-  unit, and twelve of those tests replay recorded Graph fixtures op-for-op.
+  unit, and most of those tests replay recorded Graph fixtures op-for-op.
 - Notification templating, escaping, repeat policy and the durable record —
   unit, in `kerbridge-notify`. Delivery runs against a loopback
   receiver, and covers what a receiver actually gets, that a 404 is not delivery,

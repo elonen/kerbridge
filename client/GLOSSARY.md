@@ -10,7 +10,7 @@ unreadably long if it carried every term at once.
 
 ### action
 
-Something the user may start, from `SignIn` to `OpenSettings` — twelve variants.
+Something the user may start, from `SignIn` to `OpenSettings`.
 The list is flat and unordered by construction, so each `surface` picks its own
 primary, and the list never offers one that provably cannot help — nothing that
 gets or spends a ticket is offered while the machine is not `usable`.
@@ -73,11 +73,11 @@ platform's.
 
 ### blocker
 
-What is missing right now, immediate and unentailed: nine variants from
+What is missing right now, immediate and unentailed: from
 `NoBrokerUrl` to `NtlmFallback`. Blockers explain, `action`s resolve; they are
 not parallel lists and nothing lines up between them. `NoBrokerUrl` swallows
 everything downstream of it, so a first-run machine emits one entry rather than
-four of which three are consequences.
+that entry and its consequences.
 <!-- refs: `kerbridge_client::describe::Blocker` -->
 <!-- avoid: reason, error -->
 
@@ -91,7 +91,7 @@ a DNS SRV answer. A policy-supplied value locks the field in the UI.
 
 ### condition (client)
 
-The single rung a machine is on, derived from three local facts and no network
+The single rung a machine is on, derived from local facts and no network
 term: `Working`, `Flaky`, `WillStop`, `Stopped`, `NotStarted`. It drives the
 `headline`, the icon and the notification `severity`; a broker outage never
 moves it, but appears as a `blocker` and, if it persists, as `Flaky`. Shown to
@@ -192,7 +192,7 @@ headline at all.
 
 ### `Host`
 
-The eight-method seam for everything the agent needs a UI for, installed at
+The seam for everything the agent needs a UI for, installed at
 runtime by the platform's agent binary. Not the platform seam for non-UI work.
 <!-- refs: methods `wake`, `notify`, `finished`, `elevating`, `primary_action_label`, `raise`, `open_path`, `native_token`; non-UI seam is `sys` -->
 <!-- avoid: ui seam, platform seam, backend, the host app -->
@@ -224,7 +224,7 @@ installer. There is no second artwork file to keep in sync with it.
 ### notification
 
 The client's out-of-surface announcement of an `outcome` or a state change, at
-one of the three `severity` levels — a tray balloon on Windows, a Notification
+one of the `severity` levels — a tray balloon on Windows, a Notification
 Center banner on macOS. The core emits and logs unconditionally and each
 platform host decides whether to suppress one because a surface is already on
 screen saying it. Never a parallel record of state.
@@ -250,7 +250,7 @@ derived from facts instead, so a phase never reaches a user.
 
 ### phase (confirmation)
 
-One of the four states of the Windows confirmation modal: `Confirm`, `Waiting`,
+One of the states of the Windows confirmation modal: `Confirm`, `Waiting`,
 `Working`, `Result`. `Waiting` is the moment the secure desktop is up and
 nothing is running yet, so it exists for shielded operations only.
 <!-- refs: `kerbridge-agent-windows/src/modal.rs` -->
@@ -323,7 +323,7 @@ in any layer — the refresh token lives in process memory and dies with it.
 
 ### severity
 
-How loud an announcement is, on the three-value ordered scale `Info` < `Warning`
+How loud an announcement is, on the ordered scale `Info` < `Warning`
 < `Error`. On the client it is keyed on the `condition` being announced rather
 than on the code path that emitted it; on the server it is stamped on the record
 at the moment of raising, so the configured minimum severity judges a later
@@ -344,10 +344,10 @@ stretches none. Shown to users as *Authorization expires in …*.
 ### status (client)
 
 The immutable snapshot a surface repaints from, computed once on the UI thread.
-Every judgment in it is already made — it carries the description's five values
+Every judgment in it is already made — it carries the description's values
 and adds the clocks, the identity and the in-flight actions — and a surface that
 re-derived one would be a second place the lifecycle is settled.
-<!-- refs: `kerbridge_client::agent::status`, `describe::Description`'s five values -->
+<!-- refs: `kerbridge_client::agent::status`, `describe::Description` -->
 <!-- avoid: view model -->
 
 ### supply

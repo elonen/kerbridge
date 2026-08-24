@@ -136,8 +136,8 @@ it is [sync's](#sync) to own, whichever cloud IdP that object came from.
 ### IdP-specific OU
 
 The [OU](#organizational-unit) one [sync](#sync) controls, directly under the
-[IdP parent OU](#idp-parent-ou). It contains the users and groups that sync mirrors
-from one [cloud IdP](#cloud-idp). One per cloud IdP, each with its own
+[IdP parent OU](#idp-parent-ou). Usually: `OU=Entra,OU=CloudIdP`. It contains
+the users and groups that sync mirrors from one [cloud IdP](#cloud-idp). One per cloud IdP, each with its own
 [`svc-kerbridge-sync-<source>`](#svc-kerbridge-sync-ltsourcegt) and written by
 that account alone; the [operator's](#operator) resource objects are outside all
 of them.
@@ -425,7 +425,7 @@ config → manage](#setup--config--manage).
 
 The server-side command-line tool that brings a deployment into existence, run as
 root on the domain controller: the `setup` service on Docker Compose, or the
-host itself on Debian. Three verbs: `realm` provisions the [realm](#realm) if there is none and
+host itself on Debian. The verbs: `realm` provisions the [realm](#realm) if there is none and
 refuses if the one that exists disagrees with the config set, `directory` creates
 the [OUs](#organizational-unit), the [service accounts](#service-account-directory)
 and their [delegation](deploy/GLOSSARY.md#delegation-directory-rights), and
@@ -572,7 +572,7 @@ KerBridge derives it from the account login name and the configured [realm](#rea
 The file [kbsetup](#kbsetup) writes beside `sam.ldb` when `kbsetup realm`
 finishes. `samba-tool domain provision` leaves a database behind when it exits
 partway, so the database alone does not say that a [realm](#realm) exists: with
-no stamp beside it, all three verbs refuse the realm instead of verifying it.
+no stamp beside it, every verb refuses the realm instead of verifying it.
 Samba starts on a half-provisioned domain and then reports a machine account it
 cannot reach, which names nothing about provisioning.
 
@@ -728,18 +728,18 @@ does not issue or process service tickets.
 
 ### setup → config → manage
 
-The three phases of a deployment's life, and the three tools that own them:
+The phases of a deployment's life, and the tools that own them:
 [kbsetup](#kbsetup) brings it into existence, [kbconfig](#kbconfig) owns its
 [config set](deploy/GLOSSARY.md#config-set), [kbmanage](#kbmanage) runs it day to
 day. Say which phase a job belongs to before asking which tool should grow a verb
 for it.
 
-The phases are the reason the three are separate programs rather than one with
-three noun groups. `kbsetup` runs as root on the domain controller and creates
+The phases are the reason these are separate programs rather than one with
+a noun group each. `kbsetup` runs as root on the domain controller and creates
 things that cannot be uncreated; `kbmanage` runs on an [operator's](#operator)
 own workstation as themselves; `kbconfig` runs before either has anything to talk
 to.
-<!-- avoid: the three CLIs, the tool chain, bootstrap/config/admin -->
+<!-- avoid: the CLIs, the tool chain, bootstrap/config/admin -->
 
 ### SID
 

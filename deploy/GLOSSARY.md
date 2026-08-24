@@ -106,7 +106,7 @@ networking and bind mounts under the production state directory.
 
 ### Entra identifiers
 
-The three GUID-shaped `[provider_config]` values in
+The GUID-shaped `[provider_config]` values in
 `configs/idp_<source>.toml` that name a tenant's registered applications: the
 tenant ID, the broker API client ID and the public client ID. A forgotten
 edit — the example file's synthetic placeholders left in place — looks
@@ -235,13 +235,12 @@ for host-run tooling; it regenerates with the realm.
 
 ### realm identity
 
-The four values baked into the Samba database at
-provisioning — realm, DNS domain, NetBIOS domain and
-DC hostname — plus the broker FQDN, which the example-realm gate treats with
-them. The one group a later edit cannot correct: fixing a forgotten one means
+The values baked into the Samba database at
+provisioning: realm, DNS domain, NetBIOS domain and
+DC hostname. The one group a later edit cannot correct: fixing a forgotten one means
 deleting the realm volume, and with it the domain SID and every filesystem ACL
 carrying it.
-<!-- refs: `AD_REALM`, `AD_DNS_DOMAIN`, `AD_NETBIOS_DOMAIN`, `AD_DC_HOSTNAME`, `BROKER_FQDN` -->
+<!-- refs: `AD_REALM`, `AD_DNS_DOMAIN`, `AD_NETBIOS_DOMAIN`, `AD_DC_HOSTNAME` -->
 <!-- avoid: realm config, domain settings -->
 
 ### seed
@@ -305,7 +304,7 @@ volumes because a fresh named volume is root-owned.
 ### ticket policy
 
 The lifetime and renewable lifetime a ticket is asked for,
-and the ceiling that request is clamped to. Four keys in `configs/realm.toml`:
+and the ceiling that request is clamped to. The keys in `configs/realm.toml`:
 `ticket_lifetime_seconds` and `ticket_renewable_seconds` are what the broker
 asks for, `max_lifetime_seconds` and `max_renewable_seconds` are what `issuerd`
 allows. Samba's own domain policy caps the result again below both.

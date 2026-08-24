@@ -164,9 +164,9 @@ at once.
 **The status code does not decide whether the client falls back.** A 401 always
 falls back, and so do the last two 403s above. Those two say that the device
 grant is finished while the person at the keyboard can still sign in that minute,
-and in both the operator's intent *is* "use a browser from now on". The first
-three stay hard, because no browser helps an account that is unprovisioned,
-disabled or outside the realm. To treat all five as hard stops did not send
+and in both the operator's intent *is* "use a browser from now on". The rest
+stay hard, because no browser helps an account that is unprovisioned,
+disabled or outside the realm. To treat them all as hard stops did not send
 granted machines back to the browser. At `device_grant_days` = 0 it stopped them
 getting a ticket at all, measured 2026-08-02. Neither of the two discards the
 stored grant: both are the operator's to undo, and a grant that is put back in
@@ -198,7 +198,7 @@ A DeviceGrant assertion that names any other id is refused 403
 To revoke *itself* needs no such thing, because to leave is not an attack. The
 rule enforces itself, because the grant path never produces an Entra token.
 
-All three routes take an optional **target**: a `for` field on the `POST` body,
+Every route takes an optional **target**: a `for` field on the `POST` body,
 and a `for` query parameter on the other two. It names the account that the grant
 belongs to. If it is absent, the target is the caller themselves, which is each
 self-service request. If it is present, this is the delegation path of

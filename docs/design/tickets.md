@@ -272,7 +272,7 @@ One `extensionName` value per device, on the user's own object:
 kbkey1|label=<escaped>|es256=<base64url-sha256>|start=<epoch>|end=<epoch>|seen=<epoch>
 ```
 
-`extensionName` is used instead of a schema extension, for three reasons. It is
+`extensionName` is used instead of a schema extension, for these reasons. It is
 already a prefix-namespaced multi-value store that this project writes
 (`kbrole1|`, `kbstate1|`). It is not SELF-writable, because `attributeSecurityGUID`
 is absent and thus the attribute sits in no property set. And `kbmanage` already
@@ -332,7 +332,7 @@ IdP-specific OU like everyone else. That is what keeps this small — see
 **A bearer token still yields a ticket for its own subject only.** Delegation
 authorizes a *key*, and the ticket that this key gets later is the service
 account's. A run-as path would carry the same authority with none of the grant's
-three properties: bounded, revocable, and visible in `device list`. It would also
+properties: bounded, revocable, and visible in `device list`. It would also
 keep working with `device_grant_days` set to 0. Accepted cost: there is no
 interactive way to test a service account's share access, and thus that is
 debugged from the granted machine.
@@ -347,7 +347,7 @@ When the two are the same object, this collapses into exactly today's checks.
 Thus the self-service path is the general rule with both identities equal, and
 not a case that stands beside it.
 
-Each of the three `/devices` routes takes a target, through one authorization
+Each `/devices` route takes a target, through one authorization
 helper. `POST` is machine-local by construction, but `GET` and `DELETE` need only
 a token, and thus they are the only operations that can happen away from the
 machine. To leave them out would make each delegated grant create-at-the-machine

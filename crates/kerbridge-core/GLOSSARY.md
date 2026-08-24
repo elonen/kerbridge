@@ -71,7 +71,7 @@ was is what would bury the answer.
 
 The append-only file a service writes its `audit line`s into, named by that
 service's own configuration and kept on a bind mount so it outlives the
-container that wrote it. One per writing service — three of them, each on its
+container that wrote it. One per writing service, each on its
 own mount on purpose, so a compromised broker cannot unlink the issuer's record
 of what it asked for or sync's record of who was given an account.
 <!-- refs: `audit_log_file` in `configs/issuerd.toml`, `configs/broker.toml` and `configs/sync.toml`, `kerbridge_core::audit::AuditLog`, `state/broker-audit/audit.log`, `state/issuer-audit/audit.log`, `state/sync-audit/audit.log` -->
@@ -338,7 +338,7 @@ not resolved this way.
 The `kbrole1|<role>` marker saying what a group is for — `realm-admission`,
 `device-grant`, `delegates` — so a reader matches on the marker and a rename or
 a lost cursor changes nothing. Exactly one group may carry each of the two
-realm-wide roles, and sync names the three ways that can be untrue apart:
+realm-wide roles, and sync names the ways that can be untrue apart:
 **missing** (no group carries it), **ambiguous** (two or more do) and
 **misconfigured** (one does, but not the configured group). `kbrole1|delegates`
 is the exception — non-singleton, one group per delegated account, so

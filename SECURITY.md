@@ -124,7 +124,7 @@ These are the levers that change your own risk, in order of effect.
 
 ## What holds authority
 
-Five parts hold something an attacker wants:
+These parts hold something an attacker wants:
 
 | Part | What it holds |
 |---|---|
@@ -140,43 +140,39 @@ thing that keeps those two apart.
 
 ## Software design, and LLM-written code
 
-LLM agents, mostly Claude Code, wrote much of this project. The project is
-large. Without them, the research and the implementation would need much more
-time and many more resources. The result is not "vibe coded". It is engineered,
-with these mitigations:
+LLM agents, mostly Claude Code, wrote much of this project. The project would not
+have been possible without them, given the amount of research and implementation it required.
+The result is not "vibe coded", however, but specifically engineered to the shape it is.
+Some quality principles:
 
-- **Measurement, not assumption.** Many research spikes measured the
+- **Measurement, not assumed.** Many research spikes measured the
   behaviour that the design rests on, on real Samba, a real Entra tenant, and a
   real TPM. Several plausible designs died on evidence. See
-  [`docs/research/INDEX.md`](docs/research/INDEX.md). **So: if you like the idea but don't trust the implementation,
-  feel free to reimplement based on the research**.
-- **Hundreds of unit and integration tests** across the workspaces.
+  [`docs/research/INDEX.md`](docs/research/INDEX.md). **So: if you like the idea but don't trust the implementation, feel free to reimplement based on the research**.
+- **Extensive unit and integration tests** across the workspaces.
 - **One end-to-end test that proves the whole chain.** `make test-stack`
   provisions an empty realm and syncs a directory. It then issues an OIDC token
   and exchanges it for a KDC-signed TGT. With that ticket, and with no password,
   it reads a file over SMB. It also asserts refusals: a replayed device
   assertion gets a 401, and a user who is not a delegate cannot get a service
   account's ticket.
-- **Structural defences, not checked ones.** Where a check could be forgotten,
+- **Structural defences.** Where a check could be forgotten,
   the design removes the option instead. For example:
   - No symmetric verification routine
     exists in any adapter, so a `HS256` token cannot be verified even if a check
     fails open.
   -  `issuerd` has no TCP listener, so no forgotten firewall rule could expose it.
-- **Rust, and no `unsafe` on the server.** The server code set
+- **Rust, with no `unsafe` on the server.** The server code set
   `#![forbid(unsafe_code)]`, so the compiler refuses one.  Platform calls go
-  through `rustix`'s safe wrappers. Client code (agents) do contain `unsafe` blocks,
-  but they are inherently limited to the running Windows/MacOS user's privileges.
-- **Architectural gates in CI.** `make test` fails the build in three cases:
-  - the Caddy route allowlist and the broker's router disagree;
-  - a second TLS stack enters the tree;
-  - `ring` enters `issuerd`'s dependency tree.
+  through `rustix`'s safe wrappers. Client code (agents) do contain `unsafe` blocks
+  due to their native library dependencies, but they are inherently limited to
+  the running Windows/MacOS user's privileges.
 - **Fail closed by construction.** Every refusal path in the broker's admission
   code returns a denial or a 502. There is no default-allow branch.
 
 ## The risks in detail
 
-Each risk states three things: what can go wrong, what limits it, and what the
+Each risk states what can go wrong, what limits it, and what the
 worst case is.
 
 ### 1. The realm host is the whole realm
@@ -198,7 +194,8 @@ share the same volume.
   A `Drop` handler removes the directory on every path, including every error
   path.
 - The containers run with `no-new-privileges`, read-only root filesystems, and
-  `cap_drop: ALL`. The realm container adds five capabilities. The issuer
+  `cap_drop: ALL`. The realm container adds back only the capabilities that measurements showed
+  necessary. The issuer
   container adds one (`CHOWN`).
 
 **Worst case.** An attacker with code execution on the realm host owns the realm.
@@ -273,7 +270,7 @@ whose code is mostly agent-written.
   depth. Entra issues app-only tokens with the broker audience to **any**
   confidential client in the tenant. The spike `entra-token-validation` measured
   this against a live tenant.
-- The JWKS handling has four bounds:
+- The JWKS handling has these bounds:
   - a 24 h cache;
   - a refresh rate limit of 5 min after a success;
   - a 1 MiB document cap, applied chunk by chunk;
@@ -310,7 +307,7 @@ binding. TLS is the only thing that protects either one.
   never an authorization boundary here.
 
 **Worst case.** A party who can read the traffic gets service tickets for the
-whole realm, for one ticket lifetime. Three parties can do this: a rogue CA in
+whole realm, for one ticket lifetime. These parties can do this: a rogue CA in
 the client's trust store, a corporate TLS interception proxy, and a compromised
 Caddy. A rotation of the user's key does **not** stop this. See risk 5.
 
@@ -402,7 +399,7 @@ An operator needs that write to pin a login name. It also lets the holder
 hand-write a device grant. That grant does not go through `issuerd`, so
 `issuerd`'s per-request checks never run.
 
-**What limits it.** 
+**What limits it.**
 
 - `device_grant_days` in `configs/main.toml` must be non-zero.
 - The target account must already be in the device-grant group.
@@ -452,7 +449,7 @@ key held in the machine's TPM.
 **Stated honestly, in the design: there is no attestation.** The server cannot
 tell a TPM key from a software key, and deliberately does not try.
 
-**Three things to weigh.**
+**Things to weigh.**
 
 1. **macOS has no device grants.** The key creation path is not implemented. The
    TPM-binding property is Windows-only today.
@@ -614,26 +611,13 @@ as every Rust program's do, and nothing here audits it.
   step, and the build process does not do it.
 - **The macOS app is ad-hoc signed only.** There is no Developer ID. This also
   blocks Secure Enclave use.
-- **The Debian packages are signed, but only through the apt repository.** The
-  index at `.../releases/download/apt/` is covered by an OpenPGP signature, and
-  the index carries the hash of every package, so `apt` verifies what it
-  installs. A `.deb` downloaded from a release page carries no signature of its
-  own.
-- The signing key is `F434FD6F31F2D93C0ABB6FDA49A7BBC9D4729807`. The primary is
-  offline; CI holds a signing subkey only, in an environment restricted to
-  `main`. **The subkey expires 2031-08-22** — after that date the repository can
-  no longer be re-signed until it is extended, and `apt update` on a stale index
-  keeps working meanwhile.
-- Other release artifacts carry a `SHA256SUMS` file and **no cryptographic
-  signature**. A hash proves integrity against corruption, not against a
-  substituted release.
+- Release artifacts carry a `SHA256SUMS` file and **no cryptographic signature**.
+  A hash proves integrity against corruption, not against a substituted release.
 - Nothing is published to crates.io.
 
-**Worst case.** Outside the apt repository, you cannot verify from the artifact
-alone that a release came from here. Build from source if that matters to you.
-Every shipping artifact builds in Docker with `make`. Inside it, the signature
-attests that this repository published those bytes — not that they were built
-from any particular source, which nothing here measures.
+**Worst case.** You cannot verify, from the artifact alone, that a release came
+from this repository. Build from source if that matters to you. Every shipping
+artifact builds in Docker with `make`.
 
 ## What no test covers
 

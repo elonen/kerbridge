@@ -17,7 +17,7 @@ The LDAP search root, derived from the realm rather than configured separately:
 
 ### client category
 
-The short refusal string `issuerd` lets cross the socket, a closed set of five:
+The short refusal string `issuerd` lets cross the socket, a closed set:
 `issuer failed`, `bad request`, `unknown account`, `account not eligible`,
 `device grant cap reached`. The detail behind it — account names, command
 output — stays on `issuerd`'s own log.
@@ -27,7 +27,7 @@ output — stays on `issuerd`'s own log.
 
 One entry in a ccache: a client principal, a server principal, four timestamps
 and the ticket flags. The cloud-side sense of the word is `graph credential`
-and the on-disk sense is `secret file`; the three do not overlap.
+and the on-disk sense is `secret file`; these senses do not overlap.
 <!-- refs: `ccache::Credential` -->
 
 ### DENY
@@ -134,7 +134,7 @@ component sees the same store as the `directory`, over LDAPS.
 
 ### ticket flags
 
-The three RFC 4120 `TicketFlags` `issuerd` asserts on before returning a ticket
+The RFC 4120 `TicketFlags` `issuerd` asserts on before returning a ticket
 — `INITIAL` and `RENEWABLE` set, `INVALID` clear — read from the packed form
 MIT stores them in. A non-renewable ticket handed back as renewable is the
 failure this catches, and the client would otherwise only find out when renewal

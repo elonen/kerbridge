@@ -56,8 +56,8 @@ allocating one at the same moment would each see the other's name as free.
   whether anyone gets a ticket at all; device grants are optional and already
   fail closed on their own, so an ambiguous marker there is an event and not an
   outage.
-- Login names for **new** accounts are derived from one of three Entra
-  attributes, chosen by `sam_source` in `configs/sync.toml`: `displayname` (default, every
+- Login names for **new** accounts are derived from one of the Entra
+  attributes named by `sam_source` in `configs/sync.toml`: `displayname` (default, every
   whitespace token joined by dots), `email_username` (the local part of Email, or of the first Other email — an
   account invited from another tenant has no Email in this tenant) or
   `upn` (the UPN local part, most unique). Each falls back to the others when

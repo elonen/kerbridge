@@ -1,6 +1,6 @@
 # kerbridge-config — `kbconfig`, the tool that runs before the realm does
 
-One binary, seven subcommands, and a boundary held by a missing dependency.
+One binary, and a boundary held by a missing dependency.
 
 ```
 kbconfig check [--online]     validate the config set; --online also probes the IdP
@@ -75,9 +75,9 @@ brings rustls regardless.
 ## What `get` answers
 
 Every option of the set, as its *effective value* — the operator's decision
-where there is one, the derivation or the default where there is not. Three
-joins: `kerbridge-core` generates one path per plain field, `src/paths.rs` adds
-the nine read back through an accessor (`realm.base_dn`, `sources.<name>.ou`,
+where there is one, the derivation or the default where there is not. It
+joins three sources: `kerbridge-core` generates one path per plain field,
+`src/paths.rs` adds the paths read back through an accessor (`realm.base_dn`, `sources.<name>.ou`,
 the rest), and each source's adapter answers for its own `[provider_config]`.
 
 **A provider path answers with the adapter's resolved setting, never with the
@@ -161,7 +161,7 @@ real.
 
 ## The `--online` probes
 
-Three questions per source, asked in the adapter because which document to fetch
+One question per source, asked in the adapter because which document to fetch
 and which claim to compare are provider facts. The one that earns the feature is
 the middle one: the issuer the tenant publishes against the issuer the adapter
 derived, since both that and every stored subject come from `tenant_id`, and a

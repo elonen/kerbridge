@@ -124,8 +124,8 @@ a different purpose.
 The broker's 403 and the client error it maps to: a valid identity that is not
 provisioned or is `ambiguous`, is disabled, is outside the admission group or
 outside the device-grant group, is not a delegate of the account it named, or
-asked for a device grant where the feature is off. One status carrying six
-verbatim reasons, which the client tells apart by string because their fixes
+asked for a device grant where the feature is off. One status carrying the
+verbatim reasons above, which the client tells apart by string because their fixes
 differ and none of them is "sign in again".
 <!-- avoid: refused, denied, forbidden, notadmitted -->
 

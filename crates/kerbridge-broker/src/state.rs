@@ -1,5 +1,5 @@
-//! What a request is answered with: one wired-up adapter and directory per
-//! source, and the process-wide resources shared behind all of them.
+//! The state that answers a request: one IdP adapter and one directory client
+//! per source, plus the resources that every source shares.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -27,57 +27,55 @@ const NONCE_TTL: Duration = Duration::from_secs(120);
 /// legitimate device is about to spend.
 const MAX_NONCES: usize = 4096;
 
-/// One source, wired up: everything a request that arrived on its path segment
-/// is answered with.
+/// One source: everything that answers a request which arrived on its path
+/// segment.
 ///
-/// It **owns** its directory client rather than sharing one, so resolving a
-/// request against another source's admission group is not something a caller
-/// can spell.
+/// Each source **owns** its directory client and does not share one. Thus a
+/// caller cannot spell a request that resolves against the admission group of a
+/// different source.
 pub struct SourceState {
-    /// What this adapter stamps into every identity it mints, and what
-    /// [`crate::http::same_source`] compares an assertion's identity against.
+    /// The adapter stamps this into every identity it mints.
+    /// [`crate::http::same_source`] compares an assertion's identity against it.
     pub source: Source,
-    /// The cloud IdP behind this source, and the only thing here that knows
-    /// which one it is. Everything downstream sees an `ExternalIdentity`.
+    /// The cloud IdP behind this source. The only field here that knows which
+    /// IdP it is; everything downstream sees an `ExternalIdentity`.
     pub idp: Box<dyn IdentityProvider>,
     pub directory: Directory,
 }
 
 pub struct AppState {
     pub config: Config,
-    /// By source name -- the path segment. Ordered so the startup line lists
-    /// them the same way twice running.
+    /// Keyed by source name, which is the path segment. Ordered, so that two
+    /// runs print the same startup line.
     pub sources: BTreeMap<String, SourceState>,
     pub issuer: Issuer,
     /// Shared with the adapter, which raises the two IdP conditions from its own
-    /// key-refresh path. The admission problems in [`crate::problems::ROLE_PROBLEMS`]
-    /// are raised here *and* by sync, from the other side of the same directory --
-    /// either may be the only one running when it happens.
+    /// key-refresh path. The broker raises the admission problems in
+    /// [`crate::problems::ROLE_PROBLEMS`], and so does sync, from the other side
+    /// of the same directory: either one may be the only one running at the
+    /// time.
     pub notifier: Arc<Notifier>,
-    /// The grant lifecycle, on a path that survives this container. Written
-    /// through [`AppState::record`], never on its own, so the console copy and
-    /// the durable one cannot say different things.
+    /// The grant lifecycle, on a path that outlives this container. Written
+    /// through [`AppState::record`] only, so that the console copy and the
+    /// durable copy cannot differ.
     pub audit: AuditLog,
     pub rng: ring::rand::SystemRandom,
     /// The device-grant replay window. In memory: a restart invalidates every
-    /// outstanding nonce, and a client that finds one refused asks for another.
+    /// outstanding nonce, and a client whose nonce is refused asks for another.
     pub nonces: Nonces,
-    /// Ticket requests in flight at once. A valid token is not a budget: one
-    /// holder can replay `POST /{source}/ticket` as fast as the network allows, and each
-    /// one that passes costs an RSA verification, a fresh LDAPS bind, and three
-    /// forked root subprocesses inside the realm container. `issuerd` caps the
-    /// last of those from its own side; this is what keeps the flood from
-    /// reaching the directory in the first place.
+    /// The cap on ticket requests in flight at once. A valid token is not a
+    /// budget: one holder can replay `POST /{source}/ticket` as fast as the
+    /// network allows, and each request that passes costs an RSA verification, a
+    /// fresh LDAPS bind, and three forked root subprocesses in the realm
+    /// container.
     ///
-    /// `GET /{source}/config` is deliberately outside it. That route serializes a struct
-    /// that is already in memory and touches nothing else, so capping it would
-    /// only be a way to refuse discovery to a client that has not asked for
-    /// anything yet; what bounds it is Caddy, ahead of both routes.
+    /// Discovery is outside the cap on purpose: it serializes a struct already
+    /// in memory. Caddy bounds both routes.
     pub inflight: tokio::sync::Semaphore,
 }
 
 impl AppState {
-    /// Wire one config set up into the thing that answers requests.
+    /// Build the state that answers requests, from one config set.
     pub async fn build(config: Config, notifier: Arc<Notifier>) -> Result<Self> {
         let mut sources = BTreeMap::new();
         for source in &config.sources {
@@ -128,11 +126,11 @@ impl AppState {
         self.audit.append(&line);
     }
 
-    /// The source a path segment names.
+    /// The source that a path segment names.
     ///
-    /// 404 rather than 403: a name this deployment does not serve is not a
-    /// resource that exists, and the set of source names is public -- the tray
-    /// is handed one in the URL it was configured with.
+    /// 404 and not 403: a name that this deployment does not serve is not a
+    /// resource that exists, and the set of source names is public. The tray
+    /// gets one in the URL that it was configured with.
     pub fn source(&self, name: &str) -> Result<&SourceState, Failure> {
         self.sources.get(name).ok_or_else(|| {
             Failure::new(
@@ -143,7 +141,7 @@ impl AppState {
         })
     }
 
-    /// What a restart says it came up as. Every knob here is one an operator
+    /// The line a restart prints. Every value here is one that an operator
     /// changes and then wants confirmation of.
     pub fn startup_line(&self) -> String {
         let grants = if self.config.device_grants.enabled() {
@@ -163,9 +161,9 @@ impl AppState {
         )
     }
 
-    /// The startup line's source list. Named rather than counted: which sources
-    /// a restart came up with is the question after an operator edits
-    /// `main.toml`, and a number cannot answer it.
+    /// The source list for the startup line. Named and not counted: after an
+    /// operator edits `main.toml`, the question is which sources came up, and a
+    /// number cannot answer it.
     fn listed(&self) -> String {
         match self.sources.keys().cloned().collect::<Vec<_>>().join(", ") {
             names if names.is_empty() => "no sources yet".to_owned(),

@@ -63,9 +63,9 @@ so `make up` works from either directory.
 | `test-notification` | one synthetic `info` event through the configured webhook, past the severity floor and the rate limit |
 | `down` | `scripts/compose/teardown.sh` — by project name, so a lost or missing `.env` cannot stand between you and your own stack |
 | `clean-report` | what this project has left on the host; removes nothing. `make clean` in the repository root calls it |
-| `clean-docker-images` | stops the stack and removes the five built images |
+| `clean-docker-images` | stops the stack and removes the built images |
 | `clean-docker-volumes` | destroys the realm — typed confirmation, or `YES=1` to skip it |
-| `check-env`, `check-tls`, `check-config`, `check-secrets` | the four gates; each refuses rather than warns, and explains the fix |
+| `check-env`, `check-tls`, `check-config`, `check-secrets` | the gates; each refuses rather than warns, and explains the fix |
 
 `scripts/bench/ci-stack.sh` has no target here — it is `make test-stack` from the
 repository root, and it is not a way to run this deployment. It runs a *second*
@@ -316,7 +316,7 @@ re-running `scripts/compose/bootstrap-secrets.sh`.
 `notify.state_dir` names the *parent*, and each service takes the directory
 named after itself under it — `/var/lib/kerbridge/broker`, `/sync`, `/issuerd`.
 Here that is invisible, because compose binds `state/broker` and `state/sync`
-straight onto them; off Compose it is what keeps three services out of one
+straight onto them; off Compose it is what keeps the services out of one
 directory. A service creates its own if it is absent and never re-permissions
 one that is there, so `mkdir` and `chgrp` it first if the agent's group matters
 and let the service find it.
@@ -338,7 +338,7 @@ placeholder has to sit *inside* one — `{"text":"%MESSAGE%"}`, not
 
 ## Audit trail
 
-Three append-only files, written by the services themselves onto bind mounts:
+Append-only files, written by the services themselves onto bind mounts:
 
 | File | Written by | One line per |
 |---|---|---|
@@ -364,13 +364,13 @@ each console log at `10m × 5`, which is rotation and nothing else: the realm
 container writes two `Auth:` lines per Kerberos authentication and would
 otherwise grow without limit.
 
-The three directories are separate on purpose. The broker's mount does not reach
+The directories are separate on purpose. The broker's mount does not reach
 the issuer's file, so a compromised broker cannot unlink the record of what it
 asked for, nor sync's record of the accounts it was asking about.
 
 - **Retention is yours.** Nothing here rotates these. Point `logrotate` (or a log
   shipper) at `state/*-audit/*.log`, and pair it with **`create` plus a
-  `postrotate` that sends `SIGUSR1`** — all three services hold the file open in
+  `postrotate` that sends `SIGUSR1`** — every service holds the file open in
   append mode, and reopen the path on that signal. Neither of the alternatives
   keeps the record whole: with `create` alone the service writes on into the
   renamed file, where nobody reads it again, and `copytruncate` loses whatever is
@@ -378,7 +378,7 @@ asked for, nor sync's record of the accounts it was asking about.
   `docker compose kill -s SIGUSR1 broker` for the broker,
   `docker compose kill -s SIGUSR1 sync` for sync, and
   and `docker compose kill -s SIGUSR1 issuer` for the issuer — one form for all
-  three, because each container runs one process and PID 1 is that process. Each
+  of them, because each container runs one process and PID 1 is that process. Each
   service says `REOPEN <path>` on its
   console and as the successor file's first line, so a rotation that did not
   reach it is visible.
@@ -513,7 +513,7 @@ from one:
 ### The bench's own fixtures are tracked, in `bench.env`
 
 `bench.env` holds what the bench is *made of* rather than what an operator
-decides: the three seeded accounts and their object ids, the mock IdP's tenant
+decides: the seeded accounts and their object ids, the mock IdP's tenant
 id, and the example file server's name and address. Those are identical on every
 bench that has ever run, so they are nobody's answer to anything, and `.env` —
 gitignored, per-operator, and read top to bottom by someone deploying a real
@@ -586,7 +586,7 @@ public one on `:443`. Nothing consults both, so they never need to agree.
   broker could never connect. Being container-local means it regenerates with
   the realm and no operator has to reissue anything when the domain is rebuilt.
 - **`kerbridge.example.site`** (`:443`), which Caddy serves and `kerbridge-client`
-  validates, comes from one of three strategies chosen with `TLS_STRATEGY` in
+  validates, comes from one of the strategies chosen with `TLS_STRATEGY` in
   `.env` — you never edit a Caddyfile. Which to choose:
   [`names-and-decisions.md` § TLS strategy](../docs/setup/names-and-decisions.md#tls-strategy);
   what to supply for it:
@@ -602,8 +602,8 @@ public one on `:443`. Nothing consults both, so they never need to agree.
   Caddy shares and therefore all of its published ports.
 - On this bench the `external` pair is signed by the operator's own CA with its
   root installed on the Windows VM.
-- The helper refuses plain `http` under all three.
-- The three Caddyfiles import one `caddy/routes.caddyfile` and one
+- The helper refuses plain `http` under all of them.
+- The Caddyfiles import one `caddy/routes.caddyfile` and one
   `caddy/timeouts.caddyfile`, so neither what is proxied nor how long a
   connection may hold the listener can drift between them.
 
@@ -637,7 +637,7 @@ the order a request meets them:
 | `read_header 10s`, `read_body 30s`, `idle 60s` | `caddy/timeouts.caddyfile` | connections that hold the listener without making a request — Caddy sets none of these itself, and an idle connection would otherwise be kept five minutes |
 | `max_size 16KB` | `caddy/routes.caddyfile` | a request body larger than any token |
 | `max_inflight` in `configs/broker.toml` (16 by default) | broker | tickets past the cap, with **429** and no directory traffic at all; the helper reads that as "back off and retry" |
-| `max_inflight` in `configs/issuerd.toml` (8 by default) | `issuerd` | connections past the cap, before the thread and the three forks exist |
+| `max_inflight` in `configs/issuerd.toml` (8 by default) | `issuerd` | connections past the cap, before the thread and the forks exist |
 
 The two in-flight caps refuse rather than queue: a queue is the same unbounded
 work with a delay in front of it. They are also the only place a *valid* token
@@ -678,7 +678,7 @@ publicly delegated zone that this host can edit. The usual split-horizon setup
 qualifies: the public zone exists and is delegated to a provider with an API;
 the internal view is what clients actually resolve.
 
-Three settings in `.env`, then a rebuild:
+These settings in `.env`, then a rebuild:
 
 ```sh
 TLS_STRATEGY=acme-dns
@@ -786,7 +786,7 @@ volume — losing that volume means re-issuing, and Let's Encrypt rate-limits th
 <summary>When a challenge fails: DEBUG logging</summary>
 
 `CADDY_LOG_LEVEL=DEBUG` in `.env` is what makes a failure diagnosable — at INFO,
-five distinct causes print the same line. It is not a build arg, so no rebuild is
+many distinct causes print the same line. It is not a build arg, so no rebuild is
 needed:
 
 ```sh
@@ -859,11 +859,11 @@ mount, so on Linux the host file's owner and mode are what the container gets.
   symlinked secret by its target, never by the link's own `lrwxrwxrwx`, which
   matches what a compose `secrets:` file mount hands the container. (`tls/` is
   the exception, and a symlink there is refused — see *Certificates*.)
-- That number is a contract between four places, which is why it is not a `.env`
+- That number is a contract between these places, which is why it is not a `.env`
   setting: both `user:` directives in `compose.yaml`,
   `kbsetup directory`'s `chgrp`, and issuerd's `socket_gid` /
-  `broker_uid` in `configs/issuerd.toml`. The first three read `BROKER_UID` /
-  `BROKER_GID` from `.env` and default to `10001` / `10002`. issuerd's own
+  `broker_uid` in `configs/issuerd.toml`. Every one but issuerd's own reads
+  `BROKER_UID` / `BROKER_GID` from `.env` and defaults to `10001` / `10002`. issuerd's own
   defaults are those same two numbers, and `configs/issuerd.toml` shows them on
   two commented-out lines. To change the uid, edit `.env` *and* remove the `#`
   from both lines with the new numbers — worth doing only for a uid collision on

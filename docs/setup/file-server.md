@@ -375,7 +375,7 @@ Then make sure that:
 ## 8. When a change takes effect
 
 Membership changes are not immediate, and the delay is a property of the
-design, not propagation lag. Each of four layers can hide a revocation:
+design, not propagation lag. Each of these layers can hide a revocation:
 
 | Layer | Masks until |
 |---|---|

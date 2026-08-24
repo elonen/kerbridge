@@ -15,7 +15,7 @@ contract, the ticket lifecycle, the status model and the words.
   with the same capabilities minus the background lifecycle.
 - `src/agent/` + `src/strings/` — what a background agent is *besides* its
   windows: the state machine, the re-injection schedule, and every user-visible
-  string in eleven languages, one file per language. A platform's agent supplies
+  string, one file per language. A platform's agent supplies
   the UI behind `agent::Host` and owns nothing else. Inside `agent/`, the seam is
   the UI thread: `commands` is what the host calls, `status` is what it reads,
   `worker` is what blocks and reports back, and `failure` names what went wrong.

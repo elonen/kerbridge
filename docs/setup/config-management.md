@@ -131,7 +131,7 @@ outage must not stop your services from starting.
 ## Install a new version
 
 A new version can add options, improve a default, or rename an option. Your
-decisions carry across all three. The command that does it is
+decisions carry across all of them. The command that does it is
 [`kbconfig upgrade`](../../crates/kerbridge-config/GLOSSARY.md#upgrade-config).
 
 Step 1 differs by deployment method. Steps 2 to 5 are the same either way.

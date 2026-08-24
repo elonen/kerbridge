@@ -42,7 +42,7 @@ either release is tested for, and it is the only thing offered — including for
 `kbmanage` on an administrator's own machine, which belongs on a supported
 release like everything else.
 
-## The six packages
+## The packages
 
 Install them from the apt repository, or from the `.deb` files themselves.
 
@@ -82,7 +82,7 @@ Updates are `apt upgrade` from then on.
 
 ### From the files
 
-`make debian-docker` builds all six into `dist/debian/`. The package version
+`make debian-docker` builds them all into `dist/debian/`. The package version
 comes from `git describe` inside the image, so a tree with no tag reachable from
 HEAD needs `make debian-docker KB_VERSION=0.10.0` instead. The build stops and
 says so rather than guess a version. Install them with `apt` rather than
@@ -103,7 +103,7 @@ repository index is signed — so a file you did not build yourself is worth the
 | `kerbridge-broker` | `kerbridge-broker`, the only component a workstation talks to. | the domain controller |
 | `kerbridge-sync` | `kerbridge-sync`, the directory mirror. | the domain controller |
 | `kerbridge-manage` | `kbmanage`. Creates no account and needs no daemon. | the DC, or an administrator's own machine |
-| `kerbridge` | Metapackage: the five above. Ships no files. | the domain controller |
+| `kerbridge` | Metapackage: the packages above. Ships no files. | the domain controller |
 
 The broker cannot be moved to a host of its own. It reaches the issuer over a
 unix socket, and `SO_PEERCRED` is the whole of the authentication between them —
@@ -112,7 +112,7 @@ that installs alone, on an administrator's machine, with only `kerbridge-config`
 beside it; [`rsat-and-kerbridge-management.md`](../rsat-and-kerbridge-management.md)
 has that case.
 
-Three unix identities are created and are **never removed**, not even by purge:
+These unix identities are created and are **never removed**, not even by purge:
 the `_kerbridge` group, and the `_kerbridge-broker` and `_kerbridge-sync` system
 users. A uid that a later `adduser` reallocated would inherit whatever files
 elsewhere still carry it.
@@ -120,11 +120,11 @@ elsewhere still carry it.
 Purge keeps more than the identities, and it does so on purpose. Purge removes
 the configuration set. It does not remove `<secrets-dir>`, an audit log under
 `/var/log/kerbridge/`, or any file under `/etc/samba` or `/var/lib/samba`. If
-you purge all six packages, the domain controller still runs, and the Entra
+you purge every package, the domain controller still runs, and the Entra
 client secret and the realm Administrator password stay on the disk. **A purge
 is not a decommission.** To decommission a host, erase `<secrets-dir>` as well.
 
-## The seven questions
+## The install questions
 
 `kerbridge-config` asks them, before anything is unpacked, and no other package
 asks anything. The answers are used **on first install only**, to write a config
@@ -133,9 +133,9 @@ already have.
 
 | Question | Answer |
 |---|---|
-| Kerberos realm for this deployment | Upper case, e.g. `EXAMPLE.SITE`. Six further values are derived from it. |
+| Kerberos realm for this deployment | Upper case, e.g. `EXAMPLE.SITE`. Further values are derived from it. |
 | LDAPS URL of the domain controller | `ldaps://` only. Proposed as `ldaps://kerbridge.<realm lowercased>:636`; the DC's short name is this URL's first label. |
-| Cloud IdP tenant id | The Entra tenant, as a UUID. **Leave empty** for a host that runs no sync and serves no sign-ins — the four questions below are then not asked. |
+| Cloud IdP tenant id | The Entra tenant, as a UUID. **Leave empty** for a host that runs no sync and serves no sign-ins — the questions below are then not asked. |
 | Application id of the broker API registration | From [step 2](../../SETUP.md#2-register-three-applications-in-entra). |
 | Application id of the workstation client registration | From step 2. |
 | Application id of the synchronisation registration | From step 2. |
@@ -143,25 +143,25 @@ already have.
 
 Nothing secret passes through debconf, and that is structural rather than
 careful: every secret in the config set is a *path*, never a value, and these
-seven answers are a realm, a URL, four public OIDC identifiers and a group name.
+answers are a realm, a URL, public OIDC identifiers and a group name.
 
-Three outcomes are all legal:
+These outcomes are all legal:
 
 - **Realm left empty** — nothing is written at all, and the postinst says so.
   This is the right outcome for an unattended install with no answers to give:
-  under `DEBIAN_FRONTEND=noninteractive` the questions are skipped and the two
+  under `DEBIAN_FRONTEND=noninteractive` the questions are skipped and those
   without a default stay empty, so no set naming a realm nobody chose is
   created.
 - **Realm set, tenant left empty** — a realm-only set, `sources = []`. This is
   the administrator's machine that runs `kbmanage` and no daemon.
 - **Both set** — the complete set, in `/etc/kerbridge`.
 
-`dpkg-reconfigure kerbridge-config` asks all seven again, showing what the files
+`dpkg-reconfigure kerbridge-config` asks them all again, showing what the files
 say rather than what you answered last time, and then writes nothing. To change
 a live deployment, edit the files — see
 [config-management.md](config-management.md).
 
-With **no config set written**, the three units are skipped rather than started:
+With **no config set written**, the units are skipped rather than started:
 each carries `ConditionPathExists=/etc/kerbridge/main.toml`, so `systemctl
 status` shows them inactive with the unmet condition named, and nothing appears
 in `systemctl --failed`. Write the set with `kbconfig init /etc/kerbridge` or
@@ -192,7 +192,7 @@ What `kbsetup realm` decides is baked into the Samba database with the domain
 SID: correcting it later means provisioning again, and every filesystem ACL that
 carries the old SID stops resolving.
 
-Five things worth knowing before you run it:
+Know these things before you run it:
 
 - **`/etc/samba/smb.conf`.** Any existing file is moved aside to
   `/etc/samba/smb.conf.kerbridge-orig` and a new one written. The file stays
@@ -274,7 +274,7 @@ Each proxies only the documented routes to `127.0.0.1:8080` and 404s everything
 else at the edge, caps the request body at 16 KB, and logs no bodies — a ticket
 response carries a credential cache and a request carries a bearer token.
 
-## The three units
+## The units
 
 ```
 kerbridge-issuerd.service    root, on the DC: holds KDC authority, reads sam.ldb
@@ -330,7 +330,7 @@ journalctl -u kerbridge-sync -f
 
 Each daemon keeps its own audit record under `/var/log/kerbridge/<daemon>/`,
 one directory per daemon so that no daemon can rewrite another's. Logrotate
-rotates them weekly, twelve deep. The three daemons connect lazily — the broker
+rotates them weekly, twelve deep. The daemons connect lazily — the broker
 opens the issuer socket per request, sync per cycle — so a DC restart or a cold
 boot needs nothing from you.
 

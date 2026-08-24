@@ -237,6 +237,6 @@ really about.
 **A restore requires a DC name that never existed.** `samba-tool domain
 restore` insists on `--newservername`, so a restored deployment necessarily runs
 under a *different* DC hostname than the one it was backed up from — and
-`dc_hostname` is one of the three identity values `kbsetup verify` treats as
+`dc_hostname` is one of the identity values `kbsetup verify` treats as
 fatal. After a restore, edit `realm.toml` to the new name and reissue the LDAPS
 certificate. This is a property of Samba, and the check is correct as designed.

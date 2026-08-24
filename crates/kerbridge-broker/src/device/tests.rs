@@ -5,9 +5,9 @@ const NOW: i64 = 1_785_000_000;
 const OID: &str = "33334444-dddd-5555-eeee-6666ffff7777";
 const IDENTITY: &str = "kb1|entra|33334444-dddd-5555-eeee-6666ffff7777";
 
-/// A software key. There is no attestation, so this exercises every check
-/// the server makes -- which is what keeps the whole server side testable
-/// without a TPM. Do not write hermetic tests that need one.
+/// A software key. There is no attestation, thus this exercises every check that
+/// the server makes, and the whole server side stays testable without a TPM. Do
+/// not write hermetic tests that need one.
 pub struct SoftKey {
     pair: ring::signature::EcdsaKeyPair,
     pub point: Vec<u8>,
@@ -71,20 +71,19 @@ fn accepts_a_signed_assertion_and_reduces_it_to_an_identity_and_a_key() {
     assert!(kerbridge_core::grant::is_thumbprint(&proof.thumbprint));
 }
 
-/// An assertion a real TPM signed, recorded once and checked from then on
-/// without one -- `MS_PLATFORM_CRYPTO_PROVIDER` on Windows 11 build 10.0.26200
+/// An assertion that a real TPM signed, recorded once and checked from then on
+/// without one. `MS_PLATFORM_CRYPTO_PROVIDER` on Windows 11 build 10.0.26200
 /// aarch64, 2026-08-09, through the same `NCryptExportKey`/`NCryptSignHash`
-/// calls `kerbridge_client::device` makes. Everything else here signs with
-/// `ring`, so nothing else would notice if CNG's fixed `r || s` and this
-/// verifier stopped agreeing -- they would agree with themselves and be wrong
-/// together.
+/// calls that `kerbridge_client::device` makes. Everything else here signs with
+/// `ring`. If CNG's fixed `r || s` and this verifier stopped agreeing, no other
+/// test would notice: they would agree with themselves and be wrong together.
 #[test]
 fn an_assertion_a_tpm_signed_verifies() {
     const RECORDED: &str = "eyJhdWQiOiJrZXJicmlkZ2U6Ly9FWEFNUExFLlNJVEUiLCJleHAiOjE3ODUwMDAwNjAsImlkZW50aXR5Ijoia2IxfGVudHJhfDMzMzM0NDQ0LWRkZGQtNTU1NS1lZWVlLTY2NjZmZmZmNzc3NyIsImtleSI6IkJMRG13OEVjbGFNa280VFNwR2psZUFPYTlzZThDMnJmSHJlaC1EejdXSmZ2aXBPQWljMWJzVF9sa3M2eTEtWjhVeUVSWC1OLWFFQk1uVHJYVjdHZ3R0cyIsIm5vbmNlIjoiY21WamIzSmtaV1F0YjI0dFlTMVVVRTAifQ.o9TH9pkQTd4O68CYUbJFhn2W_A2OGiioGs8jT2drOquPasnvrGs45dHCLq79oI5G6wmsfa4Tq1OlO3XALlbTxA";
     const NONCE: &str = "cmVjb3JkZWQtb24tYS1UUE0";
 
-    // Planted rather than issued: the assertion was signed over this nonce
-    // on the day it was recorded, and no store since has issued that value.
+    // Planted, not issued. The assertion was signed over this nonce on the day
+    // it was recorded, and no store since has issued that value.
     let store = Nonces::new(Duration::from_secs(120), 16);
     store.inner.lock().unwrap().insert(NONCE.to_string(), NOW + 60);
     let proof = verify(RECORDED, AUD, &store, NOW).unwrap();
@@ -93,7 +92,7 @@ fn an_assertion_a_tpm_signed_verifies() {
 }
 
 /// The replay defense itself. A captured assertion is complete and correctly
-/// signed; what stops it is that its nonce is gone.
+/// signed. What stops it is that its nonce is gone.
 #[test]
 fn a_replayed_assertion_is_refused() {
     let (store, rng) = nonces();
@@ -141,9 +140,9 @@ fn refused(assertion: &str, store: &Nonces, expected: &str, name: &str) {
 fn refuses_everything_that_is_not_a_current_assertion_for_this_deployment() {
     let (store, rng) = nonces();
     let key = SoftKey::new();
-    // Each case is an otherwise-valid assertion with one thing wrong, over a
-    // nonce that has not been spent -- so what refuses it is the named
-    // defect and not a leftover from the case before.
+    // Each case is an otherwise-valid assertion with one thing wrong, over an
+    // unspent nonce. What refuses it is thus the named defect and not a
+    // leftover from the case before.
     let tampered = |field: &str, value: serde_json::Value, expected: &str| {
         let nonce = store.issue(&rng, NOW).unwrap();
         let mut payload = payload(&key, &nonce);

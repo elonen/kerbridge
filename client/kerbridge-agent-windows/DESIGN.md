@@ -128,7 +128,7 @@ OpenSettings → SignOutEntra → Enroll → RestartWorkstation
              → CreateGrant → ReinjectTicket → SignIn → DropKrbTicket
 ```
 
-Four gates apply. `RestartWorkstation` appears only while the `NtlmFallback`
+Gates apply. `RestartWorkstation` appears only while the `NtlmFallback`
 blocker is present, because the menu already offers the repair to a user who
 suspects the fault. `CreateGrant` appears only when the machine is delegated and
 grantless, or when the grant is due soon. `SignIn` never appears on `Working`.
@@ -141,7 +141,7 @@ it is *Open log folder*.
 
 **`in_flight` is a shape and not a word** — a marquee hairline under the button
 row, which is the Win32 idiom for *something is running*. It owes no string in
-eleven languages. That state is rarely on screen at all, because a sign-in opens
+any language. That state is rarely on screen at all, because a sign-in opens
 a browser and the flyout dismisses on blur.
 
 **Pair the buttons only when both fit, otherwise stack them.** Half width is
@@ -168,7 +168,7 @@ drives…* whether or not the fault is diagnosed, Settings, Help and Quit.
 **`Open log folder` is not in the menu.** A technical record was a permanent
 offer, one row above *Quit*, to a reader with no use for it. Its one permanent
 home is Settings ▸ Advanced ▸ Troubleshoot. Its menu slot goes to *Help*, which
-can teach the Kerberos-versus-OIDC distinction that four verbs cannot. The help
+can teach the Kerberos-versus-OIDC distinction that a menu verb cannot. The help
 URL defaults to the client's own, and `help_url` in `GET /config` replaces it —
 through the same `require_https` rule as every other URL the broker returns. **The
 flyout's fault slot keeps the log**, because it is conditional and not permanent,
@@ -206,9 +206,9 @@ properties, and only the second is the shield's business.
 **Repair stays out of Settings.** It answers *my drives are broken right now*,
 which is a flyout question. Settings is where you go when nothing is wrong.
 
-### One modal, four phases
+### One modal, and its phases
 
-All six operations take the same dialog. The flyout can host none of it: it
+Every operation takes the same dialog. The flyout can host none of it: it
 hides on blur, and the UAC secure desktop takes focus, so the surface would
 vanish exactly when it is meant to say *waiting*.
 
@@ -296,7 +296,7 @@ address landing on focus loss would wipe the session; and the target field write
 the window without a commit loses it, which is cheaper than a Cancel the rest of
 the window contradicts.
 
-**Three tabs, sorted by subject, routine to rare, destructive last.**
+**Tabs sorted by subject, routine to rare, destructive last.**
 
 ```
 ┌ Basic ┬ Advanced ┬ About ┐
@@ -338,7 +338,7 @@ paths mean two sets of metrics to keep true.
 
 **The delegated-user field stays in Settings and must not disagree with the
 machine.** It cannot move into the *Authorize access…* dialog, because
-`grant_for()` is read in ten places and must be persisted before any of them run.
+`grant_for()` is read in many places and must be persisted before any of them run.
 It is standing machine policy, not an argument to one dialog. A changed target
 invalidates nothing, because the machine keeps working as the old one. So the
 group reads **what is true now, then what the next authorization will do, then
