@@ -22,7 +22,7 @@ during an upgrade.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
-## Unreleased
+## 0.9.1
 
 - `kbsetup` no longer stops at a password prompt when it has a terminal.
 - The release page ships the MSI only. It holds both Windows programs.
