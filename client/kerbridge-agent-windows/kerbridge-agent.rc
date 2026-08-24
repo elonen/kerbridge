@@ -9,8 +9,8 @@
 
 /* VER_MAJOR/VER_MINOR/VER_PATCH are -D'd by build.rs from CARGO_PKG_VERSION, so the
    crate version is still the one version number. Double expansion is what makes the
-   inner macro arguments expand before stringification; the result is one literal
-   ("0.9.0"), not adjacent literals, because windres' rc lexer does not concatenate. */
+   inner macro arguments expand before stringification; the result is one literal,
+   not adjacent literals, because windres' rc lexer does not concatenate. */
 #define STRINGIFY_(x) #x
 #define STRINGIFY(x) STRINGIFY_(x)
 #define VER_TEXT STRINGIFY(VER_MAJOR.VER_MINOR.VER_PATCH)

@@ -18,8 +18,9 @@
 //! nothing about provisioning.
 //!
 //! **What this owns, and what it does not.** Being a domain controller forces
-//! three things on a host, and the provisioning act owns them rather than any
-//! package: `/etc/samba/smb.conf`, the Samba state under `/var/lib/samba`, and
+//! these on a host, and the provisioning act owns them rather than any
+//! package: `/etc/samba/smb.conf`, the Samba state under `/var/lib/samba`,
+//! the host's standalone Samba units -- see [`CONFLICTING_UNITS`] -- and
 //! -- through the drop-in in [`crate::krb5`] -- the Kerberos client
 //! configuration. `/etc/krb5.conf` itself is not one of them. `systemd-resolved`
 //! is emphatically not one of them: its stub listener collides with Samba's
@@ -115,6 +116,8 @@ pub fn run(dir: &Path, allow_example_realm: bool) -> Result<()> {
         verify::refuse_on_mismatch(&report)?;
         report.say("durable state");
     }
+
+    stop_conflicting_units()?;
 
     match krb5::write(&config.realm, &krb5::path())? {
         krb5::Wrote::Dropin => println!("[kbsetup] wrote {}", krb5::DROPIN),
@@ -424,6 +427,62 @@ fn refuse_winbind_nsswitch() -> Result<()> {
          §3 is written for a separate member host that joins an already-provisioned realm, \
          not for the DC."
     )
+}
+
+/// The host's own Samba units, which a domain controller must not run.
+///
+/// A DC runs `smbd` and `winbindd` itself, as children of `samba`. dpkg starts
+/// the standalone `winbind.service` when `kerbridge-issuerd` pulls in `winbind`,
+/// while `smb.conf` still reads as a standalone role to
+/// `/usr/share/samba/is-configured`. That check gates a start and never stops
+/// what runs, so the old daemon keeps the socket, `samba`'s own child exits 1 on
+/// it, and the unit dies with `winbindd daemon died with exit status 1`.
+const CONFLICTING_UNITS: [&str; 3] = ["winbind.service", "smbd.service", "nmbd.service"];
+
+/// Stop and disable the units in [`CONFLICTING_UNITS`] that this host runs or
+/// would start at boot.
+///
+/// An action, not a refusal like [`refuse_resolved_collision`]: KerBridge's own
+/// dependency started these, and Debian holds that they may not run in the role
+/// this host now has.
+///
+/// A no-op where systemd does not run -- the realm container starts `samba`
+/// itself.
+fn stop_conflicting_units() -> Result<()> {
+    if !Path::new("/run/systemd/system").exists() {
+        return Ok(());
+    }
+    let live: Vec<&str> = CONFLICTING_UNITS.into_iter().filter(|unit| unit_is_live(unit)).collect();
+    if live.is_empty() {
+        return Ok(());
+    }
+    let mut argv = vec!["systemctl", "disable", "--now"];
+    argv.extend_from_slice(&live);
+    let done = run::attempt(&argv, None)?;
+    if !done.ok() {
+        bail!(
+            "could not disable {}: {}. A domain controller runs its own smbd and winbindd as \
+             children of `samba`, and these hold the socket and the port those children need, so \
+             `samba-ad-dc` starts and dies again while they run. Disable them by hand: \
+             `systemctl disable --now {}`",
+            live.join(" "),
+            done.reason(),
+            live.join(" ")
+        );
+    }
+    println!(
+        "[kbsetup] disabled {} -- this host is a domain controller now, and runs its own as \
+         children of `samba`",
+        live.join(" ")
+    );
+    Ok(())
+}
+
+/// Whether a unit runs now, or would start at boot.
+fn unit_is_live(unit: &str) -> bool {
+    ["is-active", "is-enabled"]
+        .into_iter()
+        .any(|query| run::attempt(&["systemctl", query, unit], None).is_ok_and(|done| done.ok()))
 }
 
 /// Whether any `passwd:`/`group:` line lists `winbind` as a source, ignoring a

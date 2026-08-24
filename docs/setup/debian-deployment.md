@@ -214,6 +214,15 @@ Know these things before you run it:
 - **systemd-resolved is refused, never reconfigured.** Its stub listener holds
   `127.0.0.53:53` and collides with Samba's internal DNS. `kbsetup realm` stops
   with a message rather than change your resolver for you.
+- **`winbind`, `smbd` and `nmbd` are disabled, and say so.** A domain controller
+  runs both daemons itself, as children of `samba`. The standalone units come
+  from the KerBridge packages' own dependencies and start at install time, while
+  this host is not a DC yet. Left running, they hold the socket and the port the
+  DC's own children need, and `samba-ad-dc` dies at every start.
+- **Point this host's resolver at itself.** The DC serves its own zone, and
+  `samba_dnsupdate` verifies each record through `/etc/resolv.conf` before it
+  writes. A resolver that names the forwarder instead confirms nothing —
+  [dns-and-firewall.md](dns-and-firewall.md#the-dcs-own-resolver).
 - **The generated Administrator password** lands in
   `<secrets-dir>/generated/realm_admin_password`, `0600 root:root`. It is
   break-glass: provisioning, `net ads join -U administrator` on a member

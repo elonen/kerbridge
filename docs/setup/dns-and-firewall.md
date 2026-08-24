@@ -149,6 +149,41 @@ SRV record in the inner domain.
 
 </details>
 
+## The DC's own resolver
+
+The DC must resolve its own zone through itself. On a package deployment, that
+is `/etc/resolv.conf` on the realm host:
+
+```
+nameserver 127.0.0.1
+search example.site
+```
+
+`dns forwarder` in `smb.conf` keeps every other name working, so the forwarder
+does not belong here as well.
+
+A resolver that names the forwarder instead looks harmless and is not.
+`samba_dnsupdate` runs every ten minutes; it queries each name in
+`/var/lib/samba/private/dns_update_list` through this file, and writes the ones
+the query did not confirm. Pointed elsewhere, no name in the realm zone ever
+confirms, so it rewrites the whole list and the DC's own DNS refuses each one:
+
+```
+/usr/sbin/samba_dnsupdate: ERROR(runtime): Record already exists; record could
+not be added. zone[example.site] name[ForestDnsZones]
+[WERR_DNS_ERROR_RECORD_ALREADY_EXISTS]
+dnsupdate_nameupdate_done: Failed DNS update with exit code 29
+```
+
+The records are there, so nothing breaks at once. What breaks is everything on
+this host that needs the zone — `kinit`, `net ads`, any SRV lookup — and the
+spam hides a record that really is missing. Correct the resolver, then confirm
+with `samba_dnsupdate --verbose`, which says *No DNS updates needed*.
+
+`systemd-resolved` cannot hold `/etc/resolv.conf` here: its stub listener
+collides with Samba's DNS, and `kbsetup realm` refuses to provision until it is
+off.
+
 ## Give the file server the realm zone
 
 Do this if the file server is not on the DC's host. The file server must
