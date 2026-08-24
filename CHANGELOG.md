@@ -22,8 +22,19 @@ during an upgrade.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
-## 0.9.1
+## Unreleased
 
+- New `kbsetup status` says what is done, what is left, and the command for
+  the next step. It writes nothing and is safe to run at any point.
+- The installation now prints that list as its last word, so an operator at
+  the terminal is told what remains.
+- New `kbsetup secrets` asks for the credentials nothing can generate, and
+  writes each one at the mode its reader needs. No secret goes through
+  debconf, which copies what passes through it to a world-readable file.
+- `kbsetup secrets` refuses an Entra Secret ID in place of the Value, which
+  is the usual mistake, and says which is which.
+- New `/usr/share/doc/kerbridge-config/README.Debian` covers the same ground
+  in prose, for the operator who finds it after the installation scrolled by.
 - `kbsetup` no longer stops at a password prompt when it has a terminal.
 - The release page ships the MSI only. It holds both Windows programs.
 - The release page ships the macOS agent: arm64, ad-hoc signed.

@@ -1,0 +1,107 @@
+KerBridge on Debian
+===================
+
+Installing the packages does not finish the deployment. It puts the programs on
+the host, writes a configuration set from the answers you gave, and creates the
+directories. Three things are still to come, and none of them is a thing a
+package is allowed to do for you: the realm, the directory inside it, and the
+client secret of your cloud IdP.
+
+Start here
+----------
+
+    sudo kbsetup status
+
+It reads the state on this host, says which steps are done, and prints the
+command for the next one. It changes nothing, so it is safe to run at any
+point. Run it again after each step.
+
+On a host that has only kerbridge-manage, there is no kbsetup. That host needs
+no realm and runs no daemon; see rsat-and-kerbridge-management.md in
+/usr/share/doc/kerbridge-manage/.
+
+The steps kbsetup status walks
+------------------------------
+
+  kbsetup realm       Provisions the Samba domain, the LDAPS CA and the
+                      certificate. Everything it decides is baked into the
+                      Samba database and cannot be changed by editing
+                      configuration afterwards. Read the guide before this one.
+
+  kbsetup directory   Creates the organizational units, the service accounts
+                      and their delegation. Run it again after you add a cloud
+                      IdP; it creates only what is absent.
+
+  kbsetup secrets     Asks for the credentials no KerBridge command can
+                      generate -- today that is your cloud IdP's client secret
+                      -- and writes each one to the file the configuration set
+                      names, at the mode its reader needs. The value is typed
+                      with the echo off and goes straight into the file.
+
+You then terminate TLS in front of the broker, which serves plain HTTP on the
+loopback interface and refuses any wider address. Example configurations for
+Caddy and nginx are in /usr/share/doc/kerbridge-broker/examples/.
+
+The files
+---------
+
+  /etc/kerbridge/            The configuration set. Every option is one line,
+                             and a line that starts with # sets nothing and
+                             takes the default. The comments in each file say
+                             what the option does.
+
+  /etc/kerbridge.secrets/    Credentials, as files. generated/ holds what
+                             kbsetup wrote; the rest is what you supply.
+                             Nothing here is ever written by a package.
+
+  kbconfig decisions         Every option this deployment sets, with the value
+                             it would use if it set none.
+  kbconfig check             Whether the set is coherent. Each daemon runs this
+                             before it starts.
+
+The install questions are asked once
+------------------------------------
+
+They are used on a first install only, to write a configuration set that is not
+there yet. No package edits a configuration file that already exists.
+
+Running `dpkg-reconfigure kerbridge-config` afterwards shows you what the files
+say rather than what you answered, and then writes nothing. To change a live
+deployment, edit the files.
+
+No secret is ever asked for through debconf. A value that passes through debconf
+is written to /var/cache/debconf/config.dat and again to the world-readable
+config.dat-old, so the install questions ask only for a realm, a URL, public
+application identifiers and a group name. `kbsetup secrets` collects the rest.
+
+Two states that are normal, and are not faults
+----------------------------------------------
+
+  kerbridge-issuerd runs idle before you provision. It starts working when
+  kbsetup realm gives it a realm.
+
+  kerbridge-broker is failed until kbsetup directory runs. Its LDAP bind
+  password does not exist until then. Afterwards, clear the counter before you
+  start it:
+
+    sudo systemctl reset-failed kerbridge-broker
+    sudo systemctl start kerbridge-broker
+
+  A plain `systemctl start` inside the 60-second window is refused and does not
+  even run the unit's checks, so retrying in a loop looks like a unit that is
+  permanently stuck.
+
+Uninstalling
+------------
+
+A purge is not a decommission. It removes the configuration set. It does not
+remove /etc/kerbridge.secrets/, the audit records under /var/log/kerbridge/, or
+anything under /etc/samba or /var/lib/samba -- so a purged host still runs the
+domain controller and still holds the client secret and the realm Administrator
+password on disk. To decommission a host, erase /etc/kerbridge.secrets/ as well.
+
+The full guide
+--------------
+
+SETUP.md, and docs/setup/debian-deployment.md for this deployment method, at
+https://kerbridge.org

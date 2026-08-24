@@ -425,11 +425,14 @@ config → manage](#setup--config--manage).
 
 The server-side command-line tool that brings a deployment into existence, run as
 root on the domain controller: the `setup` service on Docker Compose, or the
-host itself on Debian. The verbs: `realm` provisions the [realm](#realm) if there is none and
-refuses if the one that exists disagrees with the config set, `directory` creates
-the [OUs](#organizational-unit), the [service accounts](#service-account-directory)
-and their [delegation](deploy/GLOSSARY.md#delegation-directory-rights), and
-`verify` answers whether durable state still matches the config set.
+host itself on Debian. The verbs: `status` reports how far through the procedure
+this host is and names the command for the next step, `realm` provisions the
+[realm](#realm) if there is none and refuses if the one that exists disagrees
+with the config set, `directory` creates the [OUs](#organizational-unit), the
+[service accounts](#service-account-directory) and their
+[delegation](deploy/GLOSSARY.md#delegation-directory-rights), `secrets` asks for
+each [pasted credential](#pasted-credential) and writes it at the mode its reader
+needs, and `verify` answers whether durable state still matches the config set.
 
 The first of [setup → config → manage](#setup--config--manage). Its boundary
 against the other two checkers is one question each: `kbsetup verify` asks
@@ -542,6 +545,26 @@ must correct. A delivery failure cannot fail a ticket request or a [sync](#sync)
 cycle.
 <!-- refs: `kerbridge-notify`, `NOTIFY <severity> <event>: <message>`, problem directory -->
 <!-- avoid: alerting, the notifier, alarms -->
+
+### pasted credential
+
+A [secret file](#secret-file) whose value comes from outside KerBridge and that
+nothing in the deployment can generate: a cloud IdP's application credential,
+copied from that IdP's portal, and the webhook URL of an
+[operator notification](#operator-notification) receiver. It is the half of
+[`<secrets-dir>`](#secrets-dir) the [operator](#operator) writes, as against the
+half [kbsetup](#kbsetup) generates under `generated/`.
+
+`kbsetup secrets` asks for each one the [config set](deploy/GLOSSARY.md#config-set)
+names and writes it at the mode its reader needs. It is asked for at a terminal
+rather than at install time because a value that passes through debconf is
+written to `/var/cache/debconf/config.dat` and again to the world-readable
+`config.dat-old` — so every install question is a realm, a URL, a public
+identifier or a group name, and none is a secret.
+<!-- refs: `crates/kerbridge-setup/src/pasted.rs`; `<secrets-dir>/idp/<source name>/credential` -->
+<!-- user-facing: the credentials you supply -->
+<!-- avoid: operator secret, manual secret, the pasted secret -->
+<!-- different than: generated credential -->
 
 ### prepare-state
 

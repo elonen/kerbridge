@@ -20,3 +20,15 @@ kerbridge-issuerd [arm64]: statically-linked-binary [usr/sbin/issuerd]
 # kbsetup is the second binary in this package and takes the same pair.
 kerbridge-issuerd [amd64]: shared-library-lacks-prerequisites [usr/sbin/kbsetup]
 kerbridge-issuerd [arm64]: statically-linked-binary [usr/sbin/kbsetup]
+
+# The postinst names /usr/sbin/kbsetup absolutely to print what is still
+# outstanding, for the same reason kerbridge-config's `config` script names
+# /usr/bin/kbconfig -- this package installs that binary at that path, so it
+# cannot move without this package moving it, and a maintainer script that
+# resolved its own binary through PATH would run as root against whatever
+# answered first. That override carries the full reasoning.
+#
+# No context on the line, deliberately: with one the override names a line
+# number, and the first edit above it turns this into an unused override that a
+# gate set to --fail-on error,warning would then trip over.
+kerbridge-issuerd: command-with-path-in-maintainer-script

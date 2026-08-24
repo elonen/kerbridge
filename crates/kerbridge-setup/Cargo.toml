@@ -33,10 +33,15 @@ kerbridge-core = { workspace = true, features = ["password"] }
 # `ldbsearch` cannot print safely.
 base64.workspace = true
 
-# One `getgrnam_r`: the unix group through which an unprivileged daemon reads the
-# credential this writes. Same crate and same version `issuerd` resolves its own
-# two identities with; raw libc here would cost `main.rs` its `forbid(unsafe_code)`.
-nix = { version = "0.31", features = ["user"] }
+# `user` for one `getgrnam_r`: the unix group through which an unprivileged
+# daemon reads the credential this writes. Same crate and same version `issuerd`
+# resolves its own two identities with; raw libc here would cost `main.rs` its
+# `forbid(unsafe_code)`.
+#
+# `term` for the termios pair that turns the terminal echo off while `kbsetup
+# secrets` is being answered. The alternative is a password-prompt crate, and
+# every one of them is this pair plus a signal handler this crate cannot write.
+nix = { version = "0.31", features = ["user", "term"] }
 
 [build-dependencies]
 clap.workspace = true
@@ -50,3 +55,11 @@ clap_mangen = "0.3"
 # `Realm` on its own rather than a whole set. Already in the tree through
 # `kerbridge-core`.
 toml.workspace = true
+
+# DEV ONLY, AND IT MUST STAY THAT WAY. `kbsetup secrets` words each adapter's
+# pasted credential from a table of its own, and this is what holds that table
+# in step with the templates -- see the `crate::pasted` module comment for why
+# the words are not simply asked of the adapter. A runtime dependency here would
+# put `reqwest` and `tokio` into the package that ships `issuerd`, which links
+# no HTTP client at all. `schema` because `source_template` renders through it.
+kerbridge-idp = { workspace = true, features = ["schema"] }

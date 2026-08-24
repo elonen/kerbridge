@@ -36,8 +36,13 @@ fn main() -> std::io::Result<()> {
     let command = Cli::command();
     // The top-level page, and one per verb. `clap_mangen` renders a subcommand's
     // own options and long help only on its own page, so a single page would
-    // reduce three verbs to three lines -- which is the summary a hand-written
-    // page would have given.
+    // reduce every verb to one line -- which is the summary a hand-written page
+    // would have given.
+    //
+    // Two lists elsewhere name these pages by hand and do not derive them:
+    // `debian/stage-prebuilt` and `debian/kerbridge-issuerd.install`. A verb
+    // added here ships no page until both grow; `dh_missing --fail-missing` is
+    // what says so.
     write(dir, "kbsetup.8", &command)?;
     for sub in command.get_subcommands() {
         if sub.get_name() == "help" {

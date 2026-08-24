@@ -1055,6 +1055,7 @@ dependencies = [
  "clap",
  "clap_mangen",
  "kerbridge-core",
+ "kerbridge-idp",
  "nix",
  "toml",
 ]

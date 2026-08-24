@@ -1,18 +1,22 @@
-//! `kbsetup` -- the realm, the directory, and the check that the two still match
-//! what the config set says.
+//! `kbsetup` -- the realm, the directory, the credentials only an operator has,
+//! and the two questions about all of it: what is left, and does it still match.
 //!
 //! **setup -> config -> manage.** This brings a deployment into existence,
 //! `kbconfig` owns the config set, `kbmanage` runs it day to day. Three tools,
 //! three lifecycle phases.
 //!
-//! One binary with three verbs rather than three programs, and rather than one
-//! merged command that skips whatever is already done. *Provisioning* is pinned
-//! to `samba-tool domain provision` and stops at a provisioned DC; adding a cloud
-//! IdP source is a day-2 act that re-runs the directory half alone; and `verify`
-//! sits on the daemon start path where the other two must never be. Nothing
-//! orders them mechanically -- `samba-tool` without `-H` opens `sam.ldb`
-//! directly, so the directory half does not need Samba running -- so the verbs
-//! keep the three straight instead.
+//! One binary with a verb each rather than one merged command that skips
+//! whatever is already done. *Provisioning* is pinned to `samba-tool domain
+//! provision` and stops at a provisioned DC; adding a cloud IdP source is a
+//! day-2 act that re-runs the directory half alone; `secrets` asks for what no
+//! program can generate; and `verify` sits on the daemon start path where the
+//! others must never be. Nothing orders them mechanically -- `samba-tool`
+//! without `-H` opens `sam.ldb` directly, so the directory half does not need
+//! Samba running -- so the verbs keep them straight instead.
+//!
+//! `status` is the way in. It reads the others' answers and reports how far
+//! through the procedure this host is, which is the question an operator has at
+//! the terminal the packages left them at. It decides nothing of its own.
 //!
 //! It reads the config set **in process**, through `kerbridge-core` -- not
 //! through `kbconfig get`, which the shell it replaces needs only because shell
@@ -27,14 +31,17 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use kerbridge_core::config::Config;
 
+mod ask;
 mod cli;
 mod dc;
 mod directory;
 mod krb5;
 mod ldif;
+mod pasted;
 mod realm;
 mod run;
 mod secrets;
+mod status;
 #[cfg(test)]
 mod testing;
 mod verify;
@@ -58,10 +65,12 @@ fn dispatch() -> Result<u8> {
     // Only `verify` has an exit code that is not "ran or failed", and it has one
     // because a maintainer script and a systemd unit both read it.
     match cli.command {
+        cli::Command::Status => status::run(&dir),
         cli::Command::Realm { allow_example_realm } => {
             realm::run(&dir, allow_example_realm).map(|()| verify::MATCHES)
         }
         cli::Command::Directory => directory::run(&dir).map(|()| verify::MATCHES),
+        cli::Command::Secrets { replace } => secrets::run(&dir, replace).map(|()| verify::MATCHES),
         cli::Command::Verify => verify::run(&dir),
     }
 }
@@ -79,16 +88,16 @@ pub(crate) fn load(dir: &Path) -> Result<Config> {
 mod tests {
     use clap::CommandFactory;
 
-    /// The three verbs, and no fourth. `kbsetup provision` in particular is not
-    /// one of them -- the verb is `realm`, because provisioning is what it does
-    /// when there is no realm and verifying is what it does when there is.
+    /// The verbs, and no others. `kbsetup provision` in particular is not one of
+    /// them -- the verb is `realm`, because provisioning is what it does when
+    /// there is no realm and verifying is what it does when there is.
     /// GLOSSARY.md lists the spelling under `avoid`.
     #[test]
-    fn the_command_surface_is_exactly_three_verbs() {
+    fn the_command_surface_is_exactly_these_verbs() {
         let command = super::cli::Cli::command();
         let mut verbs: Vec<&str> = command.get_subcommands().map(|s| s.get_name()).collect();
         verbs.sort_unstable();
-        assert_eq!(verbs, ["directory", "realm", "verify"]);
+        assert_eq!(verbs, ["directory", "realm", "secrets", "status", "verify"]);
     }
 
     /// The escape hatch is a flag, not an environment variable: this is a

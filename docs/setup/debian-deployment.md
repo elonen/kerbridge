@@ -190,9 +190,32 @@ realm.
 > nothing. To change a live deployment, edit the files directly  —
 > [config-management.md](config-management.md).
 
+## Ask the host what is left
+
+Everything so far installed files. Three steps remain, and none of them is
+something a package may do for you. You do not have to keep them in your head:
+
+```sh
+sudo kbsetup status
+```
+
+It reads the state on this host, marks each step done or outstanding, and prints
+the command for the next one. It writes nothing, asks nothing and opens no
+connection, so it is safe at any point — run it again after each step. It exits
+`0` when every step it can answer is done, `2` while any remains.
+
+The `kerbridge-issuerd` postinst runs it as the last thing an installation says,
+so the list is already on your screen. `/usr/share/doc/kerbridge-config/README.Debian`
+is the same ground in prose.
+
+Some steps are never answered from this host, and it says so rather than
+guessing: the TLS terminator is a program KerBridge does not ship, and a unit's
+state is a sentence in its own journal.
+
 ## Provision the realm
 
-Everything so far installed files. This step creates a domain in Samba. You run it, in a terminal, as root on the realm server:
+This step creates a domain in Samba. You run it, in a terminal, as root on the
+realm server:
 
 ```sh
 sudo kbsetup realm        # provisions the domain to Samba, the LDAPS CA and certificate
@@ -284,6 +307,57 @@ line back out, in that order.
 > not exist.** It is fatal for **every** krb5 program on the host, not only
 > KerBridge's. An empty directory is fine. A missing one breaks `kinit` for
 > everybody.
+
+</details>
+
+## Supply the credentials only you have
+
+Every secret in the config set is named as a *path*, never written as a value.
+`kbsetup realm` and `kbsetup directory` filled the generated half under
+`<secrets-dir>/generated/`. The other half comes from your cloud IdP's portal,
+and nothing in the deployment can produce it:
+
+```sh
+sudo kbsetup secrets
+```
+
+One prompt per credential the config set names and this host does not have yet.
+The value is typed with the terminal echo off, checked, and written straight to
+its file at `0640 root:_kerbridge` — the mode the daemon that reads it needs.
+`0640` and not `0600`: sync runs unprivileged and reaches its own credential
+through the group, so the stricter mode is a daemon that cannot start.
+
+A credential already in place is left alone and reported, so a re-run only fills
+what is still missing. `--replace` asks about the ones that are there as well,
+and confirms before it overwrites each.
+
+**Nothing secret goes through the installation questions, and that is
+structural.** A value that passes through debconf is written to
+`/var/cache/debconf/config.dat` and again to `config.dat-old`, which is
+world-readable — so the questions ask for a realm, a URL, public application
+identifiers and a group name, and this command collects the rest.
+It reaches no argument list, no environment variable and no shell history
+either.
+
+For Entra the one credential is the sync app registration's client secret.
+`kbsetup secrets` refuses a value that is GUID-shaped and says why: that is the
+*Secret ID*, which stays readable in the portal after the *Value* beside it has
+been masked, and it is the one usually copied by mistake.
+
+<details>
+<summary>Writing the files yourself, from a configuration-management run</summary>
+
+With no terminal to ask at, `kbsetup secrets` refuses rather than reading a
+credential from anywhere a passer-by could see it, and prints the file, the
+owner and the mode for each one instead:
+
+```sh
+sudo install -o root -g _kerbridge -m 0640 /dev/null \
+  /etc/kerbridge.secrets/idp/entra/credential
+```
+
+Then write the bare value into it, with no trailing newline. Sync finds it on
+its next cycle and needs no restart.
 
 </details>
 

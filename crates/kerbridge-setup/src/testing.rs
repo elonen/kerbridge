@@ -32,6 +32,18 @@ const SOURCE: &str = "name = \"entra\"\n\
                       bind_dn = \"CN=svc-kerbridge-sync-entra,CN=Users,DC=example,DC=site\"\n\
                       bind_password_file = \"/etc/kerbridge.secrets/generated/idp/entra/bind_password\"\n";
 
+/// The same source with the half an operator pastes in, for the tests of what
+/// finds it. `[provider_config]` stays opaque to `Config::load`, so this needs
+/// only the one key those tests are about.
+pub const SOURCE_WITH_CREDENTIAL: &str = "name = \"entra\"\n\
+                                          provider = \"entra\"\n\
+                                          group_suffix = \"-entra\"\n\
+                                          bind_dn = \"CN=svc-kerbridge-sync-entra,CN=Users,DC=example,DC=site\"\n\
+                                          bind_password_file = \"/etc/kerbridge.secrets/generated/idp/entra/bind_password\"\n\
+                                          \n\
+                                          [provider_config]\n\
+                                          sync_credential_file = \"/etc/kerbridge.secrets/idp/entra/credential\"\n";
+
 /// A directory holding one config set, removed when it goes out of scope.
 pub struct Set {
     dir: PathBuf,

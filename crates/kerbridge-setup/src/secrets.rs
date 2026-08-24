@@ -1,7 +1,12 @@
-//! Writing a credential this program generated, and telling the truth about
+//! Writing a credential into the secrets tree, and telling the truth about
 //! whether the write landed the way it was meant to.
 //!
-//! Four measured facts shape every function here.
+//! Both kinds pass through here. `realm` and `directory` write what they
+//! generated; `kbsetup secrets` -- [`run`], at the end of this file -- writes
+//! what only an operator can fetch, and [`crate::pasted`] is what says which
+//! those are.
+//!
+//! Measured facts shape every function here.
 //!
 //! **Empty means absent.** Generate-iff-absent tests `-s`, never `-e`. A
 //! single-file bind mount cannot be created by the container that writes it: with
@@ -12,8 +17,8 @@
 //! first run that misses the file leaves something an unprivileged operator
 //! cannot clean up. A pre-existing zero-byte regular file is what works, with
 //! emptiness as the container-visible "not generated yet" signal.
-//! `check-secrets.sh:126` and the placeholders `prepare-state` leaves spell it
-//! `-s` for this reason.
+//! `deploy/scripts/check-secrets.sh` and the placeholders `prepare-state`
+//! leaves spell it `-s` for this reason.
 //!
 //! **The write is in place.** Never write-and-rename: the target may be a bind
 //! mount of a single file, where a rename over it is a different inode and the
@@ -205,6 +210,175 @@ fn witness(path: &Path, reader: Reader) -> Vec<String> {
         )],
         _ => Vec::new(),
     }
+}
+
+/// `kbsetup secrets` -- ask for every credential the config set names, KerBridge
+/// cannot generate, and the deployment does not have yet.
+///
+/// The whole point is the path the value takes: terminal -> this process ->
+/// the file, at the mode its reader needs. Never through debconf, which copies
+/// what passes through it to a world-readable file -- [`crate::ask`] carries
+/// that reasoning.
+pub fn run(dir: &Path, replace: bool) -> Result<()> {
+    let config = crate::load(dir)?;
+    let wanted = crate::pasted::wanted(&config);
+    if wanted.is_empty() {
+        println!(
+            "[kbsetup] this config set names no credential for you to supply. Every secret it \
+             uses is one `kbsetup realm` or `kbsetup directory` generates."
+        );
+        return Ok(());
+    }
+
+    let mut todo = Vec::new();
+    for want in wanted {
+        if want.present()? && !replace {
+            println!("[kbsetup] {} is already set -- left alone", want.named());
+            continue;
+        }
+        todo.push(want);
+    }
+    if todo.is_empty() {
+        println!(
+            "[kbsetup] every credential this config set names is in place. `kbsetup secrets \
+             --replace` asks about them again; `kbsetup status` says what is still outstanding."
+        );
+        return Ok(());
+    }
+
+    let group = daemon_group(&config.issuerd)?;
+    // No terminal first, and whatever the uid is: a configuration-management run
+    // reaches this, and what it needs is the file, the mode and the owner rather
+    // than advice about sudo.
+    if !crate::ask::interactive() {
+        // The group by the name the config set states, falling back to the
+        // number: it is pasted into an `install -g` line, and `_kerbridge`
+        // survives a host whose gid allocation differs where a number does not.
+        let named = config.issuerd.socket_group.clone().unwrap_or_else(|| group.to_string());
+        bail!("{}", by_hand(&todo, &named));
+    }
+    for want in &todo {
+        reserve(&want.path, group).with_context(|| {
+            format!(
+                "reserving {}. These are root-owned files under the deployment's secrets \
+                 directory -- run this with sudo",
+                want.path.display()
+            )
+        })?;
+    }
+
+    let mut written = 0;
+    let mut skipped = Vec::new();
+    for want in &todo {
+        match one(want, group, replace)? {
+            true => written += 1,
+            false => skipped.push(want.named()),
+        }
+    }
+
+    println!();
+    println!("[kbsetup] {written} written, {} left unset", skipped.len());
+    for name in &skipped {
+        println!("[kbsetup]   {name}");
+    }
+    println!("[kbsetup] `kbsetup status` says what is outstanding now.");
+    Ok(())
+}
+
+/// Create the file empty, at its final mode and owner, before anything is
+/// typed.
+///
+/// Not simply a permission test. It fails *here* rather than after the
+/// credential has been pasted -- the one late failure in this program that
+/// costs the operator something the portal will not show them twice. What it
+/// leaves behind is the placeholder the whole secrets tree is written around:
+/// empty is absent, so a reserved file is the state the deployment was already
+/// in, and `ls -l` names the path and the mode instead of a config file.
+///
+/// Never over an existing file. `--replace` reaches here with a credential
+/// already in place, and truncating it before asking whether to replace it
+/// would destroy a working deployment's secret at the prompt.
+fn reserve(path: &Path, group: u32) -> Result<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    write(path, "", group, Reader::Group(group)).map(|_| ())
+}
+
+/// One credential: show what it is, ask, check, write. `Ok(false)` is a
+/// deliberate skip, which is a legal outcome for every one of them -- an
+/// operator who does not have the value to hand must be able to leave the
+/// prompt without losing the ones already answered.
+fn one(want: &crate::pasted::Pasted, group: u32, replace: bool) -> Result<bool> {
+    println!();
+    println!("--- {} ---", want.named());
+    println!("{}", want.what);
+    if let Some(caution) = &want.caution {
+        println!();
+        println!("{caution}");
+    }
+    println!();
+    println!("  file:  {}", want.path.display());
+    println!("  mode:  0640 root:<the daemon group>, set by this command");
+
+    if replace && want.present()? {
+        println!();
+        if !crate::ask::confirm("A credential is already there. Replace it?", false)? {
+            return Ok(false);
+        }
+    }
+
+    println!();
+    loop {
+        let value = crate::ask::secret("  Value (not echoed): ")?;
+        let value = value.trim();
+        if value.is_empty() {
+            let question = if want.optional {
+                "Nothing typed. Leave this one unset?"
+            } else {
+                "Nothing typed. Leave it unset for now, and finish the rest?"
+            };
+            if crate::ask::confirm(&format!("  {question}"), true)? {
+                return Ok(false);
+            }
+            continue;
+        }
+        if let Some(why) = crate::pasted::refuse(value, &want.path) {
+            println!("  Refused: {why}");
+            println!();
+            continue;
+        }
+        for warning in write(&want.path, value, group, Reader::Group(group))? {
+            eprintln!("[kbsetup] warning: {warning}");
+        }
+        // The length and nothing else. It is what tells a mis-paste -- a
+        // truncated value, a stray quote -- from a good one, and it discloses
+        // nothing about the credential itself.
+        println!("  Written: {} bytes into {}", value.len(), want.path.display());
+        return Ok(true);
+    }
+}
+
+/// What to do instead, for a caller with no terminal to answer at.
+///
+/// A configuration-management run reaches this, and the useful answer is the
+/// exact file, mode and owner rather than a refusal. `0600` is named as a
+/// mistake on purpose: it is the one an operator makes by instinct, and it
+/// leaves a daemon that cannot read its own credential.
+fn by_hand(todo: &[crate::pasted::Pasted], group: &str) -> String {
+    let mut out = String::from(
+        "there is no terminal to ask at, and a credential must never be taken from an argument \
+         or an environment variable -- both are readable by every account on the host. Write \
+         each file yourself instead, with the bare value and no trailing newline:\n",
+    );
+    for want in todo {
+        out.push_str(&format!("\n  {}\n    {}\n", want.named(), want.path.display()));
+    }
+    out.push_str(&format!(
+        "\n  install -o root -g {group} -m 0640 /dev/null <file>, then write the value into it.\n  \
+         Not 0600: the daemon runs unprivileged and reads through the group.",
+    ));
+    out
 }
 
 #[cfg(test)]

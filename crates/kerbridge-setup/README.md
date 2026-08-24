@@ -3,8 +3,10 @@
 One binary. Every verb is idempotent.
 
 ```
+kbsetup status                          what is done, what is left, the command for the next step
 kbsetup realm [--allow-example-realm]   provision if absent; verify and refuse if present
 kbsetup directory                       the OUs, the service accounts, the delegation, the deny
+kbsetup secrets [--replace]             ask for the credentials nothing can generate, and write them
 kbsetup verify                          does durable state still match the config set
 ```
 
@@ -33,9 +35,18 @@ uncreated; `kbmanage` runs on an operator's own workstation as themselves;
   realm is created once and never again; `directory` is re-run every time
   a cloud IdP is added. Merging them would buy one line in `SETUP.md` and cost
   the distinction.
+- **`secrets` is separate** because a credential must not reach a config set.
+  Every secret in the set is a *path*; the value beside it comes from a portal
+  and only a human can fetch it. Collecting it here is also what keeps it out
+  of debconf, which writes what passes through it to `config.dat` and again to
+  the world-readable `config.dat-old`.
 - **`verify` is separate** because it is the only one that runs unattended, as
-  `ExecStartPre=` on `kerbridge-issuerd.service`. The other two must never be on
-  a start path.
+  `ExecStartPre=` on `kerbridge-issuerd.service`. The others must never be on a
+  start path.
+- **`status` decides nothing.** It is a reporter over the other verbs' own
+  answers, and the one verb an operator is expected to run without having read
+  anything first — the `kerbridge-issuerd` postinst runs it as the last thing
+  an install says.
 - **There is no `provision` verb.** Provisioning is what `realm` does when there
   is no realm; verifying is what it does when there is. A third state sits
   between them: a `sam.ldb` with no [provision

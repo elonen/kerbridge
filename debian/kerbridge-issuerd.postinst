@@ -64,6 +64,22 @@ case "$1" in
                 printf '%s\n' "$INCLUDE"
             } >> "$KRB5_CONF"
         fi
+
+        # What is still outstanding, printed where the operator is standing.
+        # Installing the packages finishes nothing: the realm, the directory
+        # and the cloud IdP's own client secret are all still to come.
+        #
+        # The verb rather than a checklist written out here: a maintainer
+        # script holding a second account of the procedure is the account that
+        # goes stale, and `status` reads the state on disk, so it is right on a
+        # re-install and on an upgrade too.
+        #
+        # Never fatal: `status` exits 2 while any step remains, which is the
+        # normal outcome here, and a postinst that failed over it would wedge
+        # apt for every other package. `-e` guards a host with no config set.
+        if [ -e /etc/kerbridge/main.toml ]; then
+            /usr/sbin/kbsetup status || true
+        fi
         ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

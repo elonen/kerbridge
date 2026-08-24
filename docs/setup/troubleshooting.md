@@ -64,7 +64,28 @@ restart the redirector.
 | Sync stops at startup and names `device_grant_notify` | The value must be `off` or a number of days. With a different value, sync does not start, and it does not guess |
 | Anything on the file server itself | [Troubleshooting (`file-server.md`)](file-server.md#troubleshooting) — a table by symptom, which includes idmap and `nsswitch.conf` faults |
 
+## Before the diagnostics: is the deployment finished?
+
+On the server, when nothing works yet and you are not sure how far you got:
+
+```sh
+sudo kbsetup status
+```
+
+It marks each step of the procedure done or outstanding, and prints the command
+for the next one. Most of what looks like a fault on a new host is a step that
+was never run — a realm that was never provisioned, or a cloud IdP credential
+that was never pasted in. `status` changes nothing, so it is safe to run at any
+point.
+
+It answers some steps with `[?]` rather than a verdict, because they cannot be
+seen from that host: the TLS terminator is a program KerBridge does not ship,
+and a unit's state is a sentence in its own journal.
+
 ## The diagnostic that walks the whole chain
+
+`doctor` starts where `status` finishes: `status` asks whether the server was
+built, `doctor` asks whether an identity can reach a file server through it.
 
 ```sh
 kbmanage doctor --user alice

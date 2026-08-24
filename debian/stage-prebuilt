@@ -61,7 +61,7 @@ page kbconfig.1 1
 for verb in '' -group -cloud -device -doctor -endpoint -config; do
     page "kbmanage$verb.1" 1
 done
-for verb in '' -realm -directory -verify; do
+for verb in '' -status -realm -directory -secrets -verify; do
     page "kbsetup$verb.8" 8
 done
 
