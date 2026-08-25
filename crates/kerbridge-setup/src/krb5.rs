@@ -2,7 +2,9 @@
 //!
 //! **A drop-in, not the file.** `/etc/krb5.conf` belongs to
 //! `kerbridge-issuerd`'s maintainer script, which owns one greppable line --
-//! `includedir /etc/krb5.conf.d` -- and nothing else in it. Everything
+//! `includedir /etc/krb5.conf.d` -- and nothing else in it. That line goes at
+//! the top of the file: MIT reads the first value it finds, so a `krb5-config`
+//! that ran would otherwise beat the `default_realm` below. Everything
 //! substantive is here, in a generated file a purge can remove cleanly. The
 //! division matters in one direction especially: a **dangling `includedir` is
 //! fatal** to every krb5 binary on the host, not only to ours, so the directory

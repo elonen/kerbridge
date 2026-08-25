@@ -149,9 +149,9 @@ you already have.
 | Kerberos realm for this deployment | Upper case, for example `EXAMPLE.SITE`. Further values are derived from it. |
 | LDAPS URL of the domain controller | `ldaps://` only. Proposed as `ldaps://kerbridge.<realm lowercased>:636`. The DC's short name is this URL's first label. |
 | Cloud IdP tenant id | The Entra tenant, as a UUID. **Leave it empty** for a host that runs no sync and serves no sign-ins. The questions below are then not asked. |
-| Application id of the broker API registration | From [step 2](../../SETUP.md#2-register-three-applications-in-entra). |
-| Application id of the workstation client registration | From step 2. |
-| Application id of the synchronization registration | From step 2. |
+| UUID of the broker's Entra app, usually named "KerBridge broker API" | From [step 2](../../SETUP.md#2-register-three-applications-in-entra). |
+| UUID of the client's Entra app, usually named "KerBridge public client" | From step 2. |
+| UUID of the sync Entra app, usually named "KerBridge sync" | From step 2. |
 | Name of the cloud group whose members are admitted | Defaults to `KerBridge Allowed On-prem Users`. Nothing works until a group with that name exists in the tenant. |
 
 Nothing secret passes through debconf. That is structural rather than careful:
@@ -297,10 +297,13 @@ The KDC must be named explicitly. Samba's own generated `krb5.conf` carries no
 because the container's resolver is Samba's own DNS, and a DC installed from
 packages generally does not point its resolver at itself.
 
-So `kerbridge-issuerd`'s postinst makes sure that `/etc/krb5.conf` has the line
-`includedir /etc/krb5.conf.d/`. It creates the file and the directory if the
-host has neither, and it appends the line under a marker comment if the host
-has a `krb5.conf` already. `kbsetup realm` then writes
+So `kerbridge-issuerd`'s postinst makes sure that `/etc/krb5.conf` starts with
+the line `includedir /etc/krb5.conf.d/`. It creates the file and the directory
+if the host has neither, and it puts the line under a marker comment at the top
+if the host has a `krb5.conf` already. The top is not cosmetic: MIT reads the
+first value it finds, so a line further down would let `krb5-config`'s
+`default_realm` — `ATHENA.MIT.EDU` on an install that answered no questions —
+beat the realm you configured. `kbsetup realm` then writes
 `/etc/krb5.conf.d/kerbridge.conf` from the config set, and `kbsetup verify`
 checks the pair at every issuer start. Purge takes the drop-in and the marked
 line back out, in that order.

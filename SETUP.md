@@ -320,7 +320,8 @@ one time.
 
 > **CAUTION: Do not put `winbind` in `/etc/nsswitch.conf` on the DC host before
 > `kbsetup realm` has finished.** On that host a lookup then blocks instead of
-> fails, and it can lock every login, the console included.
+> fails, and it can lock every login, the console included. `kbsetup realm`
+> takes it back out before it provisions, and never puts it back.
 
 > **CAUTION: Do not restart `winbindd` during a DC outage.** It comes up
 > permanently degraded, and it does not repair itself.

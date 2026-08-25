@@ -20,7 +20,8 @@
 //! **What this owns, and what it does not.** Being a domain controller forces
 //! these on a host, and the provisioning act owns them rather than any
 //! package: `/etc/samba/smb.conf`, the Samba state under `/var/lib/samba`,
-//! the host's standalone Samba units -- see [`CONFLICTING_UNITS`] -- and
+//! the `winbind` source in `/etc/nsswitch.conf`, the host's standalone Samba
+//! units -- see [`CONFLICTING_UNITS`] -- and
 //! -- through the drop-in in [`crate::krb5`] -- the Kerberos client
 //! configuration. `/etc/krb5.conf` itself is not one of them. `systemd-resolved`
 //! is emphatically not one of them: its stub listener collides with Samba's
@@ -93,12 +94,14 @@ pub fn run(dir: &Path, allow_example_realm: bool) -> Result<()> {
     // Every refusal ahead of the certificate, so a run that stops leaves the
     // host as it found it. `make_tls` has to precede `provision` -- the options
     // it passes name the key and certificate paths -- but nothing here needs it.
+    // `take_winbind_out_of_nsswitch` is the exception: it writes, so it goes
+    // after every refusal and before the provision it unblocks.
     if provisioning {
         refuse_missing_templates()?;
         refuse_old_schema()?;
         gate(&config, allow_example_realm)?;
         refuse_resolved_collision()?;
-        refuse_winbind_nsswitch()?;
+        take_winbind_out_of_nsswitch()?;
     }
 
     make_tls(&config)?;
@@ -421,35 +424,65 @@ fn refuse_resolved_collision() -> Result<()> {
 /// `/etc/nsswitch.conf`'s path -- fixed, like [`SMB_CONF`].
 const NSSWITCH_CONF: &str = "/etc/nsswitch.conf";
 
-/// A `passwd:`/`group:` line that already names `winbind`, before there is a
-/// domain for it to ask.
+/// Take `winbind` out of `/etc/nsswitch.conf`'s `passwd:`/`group:` lines.
 ///
-/// `docs/setup/file-server.md` §3 has an operator add `winbind` to these lines
-/// -- but for a *member* host, joined to a realm that already exists. On the DC
-/// itself, before this provision has run, winbind has no domain and no running
-/// AD service to answer it: the lookup does not fail, it blocks. Every PAM
-/// login this host does meanwhile -- this session and the console both -- can
-/// hang on a peer that never answers. Measured: exactly that, on a DC whose
-/// nsswitch already carried `winbind`, locked out console login until the
-/// provisioning process was killed.
-fn refuse_winbind_nsswitch() -> Result<()> {
-    let text = match std::fs::read_to_string(NSSWITCH_CONF) {
-        Ok(text) => text,
-        Err(_) => return Ok(()),
+/// An action, not a refusal like [`refuse_resolved_collision`]: KerBridge's own
+/// dependency put it there. `samba-ad-dc` Recommends `libnss-winbind`, whose
+/// postinst edits both lines, so an `apt install kerbridge` without
+/// `--no-install-recommends` reaches this point with them already set.
+///
+/// It has to go before the provision. Winbind has no domain and no running AD
+/// service to ask until this finishes: the lookup does not fail, it blocks.
+/// Measured -- on a DC whose nsswitch already carried `winbind`, every PAM
+/// login including the console hung until the provisioning process was killed.
+///
+/// Never put back. A host deliberately combining the DC and file-server roles
+/// wants it again once the realm runs (`docs/setup/file-server.md` §3), and
+/// that is the operator's call, not this command's.
+fn take_winbind_out_of_nsswitch() -> Result<()> {
+    let Ok(text) = std::fs::read_to_string(NSSWITCH_CONF) else {
+        return Ok(());
     };
     if !nsswitch_names_winbind(&text) {
         return Ok(());
     }
-    bail!(
-        "{NSSWITCH_CONF} already resolves passwd/group through winbind, but this realm does not \
-         exist yet. Winbind has nothing to answer with until this provision finishes and the \
-         DC's own AD service starts, so any PAM login this host does in the meantime -- this \
-         session and the console both -- can block rather than fail. Remove `winbind` from the \
-         passwd: and group: lines and provision the realm first; add it back afterward only if \
-         this host is deliberately combining the DC and file-server roles. docs/setup/file-server.md \
-         §3 is written for a separate member host that joins an already-provisioned realm, \
-         not for the DC."
-    )
+    std::fs::write(NSSWITCH_CONF, without_winbind(&text))
+        .with_context(|| format!("rewriting {NSSWITCH_CONF}"))?;
+    println!(
+        "[kbsetup] took `winbind` out of {NSSWITCH_CONF} (passwd:, group:) -- it has nothing to \
+         answer with until this realm exists, and the lookup blocks rather than fails. Put it \
+         back only if this host is also a file server: docs/setup/file-server.md §3"
+    );
+    Ok(())
+}
+
+/// The lines [`nsswitch_names_winbind`] finds, with that one source dropped.
+///
+/// The gap after the key is kept, so the column the file is written in survives.
+fn without_winbind(text: &str) -> String {
+    text.split_inclusive('\n')
+        .map(|line| {
+            let body = line.trim_end_matches('\n');
+            let (code, comment) = body.split_at(body.find('#').unwrap_or(body.len()));
+            let is_source_line = code.starts_with("passwd:") || code.starts_with("group:");
+            if !is_source_line || !code.split_whitespace().any(|word| word == "winbind") {
+                return line.to_owned();
+            }
+            let (key, rest) = code.split_at(code.find(':').unwrap_or(0) + 1);
+            let gap: String = rest.chars().take_while(|c| c.is_whitespace()).collect();
+            let kept: Vec<&str> =
+                rest.split_whitespace().filter(|word| *word != "winbind").collect();
+            let mut out = format!("{key}{gap}{}", kept.join(" "));
+            if !comment.is_empty() {
+                out.push_str("  ");
+                out.push_str(comment);
+            }
+            if line.ends_with('\n') {
+                out.push('\n');
+            }
+            out
+        })
+        .collect()
 }
 
 /// The host's own Samba units, which a domain controller must not run.
@@ -851,6 +884,24 @@ mod tests {
         assert!(!nsswitch_names_winbind("passwd:         files\ngroup:          files\n"));
         assert!(!nsswitch_names_winbind("shadow:         files winbind\n"));
         assert!(!nsswitch_names_winbind("# passwd:      files winbind\n"));
+    }
+
+    /// What `libnss-winbind`'s postinst writes, taken back out: the source
+    /// goes, the column the file is written in stays, and every other line --
+    /// `shadow:`, a comment, a trailing note -- is returned untouched.
+    #[test]
+    fn winbind_comes_out_and_nothing_else_moves() {
+        let before = "# /etc/nsswitch.conf\n\
+                      passwd:         files winbind\n\
+                      group:          files systemd winbind  # note\n\
+                      shadow:         files winbind\n";
+        let after = "# /etc/nsswitch.conf\n\
+                     passwd:         files\n\
+                     group:          files systemd  # note\n\
+                     shadow:         files winbind\n";
+        assert_eq!(without_winbind(before), after);
+        // Idempotent.
+        assert_eq!(without_winbind(after), after);
     }
 
     /// Derived from the database's own directory, so the certificate cannot end

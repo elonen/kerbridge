@@ -102,9 +102,10 @@ it as a possible design, not as a tested procedure.
 > reads it at every login, the console included. Winbind has nothing to answer
 > with until a realm exists and the DC's AD service runs. On the DC, before
 > provisioning finishes, that lookup blocks instead of fails, and it can lock
-> every login on the host until you kill the stuck process. `kbsetup realm`
-> refuses to provision while `winbind` is in `/etc/nsswitch.conf`, for this
-> reason.
+> every login on the host until you kill the stuck process. For this reason
+> `kbsetup realm` takes `winbind` back out of `/etc/nsswitch.conf` before it
+> provisions, and says so. It never puts it back: on a host that is
+> deliberately both the DC and the file server, do §3 again afterward.
 
 Debian:
 

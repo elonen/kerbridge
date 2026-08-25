@@ -24,6 +24,14 @@
 #     is fine.
 #   * A hand-added include line survives `dpkg-reconfigure krb5-config`
 #     byte-for-byte.
+#   * THE LINE GOES FIRST, NOT LAST. MIT's profile is first-wins for a scalar,
+#     and an included file is spliced in where the include line sits. So a line
+#     appended under krb5-config's own [libdefaults] loses: `default_realm`
+#     resolves to what krb5-config wrote, which is `ATHENA.MIT.EDU` on an
+#     install that answered no questions. krb5-user Recommends krb5-config, so
+#     a plain `apt install kerbridge` is exactly that install. Measured on
+#     trixie with `kinit -V`: appended gives `nobody@ATHENA.MIT.EDU`, prepended
+#     gives the realm the drop-in names.
 #
 # The line is content-free -- no realm, no host, nothing debconf answers. The
 # substantive configuration is /etc/krb5.conf.d/kerbridge.conf, generated from
@@ -58,11 +66,22 @@ case "$1" in
                 printf '%s\n' "$INCLUDE"
             } > "$KRB5_CONF"
             chmod 0644 "$KRB5_CONF"
-        elif ! grep -qxF "$INCLUDE" "$KRB5_CONF"; then
+        elif ! head -n 2 "$KRB5_CONF" | grep -qxF "$INCLUDE"; then
+            # Not merely present -- present at the top, which is where it has
+            # to be to win. `head -n 2` is exactly what this branch writes, so
+            # a host already in that state is left byte-for-byte alone. A copy
+            # lower down is one an older version appended; it moves up here.
+            tmp=$(mktemp "$KRB5_CONF.XXXXXX")
             {
-                printf '\n%s\n' "$MARKER"
+                printf '%s\n' "$MARKER"
                 printf '%s\n' "$INCLUDE"
-            } >> "$KRB5_CONF"
+                # No blank line after the pair. Purge removes exactly these
+                # two lines, so a separator it does not account for stays
+                # behind, at the top of a file this package does not own.
+                grep -vxF -e "$MARKER" -e "$INCLUDE" "$KRB5_CONF" || true
+            } > "$tmp"
+            chmod 0644 "$tmp"
+            mv "$tmp" "$KRB5_CONF"
         fi
 
         # What is still outstanding, printed where the operator is standing.

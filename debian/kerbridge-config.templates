@@ -1,89 +1,91 @@
+# WHY EVERY DESCRIPTION LINE IS INDENTED TWO SPACES. debconf reflows a
+# description to the terminal width, so on a wide terminal the question
+# arrives as 160-column paragraphs. A line with a second leading space is
+# taken verbatim, and the dialog is then only as wide as its longest line.
+# So: one sentence per line, broken at a clause when a sentence is longer
+# than 70 characters, and nothing past column 72 -- that is what still fits
+# an 80-column terminal without debconf breaking the line again.
+
 Template: kerbridge-config/realm
 Type: string
 _Description: Kerberos realm for this deployment:
- KerBridge serves one Kerberos realm. Give it in upper case, for example
- EXAMPLE.SITE. KerBridge derives other values from it: the domain root, the
- DNS domain, the NetBIOS name, the short name of the domain controller, and
- two organizational units.
+  KerBridge serves one Kerberos realm.
+  Give it in upper case, for example EXAMPLE.SITE.
+  KerBridge derives other values from it: the domain root,
+  the DNS domain, the NetBIOS name, the short name of the
+  domain controller, and two organizational units.
  .
- You cannot correct the realm later. It goes into the Samba database, and
- the permissions of every file carry an identifier from it. This is binary
- data in many places, and no edit can change it. To use a different realm,
- provision the domain again.
+  You cannot correct the realm later.
+  It goes into the Samba database,
+  and the permissions of every file carry an identifier from it.
+  This is binary data in many places, and no edit can change it.
+  To use a different realm, provision the domain again.
  .
- KerBridge writes the initial config files on the first installation only.
- If you leave this empty, it writes nothing.
+  KerBridge writes the initial config files
+  on the first installation only.
+  If you leave this empty, it writes nothing.
 
 Template: kerbridge-config/realm_invalid
 Type: error
 _Description: Invalid Kerberos realm
- A realm is a domain name with dots and no spaces, for example EXAMPLE.SITE.
- Your value is not a realm name.
+  A realm is a domain name with dots and no spaces,
+  for example EXAMPLE.SITE.
+  Your value is not a realm name.
 
 Template: kerbridge-config/ldap_url
 Type: string
 _Description: LDAPS URL of the domain controller:
- KerBridge binds to this address. It accepts ldaps:// only, because plain
- LDAP and StartTLS send the bind password and each password write in clear
- text.
+  KerBridge binds to this address.
+  It accepts ldaps:// only, because plain LDAP and StartTLS
+  send the bind password and each password write in clear text.
  .
- The proposed address uses a domain controller with the name "kerbridge" in
- the realm above. Change the host name if yours is different.
+  The proposed address uses a domain controller with the name
+  "kerbridge" in the realm above.
+  Change the host name if yours is different.
 
 Template: kerbridge-config/ldap_url_invalid
 Type: error
 _Description: Invalid LDAPS URL
- The address must start with ldaps://. KerBridge refuses plain ldap:// and
- StartTLS. An address in that form fails later.
+  The address must start with ldaps://.
+  KerBridge refuses plain ldap:// and StartTLS.
+  An address in that form fails later.
 
 Template: kerbridge-config/tenant_id
 Type: string
 _Description: Cloud IdP tenant id:
- The Microsoft Entra ID tenant whose users this deployment admits. Give the
- tenant id as a UUID.
+  The Microsoft Entra ID tenant whose users this deployment admits.
+  Give the tenant id as a UUID.
  .
- Leave this empty only for a host that does no synchronization and serves no
- sign-ins, for example an administrator machine with kerbridge-manage.
- KerBridge then writes the config files with no identity provider in them.
+  Leave this empty only for a host that does no synchronization
+  and serves no sign-ins, for example an administrator machine
+  with kerbridge-manage.
+  KerBridge then writes the config files
+  with no identity provider in them.
  .
- This is not a secret.
+  This is not a secret.
 
 Template: kerbridge-config/broker_api_client_id
 Type: string
-_Description: Application id of the broker API registration:
- UUID of the broker's Entra app, usually named "KerBridge broker API".
- .
- The broker validates access tokens for this Entra application registration.
+_Description: UUID of the broker's Entra app, usually named "KerBridge broker API":
 
 Template: kerbridge-config/public_client_id
 Type: string
-_Description: Application id of the workstation client registration:
- UUID of the client's Entra app, usually named "KerBridge public client".
- .
- The workstation agents sign in with this public Entra application
- registration.
+_Description: UUID of the client's Entra app, usually named "KerBridge public client":
 
 Template: kerbridge-config/sync_client_id
 Type: string
-_Description: Application id of the synchronization registration:
- UUID of the sync Entra app, usually named "KerBridge sync".
- .
- kerbridge-sync reads the directory with this confidential Entra application
- registration. These dialogs never ask for a secret, on purpose.
- .
- Next step, after the installation: put the client secret of that app into
- /etc/kerbridge.secrets/idp/entra/credential, owned by root:_kerbridge and
- with mode 0640. Sync finds it on its next cycle and needs no restart. Do
- not use chmod 0600. Sync cannot read it.
+_Description: UUID of the sync Entra app, usually named "KerBridge sync":
 
 Template: kerbridge-config/admission_group
 Type: string
 Default: KerBridge Allowed On-prem Users
 _Description: Name of the cloud group whose members are admitted:
- Membership of this group admits an identity. KerBridge does not mirror the
- other users into the directory, and refuses each sign-in for them. Nothing
- works until a group with this name exists in the Entra tenant.
+  Membership of this group admits an identity.
+  KerBridge does not mirror the other users into the directory,
+  and refuses each sign-in for them.
+  Nothing works until a group with this name exists in the Entra tenant.
  .
- Any group is possible; this name is only a suggestion. When the realm is
- live, replace the name with the object id of the group in
- /etc/kerbridge/idp_entra.toml, so that a rename cannot point it elsewhere.
+  Any group is possible; this name is only a suggestion.
+  When the realm is live, replace the name with the object id
+  of the group in /etc/kerbridge/idp_entra.toml,
+  so that a rename cannot point it elsewhere.

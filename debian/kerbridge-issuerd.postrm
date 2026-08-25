@@ -29,10 +29,10 @@ case "$1" in
             ' "$KRB5_CONF" > "$tmp"
             chmod 0644 "$tmp"
             mv "$tmp" "$KRB5_CONF"
-            # A file that now holds nothing but the blank line the append put
-            # there is a file this package created. Leaving an empty
-            # /etc/krb5.conf behind would be a leftover; leaving one with an
-            # operator's own content in it is the whole point of the grep.
+            # A file that now holds nothing is one this package created --
+            # the pair was its entire content. Leaving an empty /etc/krb5.conf
+            # behind would be a leftover; leaving one with an operator's own
+            # content in it is the whole point of the grep.
             if [ ! -s "$KRB5_CONF" ] || ! grep -q '[^[:space:]]' "$KRB5_CONF"; then
                 rm -f "$KRB5_CONF"
             fi

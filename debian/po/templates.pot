@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: elonen@iki.fi\n"
-"POT-Creation-Date: 2026-08-21 19:25+0000\n"
+"POT-Creation-Date: 2026-08-25 08:23+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -19,191 +19,167 @@ msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:1001
+#: ../kerbridge-config.templates:2001
 msgid "Kerberos realm for this deployment:"
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:1001
+#: ../kerbridge-config.templates:2001
 msgid ""
-"KerBridge serves one Kerberos realm, in upper case, for example EXAMPLE."
-"SITE. Six further values are derived from it -- the domain root, the DNS "
-"domain, the NetBIOS name, the domain controller's short name and two "
-"organisational units -- so this is the one answer the rest of the "
-"configuration is built out of."
+" KerBridge serves one Kerberos realm.\n"
+" Give it in upper case, for example EXAMPLE.SITE.\n"
+" KerBridge derives other values from it: the domain root,\n"
+" the DNS domain, the NetBIOS name, the short name of the\n"
+" domain controller, and two organizational units."
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:1001
+#: ../kerbridge-config.templates:2001
 msgid ""
-"The realm is baked into the Samba database the day the domain is "
-"provisioned, along with the domain SID and every filesystem ACL that carries "
-"it. It cannot be corrected afterwards without provisioning again."
+" You cannot correct the realm later.\n"
+" It goes into the Samba database,\n"
+" and the permissions of every file carry an identifier from it.\n"
+" This is binary data in many places, and no edit can change it.\n"
+" To use a different realm, provision the domain again."
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:1001
+#: ../kerbridge-config.templates:2001
 msgid ""
-"These answers are used on first install only, to write a configuration set "
-"that is not there yet. No package ever edits a configuration file you "
-"already have: reconfiguring asks again, sees the files, and leaves them "
-"alone. Leave this empty and nothing at all is written, which is the right "
-"outcome for an unattended install with no answers to give."
+" KerBridge writes the initial config files\n"
+" on the first installation only.\n"
+" If you leave this empty, it writes nothing."
 msgstr ""
 
 #. Type: error
 #. Description
-#: ../kerbridge-config.templates:2001
+#: ../kerbridge-config.templates:3001
 msgid "Invalid Kerberos realm"
 msgstr ""
 
 #. Type: error
 #. Description
-#: ../kerbridge-config.templates:2001
+#: ../kerbridge-config.templates:3001
 msgid ""
-"A realm is a dotted domain name with no spaces in it, such as EXAMPLE.SITE. "
-"The value entered is not one."
+" A realm is a domain name with dots and no spaces,\n"
+" for example EXAMPLE.SITE.\n"
+" Your value is not a realm name."
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:3001
+#: ../kerbridge-config.templates:4001
 msgid "LDAPS URL of the domain controller:"
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:3001
+#: ../kerbridge-config.templates:4001
 msgid ""
-"The address KerBridge binds to, ldaps:// only -- plain LDAP and StartTLS are "
-"both refused where this is read, because the bind password and every "
-"password sync writes would otherwise cross the network in the clear."
+" KerBridge binds to this address.\n"
+" It accepts ldaps:// only, because plain LDAP and StartTLS\n"
+" send the bind password and each password write in clear text."
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:3001
+#: ../kerbridge-config.templates:4001
 msgid ""
-"The proposed value names a domain controller called \"kerbridge\" inside the "
-"realm above. Change the host if yours is called something else; the short "
-"name is taken from this URL's first label."
+" The proposed address uses a domain controller with the name\n"
+" \"kerbridge\" in the realm above.\n"
+" Change the host name if yours is different."
 msgstr ""
 
 #. Type: error
 #. Description
-#: ../kerbridge-config.templates:4001
+#: ../kerbridge-config.templates:5001
 msgid "Invalid LDAPS URL"
 msgstr ""
 
 #. Type: error
 #. Description
-#: ../kerbridge-config.templates:4001
+#: ../kerbridge-config.templates:5001
 msgid ""
-"The URL must begin with ldaps:// . Plain ldap:// and StartTLS are refused by "
-"KerBridge itself, so an address entered here in that form would only fail "
-"later."
+" The address must start with ldaps://.\n"
+" KerBridge refuses plain ldap:// and StartTLS.\n"
+" An address in that form fails later."
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:5001
+#: ../kerbridge-config.templates:6001
 msgid "Cloud IdP tenant id:"
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:5001
-msgid ""
-"The Microsoft Entra ID tenant whose users this deployment admits, as a UUID."
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:5001
-msgid ""
-"Leave this empty for a host that runs no synchronisation and serves no sign-"
-"ins -- an administrator's machine with kerbridge-manage on it, for instance. "
-"The configuration set is still written, with no identity provider listed in "
-"it, and a provider can be added later by editing the files."
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:5001
-msgid ""
-"This is not a secret. Tenant and client ids are public OIDC identifiers, and "
-"no KerBridge credential is ever passed through debconf."
-msgstr ""
-
-#. Type: string
-#. Description
 #: ../kerbridge-config.templates:6001
-msgid "Application id of the broker API registration:"
+msgid ""
+" The Microsoft Entra ID tenant whose users this deployment admits.\n"
+" Give the tenant id as a UUID."
 msgstr ""
 
 #. Type: string
 #. Description
 #: ../kerbridge-config.templates:6001
 msgid ""
-"The Entra application registration that the broker validates access tokens "
-"for -- the audience a client asks its token to be issued for."
+" Leave this empty only for a host that does no synchronization\n"
+" and serves no sign-ins, for example an administrator machine\n"
+" with kerbridge-manage.\n"
+" KerBridge then writes the config files\n"
+" with no identity provider in them."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:6001
+msgid " This is not a secret."
 msgstr ""
 
 #. Type: string
 #. Description
 #: ../kerbridge-config.templates:7001
-msgid "Application id of the workstation client registration:"
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:7001
-msgid ""
-"The public Entra application registration the workstation agent signs in "
-"with. It is handed to clients by the broker, so a client needs no "
-"configuration of its own beyond the address."
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:8001
-msgid "Application id of the synchronisation registration:"
+msgid "UUID of the broker's Entra app, usually named \"KerBridge broker API\":"
 msgstr ""
 
 #. Type: string
 #. Description
 #: ../kerbridge-config.templates:8001
 msgid ""
-"The confidential Entra application registration kerbridge-sync reads the "
-"directory with. Its client secret or certificate is a file under /etc/"
-"kerbridge.secrets/, named in the configuration and never held here."
+"UUID of the client's Entra app, usually named \"KerBridge public client\":"
 msgstr ""
 
 #. Type: string
 #. Description
 #: ../kerbridge-config.templates:9001
+msgid "UUID of the sync Entra app, usually named \"KerBridge sync\":"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../kerbridge-config.templates:10001
 msgid "Name of the cloud group whose members are admitted:"
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:9001
+#: ../kerbridge-config.templates:10001
 msgid ""
-"Membership of this group is what admits an identity: users outside it are "
-"not mirrored into the directory and every sign-in for them is refused. "
-"Nothing works until a group by this name exists in the tenant, so create it "
-"if you have not already."
+" Membership of this group admits an identity.\n"
+" KerBridge does not mirror the other users into the directory,\n"
+" and refuses each sign-in for them.\n"
+" Nothing works until a group with this name exists in the Entra tenant."
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../kerbridge-config.templates:9001
+#: ../kerbridge-config.templates:10001
 msgid ""
-"The proposed name is only a suggestion -- any group will do. Once the realm "
-"is live, replace the name with the group's object id in /etc/kerbridge/"
-"idp_entra.toml: a group that is renamed or recreated can otherwise resolve "
-"to one you did not choose."
+" Any group is possible; this name is only a suggestion.\n"
+" When the realm is live, replace the name with the object id\n"
+" of the group in /etc/kerbridge/idp_entra.toml,\n"
+" so that a rename cannot point it elsewhere."
 msgstr ""
