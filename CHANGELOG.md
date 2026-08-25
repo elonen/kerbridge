@@ -24,7 +24,7 @@ version of the build, so a note left in it is shown a second time.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
-## Unreleased
+## 0.9.2
 
 - Intune config and installation automation for Windows agent (Group Policy
   template, `KerBridge.admx`, installer packaging).
