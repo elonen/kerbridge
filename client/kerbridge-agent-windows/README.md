@@ -194,19 +194,20 @@ rustup target add x86_64-pc-windows-gnu
 
 make build        # -> ../target/x86_64-pc-windows-gnu/release/kerbridge-agent.exe
 make icon         # only when the logo changes; needs rsvg-convert + ImageMagick
-make installer    # -> ../dist/kerbridge-nas-access.msi; needs Docker, nothing else
+make installer    # -> ../dist/windows-kerbridge-nas-access-gui-amd64.msi
+                  #    needs Docker, nothing else
 ```
 
 `make installer` is the odd one out: it builds inside Docker rather than on the
 host, because packaging needs wixl and msitools and those are not dependencies
 this repo asks a developer to install. The MSI installs both exes to
 `%ProgramFiles%\KerBridge\` with a Start-menu shortcut, and writes a machine-wide
-autostart entry only when asked (`msiexec /i kerbridge-nas-access.msi AUTOSTART=1
-/qn`, which is what a fleet push does — an interactive install leaves autostart
-to the *Start at login* checkbox in Settings). Uninstall keeps your settings
-(`%APPDATA%\KerBridge\`) unless you say otherwise with
-`msiexec /x kerbridge-nas-access.msi REMOVESETTINGS=1`. An interactive install ends
-on a completion dialog; `/qn` and `/qb` stay silent. It is **unsigned**: signing
+autostart entry only when asked (`msiexec /i
+windows-kerbridge-nas-access-gui-amd64.msi AUTOSTART=1 /qn`, which is what a
+fleet push does — an interactive install leaves autostart to the *Start at
+login* checkbox in Settings). Uninstall keeps your settings
+(`%APPDATA%\KerBridge\`) unless you say otherwise with `msiexec /x
+windows-kerbridge-nas-access-gui-amd64.msi REMOVESETTINGS=1`. An interactive install ends on a completion dialog; `/qn` and `/qb` stay silent. It is **unsigned**: signing
 is a release-time act by the publisher. Authoring is
 [`installer/nas-access.wxs`](installer/nas-access.wxs), plus `installer/ui/*.idt` for
 the completion dialog — wixl cannot author UI, so those tables are imported into

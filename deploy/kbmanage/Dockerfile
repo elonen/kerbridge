@@ -37,6 +37,18 @@ COPY crates ./crates
 # aarch64-musl is a plain ET_EXEC without them: fixed load address, no ASLR on
 # the main image. `-C relocation-model=pic` alone does not fix it; the link
 # argument is the part that does.
+#
+# `-C link-self-contained=no` is load-bearing on aarch64, and a binary built
+# without it segfaults before main. rustc otherwise passes its own crt1.o,
+# musl's non-PIE startup object; a static-PIE ET_DYN has no interpreter, so
+# nothing self-relocates it and it jumps into unrelocated code. rustc chooses
+# that object without seeing `-C link-arg=-static-pie`, and `-nostartfiles`
+# cannot displace it -- it is an explicit object on the link line. Left to gcc,
+# the startfile spec picks rcrt1.o, which self-relocates. `-L` then supplies
+# the one file the system lacks, rustc's own libunwind.a.
+#
+# The last assertion runs the binary. `file` reads the ELF header, which said
+# static-pie of the crt1.o build too.
 ARG TARGETARCH
 RUN case "$TARGETARCH" in \
       amd64) want="x86-64";  triple="x86_64-unknown-linux-musl";; \
@@ -44,13 +56,15 @@ RUN case "$TARGETARCH" in \
       "")    want="";        triple="$(rustc -vV | sed -n 's/^host: //p')";; \
       *)     echo "unsupported TARGETARCH=$TARGETARCH"; exit 1;; \
     esac; \
-    RUSTFLAGS="-C relocation-model=pic -C link-self-contained=yes -C link-arg=-static-pie" \
+    sc="$(rustc --print sysroot)/lib/rustlib/$triple/lib/self-contained"; \
+    RUSTFLAGS="-C relocation-model=pic -C link-self-contained=no -C link-arg=-static-pie -C link-arg=-L$sc" \
     cargo auditable build --release --target "$triple" -p kerbridge-manage \
  && mkdir -p target/release \
  && cp "target/$triple/release/kbmanage" target/release/kbmanage \
  && { [ -z "$want" ] || file target/release/kbmanage | grep -q "$want"; } \
  && file target/release/kbmanage | grep -q "static-pie" \
- || { echo "kbmanage is not a static-pie $TARGETARCH binary:"; file target/release/kbmanage; exit 1; }
+ && target/release/kbmanage --version >/dev/null \
+ || { echo "kbmanage is not a static-pie $TARGETARCH binary that runs:"; file target/release/kbmanage; exit 1; }
 
 # A binary with no `.dep-v0` reads to every scanner as one with no dependencies,
 # which is worse than not scanning it. `cargo auditable` failing open is silent.

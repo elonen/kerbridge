@@ -60,12 +60,17 @@ jobs:
       # Every deb this repository has ever released. Drafts and prereleases are
       # skipped: a prerelease is not something an `apt upgrade` should reach.
       #
-      # Each release's debs are checked against the SHA256SUMS that release
+      # Each release's assets are checked against the SHA256SUMS that release
       # published, before anything is indexed. Signing covers the hashes of
       # whatever reaches `pool/`, so holding the key is not the only way to get
       # a package signed: replacing a release asset after the fact would do it
       # on the next run. A release that carries debs and no SHA256SUMS fails the
       # run rather than being signed unverified.
+      #
+      # A release publishes its debs as one zip per architecture. Releases up
+      # to 0.9.1 published them loose, and those are still indexed. The check
+      # runs on what the release page holds -- the zip -- so the debs are
+      # unpacked only after it passes.
       - name: collect the debs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,18 +85,27 @@ jobs:
           while read -r tag; do
             echo "::group::$tag"
             stage=$(mktemp -d)
-            # A release from before the debs existed matches nothing, and
-            # `gh release download` calls that an error. Not one here.
-            gh release download "$tag" --pattern '*.deb' --dir "$stage" \
-              || echo "no debs on $tag"
-            if ls "$stage"/*.deb >/dev/null 2>&1; then
+            # A release from before the debs existed matches neither pattern,
+            # and `gh release download` calls that an error. Not one here.
+            gh release download "$tag" --pattern 'kerbridge-server-deb-packages_*.zip' \
+              --pattern '*.deb' --dir "$stage" || echo "no packages on $tag"
+            if ls "$stage"/*.deb >/dev/null 2>&1 \
+               || ls "$stage"/kerbridge-server-deb-packages_*.zip >/dev/null 2>&1; then
               gh release download "$tag" --pattern SHA256SUMS --dir "$stage" || {
                 echo "$tag publishes debs and no SHA256SUMS" >&2; exit 1
               }
               # SHA256SUMS names every asset of its release, and most of them
-              # are not debs and are not here. `--ignore-missing` passes over
-              # those and still fails the run if it verified nothing at all.
+              # are not packages and are not here. `--ignore-missing` passes
+              # over those and still fails the run if it verified nothing at
+              # all.
               ( cd "$stage" && sha256sum -c --ignore-missing SHA256SUMS )
+              # Both zips carry the same Architecture: all metapackage, so
+              # `-o` overwrites it with the same bytes.
+              if ls "$stage"/kerbridge-server-deb-packages_*.zip >/dev/null 2>&1; then
+                for z in "$stage"/kerbridge-server-deb-packages_*.zip; do
+                  unzip -oq "$z" -d "$stage"
+                done
+              fi
               mv "$stage"/*.deb pool/
             fi
             rm -rf "$stage"

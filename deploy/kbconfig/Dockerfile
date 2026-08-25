@@ -21,13 +21,15 @@ RUN case "$TARGETARCH" in \
       "")    want="";        triple="$(rustc -vV | sed -n 's/^host: //p')";; \
       *)     echo "unsupported TARGETARCH=$TARGETARCH"; exit 1;; \
     esac; \
-    RUSTFLAGS="-C relocation-model=pic -C link-self-contained=yes -C link-arg=-static-pie" \
+    sc="$(rustc --print sysroot)/lib/rustlib/$triple/lib/self-contained"; \
+    RUSTFLAGS="-C relocation-model=pic -C link-self-contained=no -C link-arg=-static-pie -C link-arg=-L$sc" \
     cargo auditable build --release --target "$triple" -p kerbridge-config \
  && mkdir -p target/release \
  && cp "target/$triple/release/kbconfig" target/release/kbconfig \
  && { [ -z "$want" ] || file target/release/kbconfig | grep -q "$want"; } \
  && file target/release/kbconfig | grep -q "static-pie" \
- || { echo "kbconfig is not a static-pie $TARGETARCH binary:"; file target/release/kbconfig; exit 1; }
+ && target/release/kbconfig --version >/dev/null \
+ || { echo "kbconfig is not a static-pie $TARGETARCH binary that runs:"; file target/release/kbconfig; exit 1; }
 
 # See deploy/kbmanage/Dockerfile for why this is asserted rather than assumed.
 RUN readelf -S target/release/kbconfig | grep -q "\.dep-v0" \

@@ -68,7 +68,7 @@ RUN mkdir /out && wixl -a x64 \
       -D CliExe=kerbridge.exe \
       -D IconFile=app-icon.ico \
       -D LicenseDoc=LICENSE \
-      -o /out/kerbridge-nas-access.msi nas-access.wxs
+      -o /out/windows-kerbridge-nas-access-gui-amd64.msi nas-access.wxs
 
 # The rows wixl cannot author, written straight into the built database. msibuild
 # is msitools' table editor, so this needs no second toolchain.
@@ -94,7 +94,7 @@ RUN mkdir /out && wixl -a x64 \
 #      it, populating SecureCustomProperties only from MajorUpgrade -- so read back
 #      what it wrote and append ours rather than hardcoding its two WIX_* names.
 RUN set -eu; \
-    msibuild /out/kerbridge-nas-access.msi \
+    msibuild /out/windows-kerbridge-nas-access-gui-amd64.msi \
       -i ui/TextStyle.idt \
       -i ui/Dialog.idt \
       -i ui/Control.idt \
@@ -106,8 +106,8 @@ RUN set -eu; \
       -q "INSERT INTO \`RemoveFile\` (\`FileKey\`, \`Component_\`, \`FileName\`, \`DirProperty\`, \`InstallMode\`) VALUES ('RemoveSettingsConfig', 'SettingsCleanup', 'config.toml', 'SETTINGSFOLDER', 2)" \
       -q "INSERT INTO \`RemoveFile\` (\`FileKey\`, \`Component_\`, \`FileName\`, \`DirProperty\`, \`InstallMode\`) VALUES ('RemoveSettingsLogs', 'SettingsCleanup', '*.log', 'SETTINGSFOLDER', 2)" \
       -q "INSERT INTO \`RemoveFile\` (\`FileKey\`, \`Component_\`, \`DirProperty\`, \`InstallMode\`) VALUES ('RemoveSettingsFolder', 'SettingsCleanup', 'SETTINGSFOLDER', 2)"; \
-    secure=$(msiinfo export /out/kerbridge-nas-access.msi Property | awk -F'\t' '$1 == "SecureCustomProperties" { print $2 }'); \
-    msibuild /out/kerbridge-nas-access.msi \
+    secure=$(msiinfo export /out/windows-kerbridge-nas-access-gui-amd64.msi Property | awk -F'\t' '$1 == "SecureCustomProperties" { print $2 }'); \
+    msibuild /out/windows-kerbridge-nas-access-gui-amd64.msi \
       -q "DELETE FROM \`Property\` WHERE \`Property\` = 'SecureCustomProperties'" \
       -q "INSERT INTO \`Property\` (\`Property\`, \`Value\`) VALUES ('SecureCustomProperties', '${secure:+$secure;}AUTOSTART;REMOVESETTINGS')"
 
@@ -115,4 +115,4 @@ RUN set -eu; \
 # Unsigned -- signing is a release-time act by the publisher (a CI secret), never
 # part of a developer build.
 FROM scratch AS msi-dist
-COPY --from=msi /out/kerbridge-nas-access.msi /
+COPY --from=msi /out/windows-kerbridge-nas-access-gui-amd64.msi /

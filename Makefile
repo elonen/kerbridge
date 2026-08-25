@@ -8,8 +8,9 @@
 #   windows  -- the Windows client bits (CLI kerbridge.exe + tray
 #               kerbridge-agent.exe), cross-compiled in a container to
 #               x86_64-pc-windows-gnu and written to dist/.
-#   installer-- the same two exes packaged as dist/kerbridge-nas-access.msi. Not
-#               part of the default build: it is what a release ships, and it is
+#   installer-- the same two exes packaged as
+#               dist/windows-kerbridge-nas-access-gui-amd64.msi. Not part of
+#               the default build: it is what a release ships, and it is
 #               unsigned until the publisher signs it.
 #   macos    -- dist/NAS Access.app, the menu-bar agent. Not part of the default
 #               build and not containerized: an .app is assembled on a Mac.

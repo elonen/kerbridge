@@ -46,15 +46,21 @@ COPY debian/stage-prebuilt debian/about.toml debian/about.hbs ./debian/
 # binary with no `.dep-v0` section reads to every scanner as one with no
 # dependencies, which is worse than not scanning it -- `cargo auditable` failing
 # open is silent.
+#
+# The last assertion runs each binary. `file` reads the ELF header, and a header
+# cannot show a startup crash -- the wrong crt object gives a static-PIE binary
+# that segfaults before main and still says static-pie. The three daemons take
+# no `--version`, so every outcome passes except death on a fatal signal.
 RUN case "$(rustc -vV | sed -n 's/^host: //p')" in \
       x86_64-*)  triple="x86_64-unknown-linux-musl";; \
       aarch64-*) triple="aarch64-unknown-linux-musl";; \
       *)         echo "unsupported build host" >&2; exit 1;; \
     esac; \
     echo "$triple" > /triple; \
+    sc="$(rustc --print sysroot)/lib/rustlib/$triple/lib/self-contained"; \
     for p in kerbridge-config kerbridge-manage kerbridge-setup \
              kerbridge-broker kerbridge-sync kerbridge-issuerd; do \
-      RUSTFLAGS="-C relocation-model=pic -C link-self-contained=yes -C link-arg=-static-pie" \
+      RUSTFLAGS="-C relocation-model=pic -C link-self-contained=no -C link-arg=-static-pie -C link-arg=-L$sc" \
       cargo auditable build --release --target "$triple" -p "$p" || exit 1; \
     done \
  && for b in kbconfig kbmanage kbsetup kerbridge-broker kerbridge-sync issuerd; do \
@@ -65,6 +71,10 @@ RUN case "$(rustc -vV | sed -n 's/^host: //p')" in \
         || { echo "$b is not static-pie" >&2; exit 1; }; \
       readelf -S "$f" | grep -q "\.dep-v0" \
         || { echo "$b carries no audit data" >&2; exit 1; }; \
+      timeout 5 "$f" --version >/dev/null 2>&1; \
+      case $? in 132|135|139) \
+        echo "$b dies on a signal before main" >&2; exit 1;; \
+      esac; \
     done
 
 # `/triple` carries the target directory across layers: a RUN cannot set an ENV,

@@ -24,8 +24,8 @@ Neither executable runs as root at any time.
 
 ## Download it
 
-Each release attaches `kerbridge-nas-access-arm64.app.zip`. Unzip it to get
-`NAS Access.app`. The bundle is **arm64 only**, because that is the
+Each release attaches `macos-kerbridge-nas-access-gui-arm64.app.zip`. Unzip
+it to get `NAS Access.app`. The bundle is **arm64 only**, because that is the
 architecture of the runner that builds it. On an Intel Mac, build it.
 
 ## Build it

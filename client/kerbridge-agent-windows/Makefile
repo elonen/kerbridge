@@ -10,7 +10,7 @@
 # The binary name is not the crate name -- see the [[bin]] block in Cargo.toml.
 BIN        := kerbridge-agent
 CLI        := kerbridge
-MSI        := kerbridge-nas-access.msi
+MSI        := windows-kerbridge-nas-access-gui-amd64.msi
 TARGET     := x86_64-pc-windows-gnu
 # One target directory for the whole client workspace (../Cargo.toml), so the
 # agent links a core the CLI build already compiled.

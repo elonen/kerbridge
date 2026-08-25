@@ -402,7 +402,7 @@ the locations of the configuration and the logs.
 Download the agent, or build it on a machine with Docker:
 
 ```sh
-make installer   # -> dist/kerbridge-nas-access.msi
+make installer   # -> dist/windows-kerbridge-nas-access-gui-amd64.msi
 ```
 
 Install it on the workstation. Then start **NAS Access** from the Start menu

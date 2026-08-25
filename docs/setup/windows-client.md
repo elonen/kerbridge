@@ -62,7 +62,7 @@ which has its own open issues.
 ## Build it
 
 ```sh
-make installer     # -> dist/kerbridge-nas-access.msi
+make installer     # -> dist/windows-kerbridge-nas-access-gui-amd64.msi
 ```
 
 The build needs Docker and nothing else. Packaging uses wixl and msitools,
@@ -87,8 +87,8 @@ supplies the autostart entry.
 ## Install it
 
 ```
-msiexec /i kerbridge-nas-access.msi                  # interactive
-msiexec /i kerbridge-nas-access.msi AUTOSTART=1 /qn  # silent, fleet push, autostart
+msiexec /i windows-kerbridge-nas-access-gui-amd64.msi                  # interactive
+msiexec /i windows-kerbridge-nas-access-gui-amd64.msi AUTOSTART=1 /qn  # silent, fleet push, autostart
 ```
 
 - The MSI installs to `%ProgramFiles%\KerBridge\`, and it adds a Start-menu
@@ -99,8 +99,8 @@ msiexec /i kerbridge-nas-access.msi AUTOSTART=1 /qn  # silent, fleet push, autos
   checkbox reads checked and is disabled, with a line that says that IT turned
   it on: a per-user setting cannot countermand a machine-wide one.
 - An uninstall keeps the per-user settings.
-  `msiexec /x kerbridge-nas-access.msi REMOVESETTINGS=1` also removes
-  `%APPDATA%\KerBridge\`.
+  `msiexec /x windows-kerbridge-nas-access-gui-amd64.msi REMOVESETTINGS=1`
+  also removes `%APPDATA%\KerBridge\`.
 - **To upgrade, install the newer MSI over the old one.** Do not uninstall
   first, even when the two MSIs have the same version. The settings survive the
   upgrade. `AUTOSTART=1` does not, so a fleet's upgrade command must pass it

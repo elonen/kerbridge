@@ -147,10 +147,7 @@ jobs:
         run: |
           set -eu
           mkdir release
-
-          # Everything that differs between the architectures, from both legs.
-          find incoming -type f ! -name 'kerbridge_*_all.deb' \
-            -exec cp {} release/ \;
+          version=${GITHUB_REF_NAME#v}
 
           # The metapackage is Architecture: all, so both legs build one, and a
           # release holds one file of a name. Either copy is right only if the
@@ -163,7 +160,30 @@ jobs:
             echo "the two legs packaged different metapackages" >&2
             exit 1
           }
-          cp "$amd" release/
+
+          # One zip per architecture. Each carries the Architecture: all
+          # metapackage as well as its own debs, so one download is a complete
+          # set and `apt install ./*.deb` installs the deployment from the
+          # unpacked directory. `apt.yml` unpacks these again to index them.
+          for arch in amd64 arm64; do
+            stage=$(mktemp -d)
+            out="kerbridge-server-deb-packages_${version}_${arch}.zip"
+            cp "incoming/linux-$arch/debian/"*_"$arch".deb "$amd" "$stage/"
+            ( cd "$stage" && zip -qX "$out" ./*.deb )
+            mv "$stage/$out" release/
+            rm -rf "$stage"
+          done
+
+          # The standalone CLIs, both architectures in one zip -- for an
+          # operator who runs them from a workstation rather than a deb.
+          stage=$(mktemp -d)
+          out="kerbridge-server-cli_${version}_linux.zip"
+          cp incoming/linux-*/kbmanage-linux-* incoming/linux-*/kbconfig-linux-* "$stage/"
+          ( cd "$stage" && zip -qX "$out" ./* )
+          mv "$stage/$out" release/
+          rm -rf "$stage"
+
+          cp incoming/windows/*.msi incoming/macos/*.app.zip release/
 
           # The operator's own check, with `sha256sum -c SHA256SUMS`. Relative
           # names, so it works in the directory the files were downloaded to.

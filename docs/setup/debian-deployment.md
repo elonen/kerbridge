@@ -93,11 +93,16 @@ assets are one flat namespace. `./` is how a flat repository is named.
 
 Skip this if you installed via apt repository.
 
-`make debian-docker` builds them all into `dist/debian/`. Install them with
-`apt` rather than `dpkg -i`, so that the distribution dependencies — Samba
-above all — are resolved for you:
+Each release attaches `kerbridge-server-deb-packages_<version>_amd64.zip` and
+the `arm64` one. A zip holds every package for that architecture, so one
+download is a complete set. `make debian-docker` builds the same files into
+`dist/debian/`.
+
+Install them with `apt` rather than `dpkg -i`, so that the distribution
+dependencies — Samba above all — are resolved for you:
 
 ```sh
+unzip kerbridge-server-deb-packages_*.zip
 sudo apt install --no-install-recommends ./kerbridge*.deb
 ```
 
@@ -106,8 +111,9 @@ no tag reachable from HEAD needs `make debian-docker KB_VERSION=0.10.0`
 instead. The build stops and says so rather than guess a version.
 
 Nothing verifies these files. They carry no signature of their own — the
-repository index is the only signed part — so check a file that you did not
-build yourself against the `SHA256SUMS` on the release page.
+repository index is the only signed part — so check a zip that you did not
+build yourself against the `SHA256SUMS` on the release page, before you
+unpack it.
 
 | Package | What it is | Where it goes |
 |---|---|---|

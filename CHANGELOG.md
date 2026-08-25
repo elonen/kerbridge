@@ -28,6 +28,7 @@ names the tag, and it stops if that section is absent or empty.
 
 - Hardening: static-PIE binaries on arm64, a `.dep-v0` dependency
   list the scanners can read, and `ring` in place of the hand-written ASN.1.
+  Each build runs the binary it linked, so one that cannot start fails.
 - New `kbsetup status` says what is done and what is left.
 - New `kbsetup secrets` asks for the credentials nothing can generate and
   writes each at the mode its reader needs.
@@ -35,6 +36,9 @@ names the tag, and it stops if that section is absent or empty.
   before it writes, restores your own `smb.conf` if the provision fails, and
   disables `winbind`, `smbd` and `nmbd` on the domain controller.
 - `kbsetup` no longer stops at a password prompt when it has a terminal.
+- The release page attaches fewer files: one zip for each architecture's
+  `.deb` packages, one zip for the standalone `kbmanage` and `kbconfig`
+  binaries, and a client download named for its platform and architecture.
 - CI and release improvements.
 - Documentation improvements.
 

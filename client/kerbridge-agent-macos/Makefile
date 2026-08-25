@@ -9,7 +9,7 @@ APP     := NAS Access.app
 # A release asset is one file, and the name carries the architecture because the
 # bundle is thin: `cargo build` targets the host, and every Mac this ships to is
 # arm64.
-ZIP     := kerbridge-nas-access-arm64.app.zip
+ZIP     := macos-kerbridge-nas-access-gui-arm64.app.zip
 DIST    := ../../dist
 # One version number for the product: the crate's, substituted into Info.plist.
 VERSION := $(shell sed -n '/^\[package\]/,/^\[/ s/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)
