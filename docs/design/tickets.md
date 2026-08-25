@@ -469,7 +469,7 @@ that undid itself on re-adoption would not be one. Disable deliberately does not
 clear grants: the enabled check already makes a disabled account's grants inert,
 and disable and re-enable is an ordinary admin action.
 
-### No attestation, stated honestly
+### No attestation
 
 The server cannot tell a TPM key from a software key, and deliberately does not
 try. Attestation would need `NCryptCreateClaim` on the client, and, on the

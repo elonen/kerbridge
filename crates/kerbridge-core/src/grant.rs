@@ -322,7 +322,7 @@ mod tests {
 
     fn sample() -> DeviceGrant {
         DeviceGrant {
-            label: "BUILD01\\unreal-builder".into(),
+            label: "BUILD01\\svc-builder".into(),
             alg: ALG_ES256,
             thumbprint: TP.into(),
             start: 1_785_000_000,
@@ -335,9 +335,7 @@ mod tests {
     fn encodes_the_documented_shape() {
         assert_eq!(
             sample().encode(),
-            format!(
-                "kbkey1|label=BUILD01\\unreal-builder|es256={TP}|start=1785000000|end=1787592000"
-            )
+            format!("kbkey1|label=BUILD01\\svc-builder|es256={TP}|start=1785000000|end=1787592000")
         );
         let used = DeviceGrant { seen: Some(1_785_086_400), ..sample() };
         assert!(used.encode().ends_with("|seen=1785086400"));
@@ -483,7 +481,7 @@ mod tests {
     /// escaping can triple a character.
     #[test]
     fn a_label_is_clamped_on_a_character_boundary() {
-        assert_eq!(sanitize_label("BUILD01\\unreal-builder"), "BUILD01\\unreal-builder");
+        assert_eq!(sanitize_label("BUILD01\\svc-builder"), "BUILD01\\svc-builder");
         assert_eq!(sanitize_label("BUILD01\r\n (revoked)\u{1b}[31m"), "BUILD01 (revoked)[31m");
         let long = sanitize_label(&"ä".repeat(200));
         // Two bytes each, so 48 fit and the 49th would overrun.

@@ -263,12 +263,10 @@ fn point_from_ecc_blob(blob: &[u8]) -> Result<Vec<u8>> {
 
 /// What this device calls itself: `<computer>\<local-account>`.
 ///
-/// The user's own name is deliberately absent -- the record hangs off their
-/// directory object, so it would be redundant -- and the machine plus the local
-/// account it ran as are what actually distinguish `BUILD01\unreal-builder` from
-/// `BUILD01\jarno`. Each component is clamped to the limit Windows already
-/// enforces on it, so the escaped label cannot approach the directory's
-/// per-value ceiling.
+/// No user name: the record hangs off the user's directory object. The machine
+/// and the local account are what separate `BUILD01\svc-builder` from
+/// `BUILD01\alice`. Each part is clamped to the limit Windows enforces on it, so
+/// the escaped label stays under the directory's per-value ceiling.
 pub fn default_label() -> String {
     let clamp = |var: &str, limit: usize| -> String {
         std::env::var(var).unwrap_or_default().chars().take(limit).collect()
