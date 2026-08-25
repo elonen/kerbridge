@@ -26,37 +26,13 @@ names the tag, and it stops if that section is absent or empty.
 
 ## Unreleased
 
-- The Windows agent ships a Group Policy template,
-  `client/kerbridge-agent-windows/policy/KerBridge.admx`. Import it into
-  Intune, or copy it to the Group Policy central store. It sets the broker
-  address, start at sign-in, the Windows sign-in, the SMB repair and the
-  device-grant account.
-- Two new machine policy values: `Autostart` and `WindowsSignIn`. The agent
-  reads `HKLM\Software\Policies\KerBridge` first, then the old
-  `HKLM\Software\KerBridge`.
-- The agent now applies the autostart setting instead of only reporting it.
-  A policy value, a deployment default and the checkbox all end in a login
-  entry that starts the agent.
-- New `kerbridge --enroll --yes` registers the realm with no prompt, for a
-  deployment tool that has no user to ask. It finds the broker in the policy
-  value or in DNS, does nothing when Windows already knows the realm, and
-  exits 3010 when a restart is needed, which Intune reads as a soft reboot.
-  `--yes` answers the `--unenroll` and `--repair` prompts too.
-- New `main.toml` `[client_defaults]` sets the defaults for the agents that
-  no management system owns. The broker serves them in `/config`. Machine
-  policy and the user's own choice both win over them.
-- The agent writes a setting to `config.toml` only after somebody changes
-  it. A machine that already ran keeps the values in its file; the new
-  defaults reach the profiles that have none.
+- Intune config and installation automation for Windows agent (Group Policy
+  template, `KerBridge.admx`, installer packaging).
 - New `kbmanage problems` lists what is wrong now. It reads the problem
   files, so it needs no webhook and no network.
-- A notification carries an emoji for its state. A problem and its recovery
-  no longer look the same in a chat channel. A custom `notify.template` can
-  use the new `%ICON%` placeholder.
-- `kbmanage doctor` no longer says that a device-grant group authorizes
-  nothing. That group gates the exchange, not a share.
-- `kbmanage cloud list` and `kbmanage group list` read more easily: sorted
-  rows, aligned columns, and a login name beside each member DN.
+- `kbmanage doctor` fixes.
+- Notification, `kbmanage cloud list` and `kbmanage group list` read more
+  easily.
 
 ## 0.9.1
 
