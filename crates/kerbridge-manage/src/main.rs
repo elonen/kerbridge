@@ -12,6 +12,7 @@ use std::io::{IsTerminal, Write};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
+use kerbridge_core::problem::Problem;
 use kerbridge_core::state::{
     GROUP_TYPE_DOMAIN_LOCAL_SECURITY, ROLE_ADMISSION, ROLE_DELEGATES, ST_NAME_PINNED,
 };
@@ -82,6 +83,24 @@ async fn run() -> Result<()> {
     // connecting is what fails.
     if matches!(cli.command, Command::Config) {
         Renderer { json: cli.json, yes: cli.yes }.config(&cfg);
+        return Ok(());
+    }
+
+    // Before connecting too, and for a different reason: the problem records
+    // are this host's own files, and the directory has no part in them.
+    if matches!(cli.command, Command::Problems) {
+        let Some(dir) = &cfg.notify_state_dir else {
+            bail!(
+                "main.toml sets notify.state_dir = \"none\", so each service holds its open \
+                 problems in its own memory and nothing here can read them. Name a directory \
+                 there to have them written."
+            )
+        };
+        let found = kerbridge_manage::problems::scan(dir)?;
+        for warning in &found.warnings {
+            eprintln!("kbmanage: warning: {warning}");
+        }
+        Renderer { json: cli.json, yes: cli.yes }.problems(dir, &found.open, now());
         return Ok(());
     }
 
@@ -157,7 +176,7 @@ async fn run() -> Result<()> {
             }
             Ok(())
         }
-        Command::Config | Command::Endpoint { .. } => {
+        Command::Config | Command::Endpoint { .. } | Command::Problems => {
             unreachable!("handled before connecting")
         }
     };
@@ -786,6 +805,34 @@ impl Renderer {
             println!("                 cannot be read: {why}");
         }
         println!("realm CA         {}", cfg.ca_file.display());
+    }
+
+    /// The open problems, loudest first, under the directory they were read
+    /// from. That directory is named whatever the answer is: "nothing is open"
+    /// and "nothing writes here" read alike otherwise, and they are opposite
+    /// facts.
+    fn problems(&self, dir: &std::path::Path, open: &[Problem], now: u64) {
+        if self.json {
+            return print_json(open);
+        }
+        if open.is_empty() {
+            println!("no open problems in {}", dir.display());
+            return;
+        }
+        println!("{}", dir.display());
+        println!("{:<8} {:<30} {:<10} {:<5} SUBJECT", "SEVERITY", "EVENT", "COMPONENT", "OPEN");
+        for p in open {
+            let row = format!(
+                "{:<8} {:<30} {:<10} {:<5} {}",
+                p.severity.as_str(),
+                p.event,
+                p.component,
+                p.lasted(now),
+                p.subject
+            );
+            println!("{}", row.trim_end());
+            println!("         {}\n", wrap(&p.message, 70, "         "));
+        }
     }
 
     fn group_list(&self, snap: &Snapshot) {

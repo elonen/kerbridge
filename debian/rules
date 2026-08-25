@@ -101,7 +101,7 @@ override_dh_auto_install:
 # dh_install drops whatever no *.install claims, and says nothing. The drift
 # this catches: kerbridge-manage/build.rs renders one page per verb by walking
 # the command definition, while stage-prebuilt and kerbridge-manage.install
-# name the seven by hand -- so a new verb ships no page until both lists grow.
+# name the eight by hand -- so a new verb ships no page until both lists grow.
 override_dh_missing:
 	dh_missing --fail-missing
 

@@ -29,10 +29,11 @@ pub enum Field {
     Timestamp,
     Message,
     Detail,
+    Icon,
 }
 
 impl Field {
-    const ALL: [(&'static str, Self); 7] = [
+    const ALL: [(&'static str, Self); 8] = [
         ("EVENT", Self::Event),
         ("SEVERITY", Self::Severity),
         ("COMPONENT", Self::Component),
@@ -40,6 +41,7 @@ impl Field {
         ("TIMESTAMP", Self::Timestamp),
         ("MESSAGE", Self::Message),
         ("DETAIL", Self::Detail),
+        ("ICON", Self::Icon),
     ];
 
     fn lookup(name: &str) -> Option<Self> {
@@ -61,6 +63,7 @@ pub struct Values<'a> {
     pub timestamp: &'a str,
     pub message: &'a str,
     pub detail: &'a str,
+    pub icon: &'a str,
 }
 
 impl Values<'_> {
@@ -73,6 +76,7 @@ impl Values<'_> {
             Field::Timestamp => self.timestamp,
             Field::Message => self.message,
             Field::Detail => self.detail,
+            Field::Icon => self.icon,
         }
     }
 }
@@ -106,6 +110,7 @@ impl Template {
             timestamp: HOSTILE,
             message: HOSTILE,
             detail: HOSTILE,
+            icon: HOSTILE,
         });
         if serde_json::from_str::<serde_json::Value>(&sample).is_err() {
             bail!(
@@ -200,20 +205,31 @@ mod tests {
             timestamp: "2026-07-30T12:00:00Z",
             message,
             detail,
+            icon: "\u{1f7e0}",
         }
     }
 
     #[test]
     fn substitutes_every_placeholder() {
         let t = Template::parse(
-            r#"{"a":"%EVENT%","b":"%SEVERITY%","c":"%COMPONENT%","d":"%REALM%","e":"%TIMESTAMP%","f":"%MESSAGE%","g":"%DETAIL%"}"#,
+            r#"{"a":"%EVENT%","b":"%SEVERITY%","c":"%COMPONENT%","d":"%REALM%","e":"%TIMESTAMP%","f":"%MESSAGE%","g":"%DETAIL%","h":"%ICON%"}"#,
         )
         .unwrap();
         let body = t.render(&values("m", "d"));
         assert_eq!(
             body,
-            r#"{"a":"graph-credential-expiring","b":"warning","c":"sync","d":"EXAMPLE.SITE","e":"2026-07-30T12:00:00Z","f":"m","g":"d"}"#
+            r#"{"a":"graph-credential-expiring","b":"warning","c":"sync","d":"EXAMPLE.SITE","e":"2026-07-30T12:00:00Z","f":"m","g":"d","h":"🟠"}"#
         );
+    }
+
+    /// An emoji is multi-byte UTF-8 and must reach the receiver as itself: JSON
+    /// escaping applies to the characters JSON reserves, and to nothing else.
+    #[test]
+    fn an_icon_survives_escaping() {
+        let t = Template::parse(r#"{"text":"%ICON% %MESSAGE%"}"#).unwrap();
+        let body = t.render(&values("m", "d"));
+        let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(parsed["text"], "\u{1f7e0} m");
     }
 
     /// The whole point of the module. A display name is tenant-controlled text

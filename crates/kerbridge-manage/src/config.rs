@@ -37,6 +37,10 @@ pub struct Config {
     /// Err back into the same message it would have carried.
     pub bind_password: Result<String, String>,
     pub ca_file: PathBuf,
+    /// The parent of the per-service problem directories, as `main.toml` states
+    /// it. `None` is `notify.state_dir = "none"`, where the open problems exist
+    /// in each service's memory and nowhere a reader can reach.
+    pub notify_state_dir: Option<PathBuf>,
     pub timeout: Duration,
     /// The config set that answered, for `kbmanage config` and for error
     /// messages that would otherwise leave an operator guessing which
@@ -66,7 +70,7 @@ impl Config {
             None => kerbridge_core::config::discover()?,
         };
         let set = kerbridge_core::config::Config::load(&source)?;
-        let (realm, kbmanage, warnings) = (set.realm, set.kbmanage, set.warnings);
+        let (main, realm, kbmanage, warnings) = (set.main, set.realm, set.kbmanage, set.warnings);
 
         // The two values `realm.toml` cannot answer, so the two a deployment
         // with no `kbmanage.toml` has to be given on the command line.
@@ -136,6 +140,7 @@ impl Config {
             password_file,
             bind_password,
             ca_file,
+            notify_state_dir: main.notify.state_dir,
             timeout: Duration::from_secs(30),
             source,
             warnings,

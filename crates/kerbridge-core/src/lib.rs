@@ -65,6 +65,7 @@ pub mod issuer;
 /// authority.
 #[cfg(feature = "password")]
 pub mod password;
+pub mod problem;
 pub mod sam;
 pub mod secret;
 pub mod source;

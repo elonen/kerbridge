@@ -30,6 +30,7 @@ pub mod directory;
 pub mod doctor;
 pub mod endpoint;
 pub mod model;
+pub mod problems;
 pub mod validate;
 
 pub use config::{Config, Overrides};

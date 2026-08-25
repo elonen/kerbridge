@@ -47,45 +47,31 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use kerbridge_core::config::Notify;
 use kerbridge_core::time::{now_unix, rfc3339};
-use serde::{Deserialize, Serialize};
 use url::Url;
 
+use crate::problems::Problems;
 pub use crate::problems::{Kind, Repeat};
-use crate::problems::{Problem, Problems};
+// Re-exported, not redefined: a caller raising an event names a severity here,
+// and the record it lands in is read by tools that link no notifier.
 use crate::template::{Template, Values};
+pub use kerbridge_core::problem::{Problem, Severity};
 
 /// What most receivers accept unchanged -- Slack, Mattermost, Rocket.Chat and
 /// Teams all read a bare `text`. Anything else is `notify.template`.
-const DEFAULT_TEMPLATE: &str = r#"{"text":"KerBridge %COMPONENT% on %REALM%\n%SEVERITY% %EVENT% at %TIMESTAMP%\n%MESSAGE%\n%DETAIL%"}"#;
+const DEFAULT_TEMPLATE: &str = r#"{"text":"%ICON% KerBridge %COMPONENT% on %REALM%\n%SEVERITY% %EVENT% at %TIMESTAMP%\n%MESSAGE%\n%DETAIL%"}"#;
 
-/// How loud an event is. Ordered, because `notify.min_severity` suppresses
-/// everything below the configured level.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Severity {
-    Info,
-    Warning,
-    Error,
-}
+/// What `%ICON%` carries. A chat client renders a raise and its all-clear in one
+/// colour and one shape, so without a glyph the two read as the same message.
+///
+/// A recovery is sent as `info` and needs a mark of its own: green says the
+/// condition is over, blue says only that something was reported.
+const RECOVERED_ICON: &str = "\u{2705}";
 
-impl Severity {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Info => "info",
-            Self::Warning => "warning",
-            Self::Error => "error",
-        }
-    }
-
-    const SPELLINGS: &'static str = "info, warning, error";
-
-    fn parse(raw: &str) -> Option<Self> {
-        match raw {
-            "info" => Some(Self::Info),
-            "warning" => Some(Self::Warning),
-            "error" => Some(Self::Error),
-            _ => None,
-        }
+fn severity_icon(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Info => "\u{1f535}",
+        Severity::Warning => "\u{1f7e0}",
+        Severity::Error => "\u{1f534}",
     }
 }
 
@@ -299,7 +285,7 @@ impl Notifier {
             return;
         }
         event.detail = aggregate(&event.detail, &summary);
-        if let Err(e) = self.post(channel, &event, now).await {
+        if let Err(e) = self.post(channel, &event, severity_icon(event.severity), now).await {
             eprintln!("[{}] NOTIFY-FAIL {}: {e:#}", self.component, event.event);
         }
     }
@@ -357,7 +343,7 @@ impl Notifier {
             )
             .subject(problem.subject.clone())
             .detail(aggregate(&format!("was: {}", problem.message), summary));
-            if let Err(e) = self.post(channel, &recovered, now).await {
+            if let Err(e) = self.post(channel, &recovered, RECOVERED_ICON, now).await {
                 eprintln!("[{}] NOTIFY-FAIL {event}: {e:#}", self.component);
             }
         }
@@ -388,7 +374,7 @@ impl Notifier {
             format!("test notification from kerbridge-{}", self.component),
         )
         .detail("Sent by --test-notification. Nothing is wrong.");
-        self.post(channel, &event, now_unix()).await?;
+        self.post(channel, &event, severity_icon(event.severity), now_unix()).await?;
         eprintln!("[{}] test notification accepted by the receiver", self.component);
         Ok(())
     }
@@ -396,7 +382,7 @@ impl Notifier {
     /// One attempt, bounded by the configured timeout. No retry: a retry against
     /// a receiver that is down is the same failure again, and against one that is
     /// rate-limiting it is a flood.
-    async fn post(&self, channel: &Channel, event: &Event, now: u64) -> Result<()> {
+    async fn post(&self, channel: &Channel, event: &Event, icon: &str, now: u64) -> Result<()> {
         let body = channel.template.render(&Values {
             event: event.event,
             severity: event.severity.as_str(),
@@ -405,6 +391,7 @@ impl Notifier {
             timestamp: &rfc3339(now as u32),
             message: &event.message,
             detail: &event.detail,
+            icon,
         });
         let response = channel
             .http

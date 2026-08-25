@@ -469,7 +469,7 @@ const MAIN_SRC: &str = r#"# KerBridge, entry point.
 
 # The JSON body. Unset uses a default that Slack, Teams, Mattermost and
 # Rocket.Chat all render. Placeholders: %EVENT% %SEVERITY% %COMPONENT% %REALM%
-# %TIMESTAMP% %MESSAGE% %DETAIL%. Every substituted value is escaped as a JSON
+# %TIMESTAMP% %MESSAGE% %DETAIL% %ICON%. Every substituted value is escaped as a JSON
 # string, so each placeholder must sit inside one; an unknown placeholder, or a
 # template that does not render as JSON, refuses to start.
 #

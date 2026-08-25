@@ -453,6 +453,23 @@ fn a_synced_group_nested_into_nothing_authorizes_nobody() {
     assert!(kinds(&sweep(&snap)).contains(&"authorizes nothing"));
 }
 
+/// A device-grant group gates the exchange and not a share, so it is nested into
+/// nothing by design. Flagging it sends an operator to look for a fault that the
+/// marker says is not there.
+#[test]
+fn a_device_grant_group_is_not_told_it_authorizes_nothing() {
+    let mut snap = healthy();
+    let mut grant = group("onprem-device-grants", &[&format!("CN=alice,{IDP_OU}")]);
+    grant.markers = vec![ROLE_DEVICE_GRANT.to_owned()];
+    snap.cloud.push(grant);
+    let flagged: Vec<_> = sweep(&snap)
+        .into_iter()
+        .filter(|f| f.kind == "authorizes nothing")
+        .map(|f| f.subject)
+        .collect();
+    assert!(!flagged.contains(&"onprem-device-grants".to_owned()), "{flagged:?}");
+}
+
 #[test]
 fn a_global_resource_group_is_flagged_without_being_called_broken() {
     let mut snap = healthy();

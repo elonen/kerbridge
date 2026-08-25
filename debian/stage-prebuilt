@@ -58,7 +58,7 @@ page() { # glob section
     install -m 0644 "$found" "$OUT/usr/share/man/man$2/$(basename "$found")"
 }
 page kbconfig.1 1
-for verb in '' -group -cloud -device -doctor -endpoint -config; do
+for verb in '' -group -cloud -device -doctor -endpoint -config -problems; do
     page "kbmanage$verb.1" 1
 done
 for verb in '' -status -realm -directory -secrets -verify; do

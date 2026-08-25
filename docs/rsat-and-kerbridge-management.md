@@ -24,6 +24,7 @@ The operator CLI: resource groups, their membership, and `doctor`.
 make kbmanage          # dist/kbmanage, built for this host's architecture
 dist/kbmanage doctor
 dist/kbmanage config   # which file it read, and what it resolved to
+dist/kbmanage problems # what the services on this host record as still wrong
 ```
 
 That is the Docker Compose spelling. In a Debian deployment the
@@ -115,6 +116,34 @@ flowchart LR
   E --> O
   R --> SH["share ACL"]
 ```
+
+### What is wrong right now
+
+`doctor` reads the directory and judges it. `problems` reads what the services
+have already said about themselves:
+
+```sh
+dist/kbmanage problems          # severity, component, event, subject, age, message
+dist/kbmanage problems --json   # the records themselves, for a script
+```
+
+The broker, sync and issuerd each write one `problem-<event>.json` per condition
+that is still true, into their own subdirectory of `notify.state_dir`, whether
+or not a webhook is configured. This verb reads those files and binds nothing,
+so it still answers when the directory is what is broken. It is a listing and
+not a check: it exits 0 whether or not something is open.
+
+Run it **on the host the services run on**, which in a Debian deployment is the
+whole story. Under Docker Compose the services write inside their containers,
+where `notify.state_dir` names `/var/lib/kerbridge` and the files land on
+`deploy/state/` on the host — so this verb finds nothing there, and
+`ls state/*/problem-*.json` from [`deploy/README.md`](../deploy/README.md) is
+that deployment's count. An administrator's own machine has nothing to show
+either way.
+
+A record it cannot read costs that one record and says which; the rest of the
+listing stands. The files are `0640` and each is owned by the service that wrote
+it, so read them as root or as their group.
 
 ### Configuration
 

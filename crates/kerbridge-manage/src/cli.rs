@@ -132,6 +132,18 @@ pub enum Command {
     /// Where the configuration came from and what it resolved to. Connects to
     /// nothing, so it answers "why is it talking to that DC" on a broken host.
     Config,
+    /// What is wrong right now: every open problem the services on this host
+    /// have recorded under notify.state_dir.
+    ///
+    /// Reads files and binds nothing. It is the listing of the same records a
+    /// monitoring agent counts, so it exits 0 whether or not anything is open
+    /// -- what an open problem is worth is the monitoring's call, not this
+    /// tool's.
+    ///
+    /// The services write those files on their own host. In a Docker Compose
+    /// deployment that is inside the containers, and deploy/state/ is where
+    /// they land outside them.
+    Problems,
 }
 
 #[derive(Subcommand)]

@@ -1,4 +1,5 @@
 use super::*;
+use crate::Severity;
 
 const DAY: u64 = 86_400;
 

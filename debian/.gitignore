@@ -7,7 +7,7 @@
 /changelog
 /kerbridge-config.NEWS
 
-# What the build hands the packaging: the six static musl binaries, the twelve
+# What the build hands the packaging: the six static musl binaries, the fifteen
 # generated man pages and THIRD-PARTY-NOTICES, at the paths they install to.
 # debian/stage-prebuilt fills it; debian/rules only stages it. Never committed
 # -- these are build outputs, and the whole point of generating the man pages is

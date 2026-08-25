@@ -1012,8 +1012,10 @@ pub fn sweep(snap: &Snapshot) -> Vec<Finding> {
         let state = obj.state();
         if state == State::Live {
             // A live group nested into nothing grants nothing, which reads as
-            // working right up until someone opens a folder.
-            if obj.kind == Kind::Group && !obj.is_admission_group() {
+            // working right up until someone opens a folder. A role group is the
+            // exception: the marker is what makes it authorize, and both of them
+            // gate a decision the broker makes rather than a resource.
+            if obj.kind == Kind::Group && !obj.is_admission_group() && !obj.is_grant_group() {
                 let nested = snap
                     .closure_of(&obj.dn)
                     .into_iter()

@@ -409,9 +409,9 @@ test-fast:
 				exit 1; }; \
 		done; \
 	done
-	@# Three of the fifteen man pages are hand-written, because the three
+	@# Three of the eighteen man pages are hand-written, because the three
 	@# daemons parse their arguments by hand and there is no command definition
-	@# to render one from. The other twelve are generated at build time and
+	@# to render one from. The other fifteen are generated at build time and
 	@# cannot go stale; these can, and the way they would is by naming a flag
 	@# that later changes. So they name exactly one: `--help`, which is where a
 	@# reader goes for the current set.

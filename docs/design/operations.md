@@ -186,6 +186,7 @@ to each event:
 | `%TIMESTAMP%` | RFC 3339 UTC. |
 | `%MESSAGE%` | One-line human summary. |
 | `%DETAIL%` | Event specifics; may be empty. |
+| `%ICON%` | An emoji for the state: 🔴 error, 🟠 warning, 🔵 info, ✅ recovery. |
 
 Rules that keep the channel trustworthy:
 

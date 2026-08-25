@@ -24,6 +24,16 @@ version of the build, so a note left in it is shown a second time.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
+## Unreleased
+
+- New `kbmanage problems` lists what is wrong now. It reads the problem
+  files, so it needs no webhook and no network.
+- A notification carries an emoji for its state. A problem and its recovery
+  no longer look the same in a chat channel. A custom `notify.template` can
+  use the new `%ICON%` placeholder.
+- `kbmanage doctor` no longer says that a device-grant group authorizes
+  nothing. That group gates the exchange, not a share.
+
 ## 0.9.1
 
 - Hardening: static-PIE binaries on arm64, a `.dep-v0` dependency

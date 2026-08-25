@@ -346,7 +346,7 @@ until their repeat interval expires. Ignore them unless you want the history.
 The body is `notify.template`, empty meaning a default that Slack, Teams,
 Mattermost and Rocket.Chat all render. Anything else — a Discord `content`, a
 Teams Adaptive Card, your own collector — is a template you write, with
-`%EVENT% %SEVERITY% %COMPONENT% %REALM% %TIMESTAMP% %MESSAGE% %DETAIL%`
+`%EVENT% %SEVERITY% %COMPONENT% %REALM% %TIMESTAMP% %MESSAGE% %DETAIL% %ICON%`
 substituted into it. Two rules the services enforce at start rather than at the
 first event: an unrecognized `%PLACEHOLDER%` is a configuration error, and the
 result has to be JSON. Every substituted value is escaped as a JSON string, so a

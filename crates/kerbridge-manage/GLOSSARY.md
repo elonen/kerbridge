@@ -237,6 +237,6 @@ without `--yes` refuses outright.
 ### verb (kbmanage)
 
 One `kbmanage` subcommand that changes the directory, as against the read-only
-ones (`list`, `show`, `doctor`, `config`). Every write verb runs its `guard`s
+ones (`list`, `show`, `doctor`, `config`, `problems`). Every write verb runs its `guard`s
 before the write; a `destructive verb` also takes a `typed-name confirmation`.
 <!-- avoid: command, operation -->

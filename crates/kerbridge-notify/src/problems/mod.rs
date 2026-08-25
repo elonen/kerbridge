@@ -32,9 +32,9 @@ use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use kerbridge_core::problem::Problem;
 
-use crate::{Event, Severity};
+use crate::Event;
 
 /// How a condition repeats, and therefore what makes it due again.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,52 +67,6 @@ const BANDS: [i64; 5] = [1, 3, 7, 14, 30];
 /// days and 14 days share a band and only the crossing is notified.
 fn band(days: i64) -> Option<i64> {
     BANDS.iter().copied().find(|step| days <= *step)
-}
-
-/// One condition, as it is written to disk. The body is authoritative for what
-/// this is about -- the file name is derived from it and is only a name.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Problem {
-    pub event: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub subject: String,
-    pub component: String,
-    /// The severity it was *raised* at, kept so a recovery can be judged against
-    /// the same `notify.min_severity` floor its event passed. Without this an
-    /// operator who raises the floor to quiet things down would receive alarms
-    /// and never the all-clears, which is the worst of both.
-    pub severity: Severity,
-    pub message: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub detail: String,
-    /// Still true?
-    pub open: bool,
-    /// When it was first raised, so a recovery can say how long it lasted.
-    pub since: u64,
-    /// When delivery was last *attempted*, not last succeeded. A receiver that
-    /// is down would otherwise be retried on every cycle, which is the retry
-    /// storm one bounded attempt exists to avoid; the failure is logged locally
-    /// either way. `None` when nothing has been attempted, which is a different
-    /// thing from having been attempted at time zero.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub attempted_at: Option<u64>,
-    /// The countdown step that attempt was for. Absent for a persisting event.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub band: Option<i64>,
-}
-
-impl Problem {
-    /// How long this has been true, coarsely: an operator reading a recovery
-    /// wants "about two hours", not seven thousand seconds.
-    pub fn lasted(&self, now: u64) -> String {
-        let secs = now.saturating_sub(self.since);
-        match secs {
-            s if s < 90 => format!("{s}s"),
-            s if s < 5_400 => format!("{}m", s / 60),
-            s if s < 172_800 => format!("{}h", s / 3_600),
-            s => format!("{}d", s / 86_400),
-        }
-    }
 }
 
 pub struct Problems {

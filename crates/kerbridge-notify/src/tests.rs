@@ -2,23 +2,6 @@ use super::*;
 use std::sync::Arc;
 
 #[test]
-fn severity_orders_from_quietest_to_loudest() {
-    assert!(Severity::Info < Severity::Warning);
-    assert!(Severity::Warning < Severity::Error);
-    for (raw, want) in
-        [("info", Severity::Info), ("warning", Severity::Warning), ("error", Severity::Error)]
-    {
-        assert_eq!(Severity::parse(raw), Some(want));
-        assert_eq!(want.as_str(), raw);
-    }
-    // Only the three documented spellings, for the reason `env::flag` gives:
-    // a value nobody recognizes must not silently pick a level.
-    for bad in ["INFO", "warn", "critical", ""] {
-        assert_eq!(Severity::parse(bad), None, "{bad}");
-    }
-}
-
-#[test]
 fn a_deployment_with_no_url_still_logs() {
     let n = Notifier::from_config("test", &Notify::default(), "EXAMPLE.SITE").unwrap();
     assert!(n.channel.is_none());
@@ -70,6 +53,7 @@ fn the_default_template_parses_and_renders_json() {
         timestamp: "2026-07-30T12:00:00Z",
         message: "3 cycles discarded in a row",
         detail: "",
+        icon: severity_icon(Severity::Error),
     });
     let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
     let text = parsed["text"].as_str().unwrap();
@@ -96,7 +80,10 @@ async fn a_transport_failure_does_not_log_the_url() {
     );
     let channel = notifier.channel.as_ref().unwrap();
     let event = Event::new("test-notification", Severity::Info, "hello");
-    let err = format!("{:#}", notifier.post(channel, &event, 0).await.unwrap_err());
+    let err = format!(
+        "{:#}",
+        notifier.post(channel, &event, severity_icon(event.severity), 0).await.unwrap_err()
+    );
     assert!(!err.contains("s3cr3t-webhook-token"), "{err}");
     assert!(!err.contains(&port.to_string()), "{err}");
 }
@@ -115,7 +102,8 @@ async fn a_receiver_sees_one_json_post_and_only_a_2xx_counts_as_delivered() {
         let channel = notifier.channel.as_ref().unwrap();
         let event = Event::new("sync-cycle-failing", Severity::Error, "3 cycles discarded")
             .detail("since 2026-07-30");
-        let result = notifier.post(channel, &event, 1_785_412_800).await;
+        let result =
+            notifier.post(channel, &event, severity_icon(event.severity), 1_785_412_800).await;
         assert_eq!(result.is_ok(), expect_ok, "{status}: {result:?}");
 
         let (content_type, body) = seen.lock().unwrap().clone().expect("nothing was posted");
@@ -256,6 +244,25 @@ async fn a_resolved_condition_is_announced_with_the_remaining_problem_list() {
     // Nothing is open once the last one goes, and saying so is the point.
     notifier.resolve("sync-cycle-failing").await;
     assert!(text_seen(&seen).contains("no problems open"));
+}
+
+/// A chat client puts a raise and its all-clear in the same colour, so the glyph
+/// is what tells them apart in a channel somebody is scrolling past.
+#[tokio::test]
+async fn a_raise_and_its_recovery_do_not_carry_the_same_icon() {
+    let (url, seen, _served) = receiver(axum::http::StatusCode::OK).await;
+    let notifier = notifier_posting_to(url);
+
+    notifier.send(Event::new("grant-group-missing", Severity::Error, "no group carries it")).await;
+    assert!(text_seen(&seen).starts_with('\u{1f534}'), "{}", text_seen(&seen));
+
+    notifier.resolve("grant-group-missing").await;
+    assert!(text_seen(&seen).starts_with('\u{2705}'), "{}", text_seen(&seen));
+
+    notifier
+        .send(Event::new("sync-cursor-corrupt", Severity::Warning, "resynced").incident())
+        .await;
+    assert!(text_seen(&seen).starts_with('\u{1f7e0}'), "{}", text_seen(&seen));
 }
 
 /// Resolving something that was never open says nothing at all, so the

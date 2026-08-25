@@ -49,7 +49,10 @@ own shape. Everything else is dependency-free beyond `anyhow`, `serde` and
 `toml`; `toml` is unconditional because `issuerd` reads the same config files
 as the broker, and it is small and pure Rust. The same rule is why the notifier
 is [its own crate](../kerbridge-notify/README.md) rather than a module here: it
-needs an HTTP and TLS dependency tree, and `issuerd` must not link one.
+needs an HTTP and TLS dependency tree, and `issuerd` must not link one. The
+problem record and its severity (`problem`) stay here for the same reason from
+the other side — they are a format that `kbmanage` and an operator's monitoring
+agent read, and parsing one must not cost the reader that tree.
 
 **Licensed `MIT OR Apache-2.0`**, not the repository's GPL-3.0. This
 crate is protocol, and a third party implementing the other end of it — another

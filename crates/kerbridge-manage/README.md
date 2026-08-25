@@ -38,6 +38,14 @@ broken link.
 - `doctor [--user …]` — reads one snapshot, then diagnoses it as a pure function
   over plain data. It also names the one link it cannot see rather than
   pretending to have checked it.
+- `problems` — what the services on **this host** have recorded as still wrong:
+  severity, component, event, subject, how long it has been open, and the
+  message, out of the `problem-*.json` files each service writes under
+  `notify.state_dir`. It reads files and binds nothing, so it answers when the
+  directory does not, and it is a listing and not a check — it exits 0 whether
+  or not something is open, because what an open problem is worth belongs to
+  the operator's monitoring. A record it cannot read costs that record and is
+  said out loud; the rest of the listing stands.
 - `entra delete` — the untangler. One object at a time, hard, with a typed-name
   confirmation on a real TTY and a warning every time. There is no retention
   window to be past, because a lost SID does not become cheap with age.

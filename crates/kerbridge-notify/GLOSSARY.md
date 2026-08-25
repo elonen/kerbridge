@@ -75,7 +75,7 @@ message says both what changed and what is still wrong.
 
 A `%NAME%` in the notification `template` naming one of the substitutable
 values: `%EVENT%`, `%SEVERITY%`, `%COMPONENT%`, `%REALM%`, `%TIMESTAMP%`,
-`%MESSAGE%`, `%DETAIL%`. Every substituted value is escaped as a JSON string,
+`%MESSAGE%`, `%DETAIL%`, `%ICON%`. Every substituted value is escaped as a JSON string,
 so nothing a tenant can name can reshape the body.
 <!-- refs: `crates/kerbridge-notify/src/template.rs` -->
 <!-- avoid: field, substituted value, substitution set -->

@@ -50,7 +50,8 @@ repeatedly and exactly what in-memory state forgets.
 has cleared — written whether or not a webhook is configured. Point a Zabbix
 agent or a cron script at it and counting `problem-*.json` is the whole
 integration, which is why the class is in the file name rather than only in the
-body. Files are `0640` with the group left alone, so `chgrp` plus the setgid bit
+body. `kbmanage problems` reads the same set for a human, on the host that wrote
+it. Files are `0640` with the group left alone, so `chgrp` plus the setgid bit
 on the directory is all an operator needs to let their agent read them; the mode
 is set explicitly rather than left to `umask`, which under `umask 077` would
 otherwise lock that agent out.
