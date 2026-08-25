@@ -82,7 +82,7 @@ ReadWritePaths=/var/lib/samba
 # not exist yet. Nothing widens this to /etc/kerbridge itself: the config set is
 # kbconfig's, and this daemon reads it.
 ReadWritePaths=-/etc/kerbridge/certs
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 # No User=, and this is the surprising one: issuerd runs as root because it
 # holds KDC authority and reads sam.ldb directly. No capability directive
 # either -- a bounding set is the only meaningful one outside a container, and
