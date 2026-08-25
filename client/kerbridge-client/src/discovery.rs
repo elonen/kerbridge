@@ -70,6 +70,26 @@ impl DeviceGrantConfig {
     }
 }
 
+/// What this deployment prefers a client here to do, in the cases the user and
+/// IT have both left open.
+///
+/// Every field is `None` on a broker that publishes no `client_defaults` block,
+/// which is the ordinary case and reads as "no opinion" rather than as "off".
+/// The block exists for the machines a management system does not own: policy
+/// covers a managed fleet, and this covers the rest without asking DNS -- which
+/// is unauthenticated -- to carry a decision about how this machine behaves.
+///
+/// A default never overrides a choice; it decides where there is none.
+/// `config::Settings` holds the resolution order.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub struct Defaults {
+    /// Start the agent at login. Applied to the real login-item entry rather
+    /// than only remembered -- `config::Settings::enforce_autostart`.
+    pub autostart: Option<bool>,
+    pub windows_sign_in: Option<bool>,
+    pub ntlm_fallback_recovery: Option<bool>,
+}
+
 /// The whole `/config` document, as the helper uses it.
 #[derive(Clone)]
 pub struct BrokerConfig {
@@ -86,6 +106,7 @@ pub struct BrokerConfig {
     pub oidc: OidcConfig,
     pub kerberos: KerberosConfig,
     pub device_grant: DeviceGrantConfig,
+    pub defaults: Defaults,
     /// Where the tray menu's *Help* goes, when the deployment publishes one.
     /// `None` on every broker that does not, which is what an older one reads
     /// as -- the client falls back to its own page.
@@ -197,6 +218,19 @@ pub fn discover(broker_url: &str) -> Result<BrokerConfig> {
         })
         .unwrap_or_default();
 
+    // Absent on a broker that expresses no preference, which is every one that
+    // does not configure the block. A field of the wrong type reads as absent
+    // for the same reason: this decides convenience, never access, so a typo in
+    // it may not be what stops a machine signing in.
+    let defaults = config
+        .get("client_defaults")
+        .map(|block| Defaults {
+            autostart: bool_field(block, "autostart"),
+            windows_sign_in: bool_field(block, "windows_sign_in"),
+            ntlm_fallback_recovery: bool_field(block, "ntlm_fallback_recovery"),
+        })
+        .unwrap_or_default();
+
     // Optional, and a plaintext one is refused rather than used: a broker
     // already trusted to name the realm's KDCs is not made more dangerous by
     // naming a help page, but it does not get to send a user to one over http.
@@ -221,6 +255,7 @@ pub fn discover(broker_url: &str) -> Result<BrokerConfig> {
         },
         kerberos,
         device_grant,
+        defaults,
         help_url: help_url.map(str::to_owned),
     })
 }
@@ -344,6 +379,10 @@ fn str_field(value: &serde_json::Value, key: &str) -> Result<String> {
         .and_then(|v| v.as_str())
         .map(str::to_owned)
         .ok_or_else(|| anyhow!("missing string field `{key}`"))
+}
+
+fn bool_field(value: &serde_json::Value, key: &str) -> Option<bool> {
+    value.get(key).and_then(serde_json::Value::as_bool)
 }
 
 fn str_array(value: &serde_json::Value, key: &str) -> Result<Vec<String>> {

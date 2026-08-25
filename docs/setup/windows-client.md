@@ -1,74 +1,30 @@
 # The Windows client
 
-This page is the Windows half of
-[step 7 (*Set up a workstation*) in SETUP.md](../../SETUP.md#7-set-up-a-workstation).
-The facts that apply to both platforms are in that step. This page holds what
-is different on Windows.
+This page the Windows-part of [step 7 (*Set up a workstation*) in SETUP.md](../../SETUP.md#7-set-up-a-workstation).
+The facts that apply to both Windows are Mac platforms are in that step.
 
-## What ships
+## Installer contents
 
 The package installs two executables:
 
-- `kerbridge-agent.exe` — the product. It is a per-user background agent in the
+- `kerbridge-agent.exe` — the GUI product. It is a per-user background agent in the
   system tray, and users see it as **NAS Access**.
 - `kerbridge.exe` — the same core as a console tool. It does one operation at a
-  time and shows its output. Use it when you think that the tray itself has a
-  fault.
+  time and shows its output. Useful for scripting and debugging.
 
 Neither executable is a service, and neither runs elevated. There are two
 exceptions, and both are one-shot operations: realm registration, and the
 NTLM-fallback repair.
 
-> **CAUTION: Trust the broker's CA machine-wide.** The elevated enrollment step
-> gets `/config` over TLS again itself, so that only a URL crosses the
-> privilege boundary. That step therefore runs as a different user, and it
-> cannot see a CA that you installed for yourself only. A user-scoped CA is
-> sufficient for every other step, and it fails at this one step, which you
-> cannot skip. A fleet that pushes the CA by policy never meets this.
-
-The failure identifies itself. A TLS failure prints the certificate that the
-host presented — the subject, the names that it covers, the issuer and the
-validity — below the dialog and in the log. The issuer names the CA that the
-elevated user has no copy of.
-
-<details>
-<summary>The privilege split was measured by a standard user</summary>
-
-The division was measured end to end on 2026-08-04, by a **standard user**.
-This was not an administrator that ran unelevated. It was an account with no
-membership in the Administrators group at all, at Medium integrity. The test
-checked this before and after each step. One administrator action registers the
-realm. After that action, no other step asks for privilege:
-
-- browser sign-in
-- ticket injection into the caller's own logon session
-- the `cifs/` TGS
-- mounting the share
-- a file write, where the file gets the correct directory object as its owner
-- a re-injection
-- creation and revocation of a device grant with its TPM key
-- the tray
-- the user's own autostart entry
-
-The result has two limits. Keep them attached to it. The machine had UAC
-disabled, so the account had a single token. That makes the test cleaner,
-because no elevated token existed that could do the work undetected. But it
-leaves the split-token case untested, and the differing-LUID hazard applies to
-that case. The result also says nothing about the state display of the tray,
-which has its own open issues.
-
-</details>
-
-## Build it
+## Building it
 
 ```sh
 make installer     # -> dist/windows-kerbridge-nas-access-gui-amd64.msi
 ```
 
 The build needs Docker and nothing else. Packaging uses wixl and msitools,
-which stay in a container. The build is `x86_64` intentionally: the production
-client is an amd64 workstation, and an ARM64 development VM runs these exact
-bytes under emulation.
+which stay in a container. The build is `x86_64`, but it was also tested on an
+ARM64 development VM: it ran the AMD64 version  under emulation just fine.
 
 <details>
 <summary>Without the MSI: the two executables only</summary>
@@ -77,7 +33,7 @@ bytes under emulation.
 make windows      # from the repo root -- writes both exes to dist/
 ```
 
-Copy both executables to the workstation, to a location where the user can
+You can copy both executables to the workstation, to a location where the user can
 execute them, and run the tray. Every step below works the same. You supply the
 Start-menu shortcut yourself. The *Start at login* checkbox in Settings
 supplies the autostart entry.
@@ -90,6 +46,8 @@ supplies the autostart entry.
 msiexec /i windows-kerbridge-nas-access-gui-amd64.msi                  # interactive
 msiexec /i windows-kerbridge-nas-access-gui-amd64.msi AUTOSTART=1 /qn  # silent, fleet push, autostart
 ```
+
+To push it from Intune, go to **→ [mdm-intune.md](mdm-intune.md)**.
 
 - The MSI installs to `%ProgramFiles%\KerBridge\`, and it adds a Start-menu
   shortcut.
@@ -138,7 +96,7 @@ The source of the installer is
    Settings → Advanced.
 4. **Tick *Start at login*** in Settings.
 
-> **Note: If no tray icon appears, the icon is hidden, not missing.** Windows
+> **Note: If no tray icon appears, the icon is likely hidden, not missing.** Windows
 > 11 puts an icon that it has not seen before into an overflow area, and the
 > taskbar can show no chevron for that area. Turn the icon on under *Settings →
 > Personalization → Taskbar → Other system tray icons*. Windows keeps this
@@ -151,18 +109,70 @@ state.
 
 ## Preconfiguring a fleet
 
-Two registry values under `HKLM\Software\KerBridge` override the per-user
-config file. They are the *platform policy value* in the broker URL resolution
-order of [step 7](../../SETUP.md#7-set-up-a-workstation):
+Registry values override the per-user config file. They are the *platform
+policy value* in the resolution order of
+[step 7](../../SETUP.md#7-set-up-a-workstation), and each one makes its control
+in the Settings window show the managed value instead of offering to change it.
+
+The agent reads `HKLM\Software\Policies\KerBridge` first. That is the branch
+Group Policy and Intune write, and the only one Windows removes again when the
+policy stops applying to a machine. `HKLM\Software\KerBridge` holds the same
+names for a deployment with no management system — an imaging script can write
+it — and nothing cleans that one up.
 
 | Value | Type | Effect |
 |---|---|---|
-| `BrokerUrl` | REG_SZ | Takes priority over every source below it; the Settings field becomes read-only |
+| `BrokerUrl` | REG_SZ | Takes priority over every source below it |
+| `Autostart` | REG_DWORD | `1` starts the agent at sign-in, `0` forbids it |
+| `WindowsSignIn` | REG_DWORD | `0` forces the browser flow instead of WAM |
 | `NtlmFallbackRecovery` | REG_DWORD | `0` disables the SMB repair mechanism |
+| `GrantFor` | REG_SZ | The account a device grant works as — [device-grants.md](device-grants.md) |
+
+`Autostart` is applied, not only recorded: the login entry is per-user, so the
+agent writes one to match the policy every time it starts. That means it takes
+effect from the **first run** on each account — nothing can write a per-user
+entry for a user who has never run the agent. Install with `AUTOSTART=1` where
+the very first logon has to start it: that writes a *machine-wide* entry, which
+no per-user setting can countermand and which the agent cannot remove.
+
+### Over Group Policy
+
+[`client/kerbridge-agent-windows/policy/`](../../client/kerbridge-agent-windows/policy/)
+holds `KerBridge.admx` and `en-US\KerBridge.adml`. Copy both into the central
+store (`\\<domain>\SYSVOL\<domain>\Policies\PolicyDefinitions\`, the `.adml`
+into its `en-US\` subfolder). The settings appear under *Computer Configuration
+→ Administrative Templates → NAS Access by KerBridge*.
+
+Each setting is *Not Configured*, *Enabled* or *Disabled*, and Disabled is a
+real third state: it forces the setting **off** and locks the control, where
+Not Configured leaves the choice to the user and to the deployment's own
+defaults.
+
+### Over Intune
+
+The same template, imported into the tenant — and the installer push with it.
+**→ [mdm-intune.md](mdm-intune.md)**.
+
+### Without a management system
+
+A deployment can publish the same defaults from the broker instead. `main.toml`
+`[client_defaults]` is served in `GET /config`, which every agent already reads
+for the realm and the KDCs, so it reaches the machines no management system
+owns:
+
+```toml
+[client_defaults]
+autostart = true
+windows_sign_in = true
+```
+
+These are defaults and not policy: they decide a machine whose user has never
+chosen, and a user's own choice — and any of the registry values above — wins
+over them. `autostart` is applied once, to the real login entry.
 
 ## Config and logs
 
 These files are per-user, at `%APPDATA%\KerBridge\`:
 
-- `config.toml` — the broker URL and two toggles.
+- `config.toml` — the broker URL, and each toggle the user has changed.
 - `kerbridge.log`, and `kerbridge.log.1.gz` … `.3.gz` after rotation.

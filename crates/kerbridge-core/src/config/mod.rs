@@ -116,7 +116,42 @@ pub struct Main {
     #[serde(default = "default_grants_per_user")]
     pub device_grant_max_per_user: u32,
     #[serde(default)]
+    pub client_defaults: ClientDefaults,
+    #[serde(default)]
     pub notify: Notify,
+}
+
+/// `[client_defaults]`: what a workstation agent should do here, where nobody
+/// at that end has said otherwise.
+///
+/// Served in `GET /{source}/config` and layered *under* both the machine policy
+/// (`HKLM` or an MDM profile) and the user's own `config.toml`. It exists for
+/// the machines no management system owns: policy reaches a managed fleet, and
+/// this reaches the rest over the one channel they already trust for the realm
+/// and the KDCs.
+///
+/// Every value is optional, and unset means "no opinion", not "off" -- an
+/// unset option leaves the agent's own built-in answer standing, which is what
+/// lets a later client version change one. See `client/DESIGN.md`
+/// @ Configuration and storage for the resolution order.
+#[derive(Debug, Default, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema, serde::Serialize))]
+#[serde(deny_unknown_fields, default)]
+pub struct ClientDefaults {
+    /// Start the agent when the user logs in. The agent applies this to the
+    /// real login-item entry -- the `Run` value on Windows, the login item on
+    /// macOS -- once, on a machine whose user has never decided either way.
+    #[cfg_attr(feature = "schema", schemars(example = true))]
+    pub autostart: Option<bool>,
+    /// Let Windows' own token store (WAM) issue the broker token before the
+    /// browser is tried. `false` forces the browser flow. Nothing on macOS.
+    #[cfg_attr(feature = "schema", schemars(example = true))]
+    pub windows_sign_in: Option<bool>,
+    /// Offer the elevated `LanmanWorkstation` restart that clears a stuck NTLM
+    /// fallback. `false` gives that up: the fallback is then recoverable only
+    /// by a reboot or by IT. Windows only, macOS clears it by itself.
+    #[cfg_attr(feature = "schema", schemars(example = true))]
+    pub ntlm_fallback_recovery: Option<bool>,
 }
 
 /// `[notify]`: where the conditions only a human can fix are sent.

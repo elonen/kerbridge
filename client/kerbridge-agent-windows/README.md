@@ -163,7 +163,7 @@ they are deliberately not made to depend on each other.
 
 | File | Contents |
 |---|---|
-| `config.toml` | `broker_url`, `ntlm_fallback_recovery` and `windows_sign_in` (both default `true`), and a `[cache]` copy of the broker's Kerberos block. |
+| `config.toml` | `broker_url`, and `autostart`, `ntlm_fallback_recovery` and `windows_sign_in` — each written only once something settled it, and each `true` until then — plus a `[cache]` copy of the broker's Kerberos block. |
 | `kerbridge.log` | One line per event; "Open log" in the menu points here. |
 | `kerbridge.log.1.gz` … `.3.gz` | Earlier history. The log rotates at start when it has passed 10 MB; collect these too. |
 
@@ -171,18 +171,46 @@ they are deliberately not made to depend on each other.
 dies with the process; the access token is discarded as soon as the ticket comes
 back.
 
-Machine policy overrides the file and wins:
+Machine policy overrides the file and wins. `HKLM\Software\Policies\KerBridge`
+is read first — that is the branch Group Policy and Intune write, and the only
+one Windows cleans up when the policy stops applying. `HKLM\Software\KerBridge`
+holds the same names for a deployment with no management system, and nothing
+removes those again.
 
 ```
-HKLM\Software\KerBridge\BrokerUrl             (REG_SZ)    -> Settings field goes read-only
-HKLM\Software\KerBridge\NtlmFallbackRecovery  (REG_DWORD) -> 0 disables all NTLM-fallback machinery
+BrokerUrl             (REG_SZ)    -> Settings field goes read-only
+GrantFor              (REG_SZ)    -> the account a device grant works as
+Autostart             (REG_DWORD) -> 1 starts the agent at sign-in, 0 forbids it
+WindowsSignIn         (REG_DWORD) -> 0 forces the browser flow
+NtlmFallbackRecovery  (REG_DWORD) -> 0 disables all NTLM-fallback machinery
 ```
 
-Autostart is the per-user `Run` key (`HKCU\...\CurrentVersion\Run`), toggled from
-Settings. Per-user is required, not merely convenient: injection has to happen in
-the interactive user's own non-elevated logon session. It also does what the
-checkbox says — *sign in* automatically, not merely start — whenever Windows can
-serve the credential silently.
+[`policy/KerBridge.admx`](policy/KerBridge.admx) is the Group Policy template
+for those five, and is what Intune ingests too. The corresponding control in
+Settings then shows the managed value instead of offering to change it. The
+tenant side of that is
+[`docs/setup/mdm-intune.md`](../../docs/setup/mdm-intune.md).
+
+Autostart is the per-user `Run` key (`HKCU\...\CurrentVersion\Run`). Per-user is
+required, not merely convenient: injection has to happen in the interactive
+user's own non-elevated logon session. It also does what the checkbox says —
+*sign in* automatically, not merely start — whenever Windows can serve the
+credential silently.
+
+Three things write it, and all three end in an entry that really starts the
+agent:
+
+- the Settings checkbox, which is the user's own choice;
+- the `Autostart` policy value, applied at every start and never copied into
+  `config.toml` — a machine that leaves the policy's scope stops obeying it;
+  in force from the agent's first run on that account, since nothing can write
+  a per-user entry for a user who has never run it;
+- `client_defaults.autostart` in the broker's `/config`, applied once to a
+  machine whose user has never chosen, and recorded so a later choice wins.
+
+The MSI's `AUTOSTART=1` is separate: it writes the *machine-wide* `Run` value,
+which starts the agent whatever the per-user entry says and which only an
+administrator can remove. The checkbox then reads on and does not move.
 
 ## Build
 

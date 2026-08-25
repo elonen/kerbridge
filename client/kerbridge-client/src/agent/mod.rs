@@ -505,7 +505,15 @@ fn host_of(url: &str) -> String {
 /// and will wake it.
 pub fn init(h: &'static dyn Host) {
     let _ = HOST.set(h);
-    let settings = Settings::load();
+    let mut settings = Settings::load();
+    // Before anything reads it. A policy value is the one autostart answer that
+    // has to hold with no network: `enforce_autostart` runs again after the
+    // first `/config`, for the deployment default that only arrives there.
+    if settings.enforce_autostart()
+        && let Err(e) = settings.save()
+    {
+        log::warn(&format!("could not record the autostart entry: {e:#}"));
+    }
     let kerberos = settings.cache().to_kerberos();
     let enroll_state = enroll::state(&kerberos);
 

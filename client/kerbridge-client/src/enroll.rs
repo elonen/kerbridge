@@ -15,6 +15,12 @@
 //! and it shows the literal `ksetup` commands for confirmation before running
 //! them. The broker is trusted over TLS to name the realm's KDCs, and that
 //! confirmation is the backstop against a rogue one.
+//!
+//! `--yes` hands that confirmation to whoever wrote the command -- a deployment
+//! tool pushing the install has no person to ask, and an administrator is a
+//! better judge of a KDC name than the user of the machine. The plan is printed
+//! either way. An enrollment the OS will not honour until a restart then leaves
+//! with 3010, so the tool can schedule the restart.
 
 use crate::discovery::KerberosConfig;
 

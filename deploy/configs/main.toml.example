@@ -64,6 +64,34 @@ sources = ["entra"]
 #device_grant_max_per_user = 10
 
 
+# --- Client defaults: what a workstation agent does where nobody has said ---
+# Served in the broker's /config document, which every agent already reads for
+# the realm and the KDCs. It reaches the machines no management system owns.
+#
+# Below the machine policy (HKLM\Software\Policies\KerBridge on Windows, an MDM
+# profile on macOS) and below the user's own choice, both of which win. Leave an
+# option unset and the agent keeps its own built-in answer -- which is also what
+# lets a later client version change that answer.
+[client_defaults]
+
+# Start the agent when the user logs in. The agent applies this to the
+# real login-item entry -- the `Run` value on Windows, the login item on
+# macOS -- once, on a machine whose user has never decided either way.
+# Example: true
+#autostart =
+
+# Let Windows' own token store (WAM) issue the broker token before the
+# browser is tried. `false` forces the browser flow. Nothing on macOS.
+# Example: true
+#windows_sign_in =
+
+# Offer the elevated `LanmanWorkstation` restart that clears a stuck NTLM
+# fallback. `false` gives that up: the fallback is then recoverable only
+# by a reboot or by IT. Windows only, macOS clears it by itself.
+# Example: true
+#ntlm_fallback_recovery =
+
+
 # --- Operator notification ---
 # For conditions only a human can fix and nothing else will report: an expiring
 # Graph credential, a deleted admission group, a sync cycle that keeps failing.

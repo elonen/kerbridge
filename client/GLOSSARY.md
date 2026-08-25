@@ -54,10 +54,12 @@ authorize and token endpoints are never taken from the broker.
 
 Registration to start at login, per-user on both platforms because the ticket
 has to land in the interactive user's own session. It is the registration, not
-the silent sign-in that follows it; a separate locked flag covers the
-machine-wide `Run` value the MSI can write, which no per-user toggle
+the silent sign-in that follows it. Three layers can decide it -- `policy`, the
+user, a `deployment default` -- and the agent writes the registration for each,
+so deciding it and doing it are never two different things. A separate flag
+covers the machine-wide `Run` value the MSI can write, which no per-user toggle
 countermands.
-<!-- refs: `kerbridge_client::config::autostart_enabled`, `autostart_locked`, `SMAppService` on macOS -->
+<!-- refs: `kerbridge_client::config::autostart_enabled`, `autostart_machine_wide`, `Settings::enforce_autostart`, `SMAppService` on macOS -->
 <!-- avoid: startup, login item, start at login, start with windows, run at startup, run value, runatload -->
 
 ### badge
@@ -99,6 +101,17 @@ users as *Access OK*, *Renewal uncertain*, *Access expiring*, *No access* and
 *Off*.
 <!-- refs: `kerbridge_client::describe::Condition` -->
 <!-- avoid: health, mode -->
+
+### deployment default
+
+What the broker's `/config` says a client should do where nobody at that end has
+said otherwise, from `[client_defaults]` in the deployment's `main.toml`. Below
+`policy` and below the user's own file, both of which win, and it reaches the
+machines no management system owns. A default, never a control: it decides where
+there is no decision and overrides none.
+<!-- refs: `kerbridge_client::discovery::Defaults`, `kerbridge_core::config::ClientDefaults` -->
+<!-- user-facing: what your IT team set up for everyone -->
+<!-- avoid: server policy, broker policy, remote config, pushed setting -->
 
 ### delegated
 
@@ -261,17 +274,21 @@ nothing is running yet, so it exists for shielded operations only.
 The literal command batch or registry key list an elevated step will execute,
 shown in monospace for confirmation first. What is shown must be exactly what
 runs — the plan *is* the confirmation, and that is the backstop against a rogue
-broker. Windows only, since macOS has nothing to enroll.
+broker. It is always shown, including under `--yes`, where it goes to the log
+and the administrator who wrote the command is the one who confirmed it.
+Windows only, since macOS has nothing to enroll.
 <!-- refs: `ksetup`, `kerbridge_client::enroll::plan`, `plan_text`, `unenroll_plan_text` -->
 <!-- avoid: script, batch, commands, preview, plan text -->
 
 ### policy
 
 The machine-managed configuration layer IT decides: a machine-wide registry hive
-on Windows and a *forced* managed preference on macOS. Read-only to the client
-and it beats the user's own configuration file, which is why the corresponding
-Settings field goes read-only rather than merely losing.
-<!-- refs: `HKLM\Software\KerBridge` on Windows, `config.toml`, `kerbridge_client::config::Policy` -->
+on Windows -- the `Policies` branch a Group Policy template writes, then the
+plain one an imaging script can -- and a *forced* managed preference on macOS.
+Read-only to the client and it beats both the user's own configuration file and
+any `deployment default`, which is why the corresponding Settings field goes
+read-only rather than merely losing.
+<!-- refs: `HKLM\Software\Policies\KerBridge` on Windows, `config.toml`, `kerbridge_client::config::Policy` -->
 <!-- avoid: hklm, gpo, mdm, machine policy, managed settings, admin policy -->
 
 ### purge

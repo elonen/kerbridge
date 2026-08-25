@@ -94,10 +94,10 @@ than you want.
 
 </details>
 
-## No code signing, and no ADMX
+## No code signing
 
 The MSI is unsigned, so SmartScreen shows a warning and each UAC prompt says
-"unknown publisher". There is no Group Policy template either.
+"unknown publisher".
 
 **What to do:** accept it for a pilot. A fleet needs a signature, and that is a
 release-time act by the publisher.

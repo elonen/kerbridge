@@ -237,8 +237,11 @@ kerbridge --grant --for svc-unreal-builder
 kerbridge --grant-status                     # the pin and what is actually held
 ```
 
-The pin is stored in `HKLM` or in the user's `config.toml`. The MSI can write
-the `HKLM` value, so imaging can set it. The machine-wide value has priority.
+The pin is stored in `HKLM` or in the user's `config.toml`. The machine-wide
+value is `GrantFor` under `HKLM\Software\Policies\KerBridge`, which Group
+Policy, Intune or an imaging script writes — see
+[windows-client.md](windows-client.md#preconfiguring-a-fleet). The MSI does not
+write it. The machine-wide value has priority.
 The tray shows the machine-wide pin as read-only. The tray does not show it as
 a value that you can edit.
 

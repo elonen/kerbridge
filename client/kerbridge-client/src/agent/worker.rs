@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::config::Grant;
 use crate::describe::{Action, Fault};
-use crate::discovery::{BrokerConfig, DeviceGrantConfig, KerberosConfig};
+use crate::discovery::{BrokerConfig, Defaults, DeviceGrantConfig, KerberosConfig};
 use crate::session::{InjectError, Injected};
 use crate::strings::{days, duration, fill, tr};
 use crate::{broker, discovery, elevate, enroll, log, oidc, session, time};
@@ -120,6 +120,7 @@ pub enum Event {
     Discovered {
         kerberos: KerberosConfig,
         device_grant: DeviceGrantConfig,
+        defaults: Defaults,
         help_url: Option<String>,
         idp_name: String,
         source: String,
@@ -383,7 +384,7 @@ fn apply(ev: Event) {
                         if a.holds_live_ticket() { Phase::Connected } else { Phase::SignedOut };
                 }
             }
-            Event::Discovered { kerberos, device_grant, help_url, idp_name, source } => {
+            Event::Discovered { kerberos, device_grant, defaults, help_url, idp_name, source } => {
                 // The broker answered, so transport works -- whatever else does not.
                 // Cleared here and not only in `SignedIn`: on a machine with nothing
                 // to be silent with this is the only thing that ever lands, so a
@@ -419,6 +420,14 @@ fn apply(ev: Event) {
                 a.help_url = help_url;
                 a.idp_name = idp_name;
                 a.source = source;
+                // Last, so the entry this may write is the one a deployment that
+                // has just answered asks for. Nothing above depends on it.
+                a.settings.set_defaults(defaults);
+                if a.settings.enforce_autostart()
+                    && let Err(e) = a.settings.save()
+                {
+                    log::warn(&format!("could not record the autostart default: {e:#}"));
+                }
             }
             Event::BrokerDiscovered { url } => {
                 // The user may have typed one into Settings while the lookup ran;
@@ -610,6 +619,7 @@ pub(super) fn discover_in_background() {
         Ok(config) => post(Event::Discovered {
             kerberos: config.kerberos,
             device_grant: config.device_grant,
+            defaults: config.defaults,
             help_url: config.help_url,
             idp_name: config.oidc.display_name,
             source: discovery::source_name(&config.base_url),
@@ -701,6 +711,7 @@ fn run_sign_in(
     post(Event::Discovered {
         kerberos: config.kerberos.clone(),
         device_grant: config.device_grant.clone(),
+        defaults: config.defaults,
         help_url: config.help_url.clone(),
         idp_name: config.oidc.display_name.clone(),
         source: discovery::source_name(&config.base_url),

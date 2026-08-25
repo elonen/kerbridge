@@ -132,11 +132,42 @@ profile writes it to
 
 | Key | Type | Effect |
 |---|---|---|
-| `BrokerUrl` | string | Takes priority over every source below it; the Settings field becomes read-only |
+| `BrokerUrl` | string | Takes priority over every source below it |
+| `Autostart` | boolean | `true` starts the agent at login, `false` forbids it |
+
+Each one makes its control in the Settings window show the managed value
+instead of offering to change it. A boolean may be `<true/>` or
+`<integer>1</integer>`; both are read.
+
+```xml
+<key>PayloadType</key>          <string>org.kerbridge.agent</string>
+<key>BrokerUrl</key>            <string>https://kerbridge.example.site</string>
+<key>Autostart</key>            <true/>
+```
+
+`Autostart` is applied, not only recorded: the agent registers itself as a login
+item to match the profile. That takes effect from its **first run** on each
+account — a login item belongs to a user, so nothing can register one for a user
+who has never run the agent. macOS has no machine-wide equivalent of the
+Windows installer's `AUTOSTART=1`, so the first launch is always by hand.
 
 Only *forced* values count. A `defaults write` by the user is intentionally not
 policy. If it were policy, it would lock the Settings field against the person
 who set the value.
+
+The Windows-only keys — `WindowsSignIn`, `NtlmFallbackRecovery`, `GrantFor` —
+are read on this platform but decide nothing, because neither WAM, the NTLM
+fallback nor device grants exist here. Setting them does no harm and no work.
+
+### Without an MDM
+
+A deployment can publish the same defaults from the broker instead:
+`[client_defaults]` in `main.toml` is served in `GET /config`, which the agent
+already reads for the realm and the KDCs. `autostart` is the key that means
+anything on a Mac. These are defaults, not policy — a managed preference and the
+user's own choice both win over them, and `autostart` is applied once, to a
+machine whose user has never chosen. See
+[windows-client.md](windows-client.md#without-a-management-system).
 
 ## Not here yet
 

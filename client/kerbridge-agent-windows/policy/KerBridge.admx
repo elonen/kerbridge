@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Group Policy template for NAS Access by KerBridge.
+
+  Every setting writes HKLM\Software\Policies\KerBridge, which the agent reads
+  before this user's config.toml and before the deployment's own defaults. A
+  setting left Not Configured writes nothing, and the agent then decides it the
+  way it would on an unmanaged machine.
+
+  Group Policy: copy KerBridge.admx and en-US\KerBridge.adml into the central
+  store (\\<domain>\SYSVOL\<domain>\Policies\PolicyDefinitions\).
+  Intune: docs/setup/mdm-intune.md covers the tenant side, including which
+  profile type shows these settings and why the ADML must be the en-US one.
+-->
+<policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   revision="1.0" schemaVersion="1.0"
+                   xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <!--
+    No <using> declaration. Intune refuses to ingest a template that names a
+    namespace it does not already hold ("NamespaceMissing:Microsoft.Policies.Windows"),
+    and this template references nothing outside itself: its own category, and
+    its own supportedOn definition. Declaring Microsoft.Policies.Windows would
+    make every operator upload windows.admx first for no gain.
+  -->
+  <policyNamespaces>
+    <target prefix="kerbridge" namespace="KerBridge.Policies.NasAccess" />
+  </policyNamespaces>
+  <resources minRequiredRevision="1.0" />
+  <supportedOn>
+    <definitions>
+      <definition name="SUPPORTED_NAS_ACCESS_1_0" displayName="$(string.SUPPORTED_NAS_ACCESS_1_0)" />
+    </definitions>
+  </supportedOn>
+  <categories>
+    <category name="NasAccess" displayName="$(string.NasAccess)" explainText="$(string.NasAccess_Help)" />
+  </categories>
+  <policies>
+
+    <policy name="BrokerUrl" class="Machine" displayName="$(string.BrokerUrl)"
+            explainText="$(string.BrokerUrl_Help)" presentation="$(presentation.BrokerUrl)"
+            key="Software\Policies\KerBridge">
+      <parentCategory ref="NasAccess" />
+      <supportedOn ref="SUPPORTED_NAS_ACCESS_1_0" />
+      <elements>
+        <text id="BrokerUrl" valueName="BrokerUrl" required="true" expandable="false" maxLength="255" />
+      </elements>
+    </policy>
+
+    <policy name="Autostart" class="Machine" displayName="$(string.Autostart)"
+            explainText="$(string.Autostart_Help)"
+            key="Software\Policies\KerBridge" valueName="Autostart">
+      <parentCategory ref="NasAccess" />
+      <supportedOn ref="SUPPORTED_NAS_ACCESS_1_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="WindowsSignIn" class="Machine" displayName="$(string.WindowsSignIn)"
+            explainText="$(string.WindowsSignIn_Help)"
+            key="Software\Policies\KerBridge" valueName="WindowsSignIn">
+      <parentCategory ref="NasAccess" />
+      <supportedOn ref="SUPPORTED_NAS_ACCESS_1_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="NtlmFallbackRecovery" class="Machine" displayName="$(string.NtlmFallbackRecovery)"
+            explainText="$(string.NtlmFallbackRecovery_Help)"
+            key="Software\Policies\KerBridge" valueName="NtlmFallbackRecovery">
+      <parentCategory ref="NasAccess" />
+      <supportedOn ref="SUPPORTED_NAS_ACCESS_1_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
+    <policy name="GrantFor" class="Machine" displayName="$(string.GrantFor)"
+            explainText="$(string.GrantFor_Help)" presentation="$(presentation.GrantFor)"
+            key="Software\Policies\KerBridge">
+      <parentCategory ref="NasAccess" />
+      <supportedOn ref="SUPPORTED_NAS_ACCESS_1_0" />
+      <elements>
+        <text id="GrantFor" valueName="GrantFor" required="true" expandable="false" maxLength="255" />
+      </elements>
+    </policy>
+
+  </policies>
+</policyDefinitions>

@@ -64,6 +64,13 @@ pub(crate) fn do_enroll_status(args: &Args) -> Result<()> {
 fn report_elevated(outcome: elevate::Elevated, step: &str) -> Result<()> {
     match outcome {
         elevate::Elevated::Ran(0) => Ok(()),
+        // The child did the work and wants a restart. The code has to pass
+        // out rather than read as a failed step: a deployment tool reads it
+        // from the process it launched, not from the elevated child it cannot
+        // see.
+        elevate::Elevated::Ran(code) if code as i32 == crate::EXIT_REBOOT_REQUIRED => {
+            exit_reboot_required()
+        }
         elevate::Elevated::Ran(code) => bail!("the elevated {step} exited with code {code}"),
         elevate::Elevated::Declined => {
             println!("[kerbridge] declined at the administrator prompt; nothing was changed.");
@@ -83,7 +90,7 @@ fn ignore_start() {}
 
 /// Report Windows' realm state and bring it in line. `force` re-applies the plan
 /// even when Windows already looks set up (`--reenroll`).
-pub(crate) fn do_enroll(broker: &str, force: bool) -> Result<()> {
+pub(crate) fn do_enroll(broker: &str, force: bool, yes: bool) -> Result<()> {
     let kerberos = discovery::discover(broker).context("discovering the realm")?.kerberos;
     let state = report_enroll_state(&kerberos);
     if !state.needs_action() && !force {
@@ -95,13 +102,11 @@ pub(crate) fn do_enroll(broker: &str, force: bool) -> Result<()> {
     // confirmation always happens in the process that will do the writing.
     if !elevate::is_elevated() {
         println!("\n[kerbridge] elevating to apply...");
-        report_elevated(
-            elevate::run_elevated(
-                &["--broker", broker, if force { "--reenroll" } else { "--enroll" }],
-                &ignore_start,
-            )?,
-            "enrollment",
-        )?;
+        let mut relaunch = vec!["--broker", broker, if force { "--reenroll" } else { "--enroll" }];
+        if yes {
+            relaunch.push("--yes");
+        }
+        report_elevated(elevate::run_elevated(&relaunch, &ignore_start)?, "enrollment")?;
         return Ok(());
     }
 
@@ -109,7 +114,7 @@ pub(crate) fn do_enroll(broker: &str, force: bool) -> Result<()> {
     for line in enroll::plan_text(&kerberos).lines() {
         println!("  {line}");
     }
-    if !confirm("\nRun them now? [y/N] ")? {
+    if !agreed(yes, "\nRun them now? [y/N] ")? {
         bail!("enrollment declined");
     }
     for line in enroll::apply(&kerberos) {
@@ -117,13 +122,16 @@ pub(crate) fn do_enroll(broker: &str, force: bool) -> Result<()> {
     }
     if enroll::needs_reboot(&state) {
         println!("\n[kerbridge] reboot required: Windows caches realm state at boot.");
+        if yes {
+            return exit_reboot_required();
+        }
     }
     Ok(())
 }
 
 /// Remove the realm's registration from Windows (`--unenroll`). The inverse of
 /// enrollment: it deletes the LSA keys `ksetup` built, and a reboot finishes it.
-pub(crate) fn do_unenroll(args: &Args) -> Result<()> {
+pub(crate) fn do_unenroll(args: &Args, yes: bool) -> Result<()> {
     let realm = resolve_realm(args)?;
 
     if !elevate::is_elevated() {
@@ -131,6 +139,9 @@ pub(crate) fn do_unenroll(args: &Args) -> Result<()> {
         let mut relaunch = vec!["--unenroll"];
         if let Some(b) = &args.broker {
             relaunch.extend_from_slice(&["--broker", b]);
+        }
+        if yes {
+            relaunch.push("--yes");
         }
         report_elevated(elevate::run_elevated(&relaunch, &ignore_start)?, "unenrollment")?;
         return Ok(());
@@ -140,7 +151,7 @@ pub(crate) fn do_unenroll(args: &Args) -> Result<()> {
     for line in enroll::unenroll_plan_text(&realm).lines() {
         println!("  {line}");
     }
-    if !confirm("\nRemove them now? [y/N] ")? {
+    if !agreed(yes, "\nRemove them now? [y/N] ")? {
         bail!("unenrollment declined");
     }
     for line in enroll::unenroll(&realm) {
@@ -150,13 +161,17 @@ pub(crate) fn do_unenroll(args: &Args) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn do_repair() -> Result<()> {
+pub(crate) fn do_repair(yes: bool) -> Result<()> {
     if !elevate::is_elevated() {
-        report_elevated(elevate::run_elevated(&["--repair"], &ignore_start)?, "repair")?;
+        let mut relaunch = vec!["--repair"];
+        if yes {
+            relaunch.push("--yes");
+        }
+        report_elevated(elevate::run_elevated(&relaunch, &ignore_start)?, "repair")?;
         return Ok(());
     }
     println!("[kerbridge] restarting the Workstation service -- every SMB session drops.");
-    if !confirm("Continue? [y/N] ")? {
+    if !agreed(yes, "Continue? [y/N] ")? {
         bail!("repair declined");
     }
     for step in repair::restart_workstation()? {
@@ -166,6 +181,26 @@ pub(crate) fn do_repair() -> Result<()> {
 }
 
 /// Only the elevated one-shots ask, and they exist only on Windows.
+/// Leave with the restart still owed. `std::process::exit` rather than a return
+/// value: nothing above here can carry an exit code, and the one caller that
+/// matters is a deployment tool reading the code off this process.
+fn exit_reboot_required() -> Result<()> {
+    use std::io::Write;
+    std::io::stdout().flush().ok();
+    std::process::exit(crate::EXIT_REBOOT_REQUIRED);
+}
+
+/// The confirmation, or `--yes` standing in for it. The plan is printed either
+/// way, so an unattended run still leaves in the log exactly what it ran --
+/// what `--yes` removes is the wait, not the record.
+fn agreed(yes: bool, prompt: &str) -> Result<bool> {
+    if yes {
+        println!("{}yes (--yes)", prompt.trim_start_matches('\n'));
+        return Ok(true);
+    }
+    confirm(prompt)
+}
+
 fn confirm(prompt: &str) -> Result<bool> {
     use std::io::Write;
     print!("{prompt}");

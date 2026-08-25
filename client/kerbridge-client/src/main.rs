@@ -139,7 +139,21 @@ struct Args {
     /// Settings supplies the default.
     #[arg(long = "for", value_name = "NAME")]
     target: Option<String>,
+
+    /// Answer the confirmation prompts with yes. For a deployment tool running
+    /// this with no console: the plan is still printed, so what ran is in the
+    /// log, but nothing waits for a person. With --enroll, an enrollment that
+    /// Windows will not honour until a restart exits 3010, which Intune and
+    /// most other tools read as "installed, reboot pending".
+    #[arg(long)]
+    yes: bool,
 }
+
+/// `ERROR_SUCCESS_REBOOT_REQUIRED`. What an installer returns to say the work is
+/// done and a restart finishes it; Intune maps it to a soft reboot, and it is a
+/// success code to msiexec and to Configuration Manager alike.
+#[cfg(windows)]
+pub(crate) const EXIT_REBOOT_REQUIRED: i32 = 3010;
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -152,7 +166,7 @@ fn main() -> Result<()> {
     // broker yet is exactly the machine someone is asking that about.
     #[cfg(windows)]
     if args.repair {
-        return do_repair();
+        return do_repair(args.yes);
     }
     #[cfg(windows)]
     if args.enroll_status {
@@ -163,7 +177,7 @@ fn main() -> Result<()> {
     }
     #[cfg(windows)]
     if args.unenroll {
-        return do_unenroll(&args);
+        return do_unenroll(&args, args.yes);
     }
     if args.grant_status {
         return do_grant_status();
@@ -178,7 +192,7 @@ fn main() -> Result<()> {
     let mut broker = resolve_broker(&args)?;
     #[cfg(windows)]
     if args.enroll || args.reenroll {
-        return do_enroll(&broker, args.reenroll);
+        return do_enroll(&broker, args.reenroll, args.yes);
     }
     if args.grant {
         return do_grant(&args, &broker);

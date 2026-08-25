@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                           revision="1.0" schemaVersion="1.0"
+                           xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>NAS Access by KerBridge</displayName>
+  <description>Cloud sign-in for network drives.</description>
+  <resources>
+    <stringTable>
+
+      <string id="SUPPORTED_NAS_ACCESS_1_0">NAS Access by KerBridge 0.9.2 or later</string>
+
+      <string id="NasAccess">NAS Access by KerBridge</string>
+      <string id="NasAccess_Help">Settings for the NAS Access agent, which signs the user in to the cloud identity provider and puts a Kerberos ticket where Windows finds it.
+
+Every setting here overrides the user's own choice in the agent's Settings window, and the control there shows the managed value instead of offering to change it. A setting left Not Configured leaves the choice with the user, or with the default the deployment publishes.</string>
+
+      <string id="BrokerUrl">Broker address</string>
+      <string id="BrokerUrl_Help">The HTTPS address of the KerBridge broker this machine authenticates against, for example https://kerbridge.example.site.
+
+Enabled: the agent uses this address and the Settings field becomes read-only.
+
+Disabled or Not Configured: the agent uses the address the user entered, or the one a _kerbridge._tcp SRV record in this machine's own DNS domain names.
+
+The certificate is validated against the machine's trust store either way, so the LAN CA root has to be installed there first.</string>
+
+      <string id="Autostart">Start the agent when the user signs in</string>
+      <string id="Autostart_Help">Whether the agent starts with the user's session, and signs in again by itself when Windows can supply the credential silently.
+
+Enabled: the agent registers itself to start at sign-in and the checkbox in its Settings window reads on and cannot be changed. This takes effect the first time the agent runs on an account: the entry is per-user, so nothing can write one for a user who has never run it. Install the MSI with AUTOSTART=1 where the very first sign-in has to start it.
+
+Disabled: the agent removes its own start-at-sign-in entry. It does not remove a machine-wide entry that the installer wrote with AUTOSTART=1; only an administrator can do that, and the agent says so in its log.
+
+Not Configured: the user's own choice stands.
+
+The entry is per-user by necessity. The ticket has to land in the interactive user's own logon session, so the agent has to be started by that session.</string>
+
+      <string id="WindowsSignIn">Use the Windows account to sign in</string>
+      <string id="WindowsSignIn_Help">Whether the agent asks Windows' own token broker (WAM) for the token before it opens a browser.
+
+Enabled: the agent tries Windows first. On an Entra-joined machine this makes sign-in silent. Anything that goes wrong falls through to the browser.
+
+Disabled: every sign-in goes through the browser.
+
+Not Configured: the user's own choice stands, and the agent tries Windows first by default.
+
+This needs ms-appx-web://microsoft.aad.brokerplugin/&lt;client id&gt; registered as a redirect URI on the public client in the tenant.</string>
+
+      <string id="NtlmFallbackRecovery">Offer to repair a stuck NTLM fallback</string>
+      <string id="NtlmFallbackRecovery_Help">Whether the agent detects the SMB redirector's stuck NTLM fallback and offers the elevated LanmanWorkstation restart that clears it.
+
+Enabled: the agent watches for the fallback and asks the user before it repairs.
+
+Disabled: the whole mechanism is off. A stuck fallback is then cleared only by a reboot or by IT, and the agent does not name it.
+
+Not Configured: the user's own choice stands, and the mechanism is on by default.
+
+The fallback can never succeed on its own: the realm holds no password for a cloud identity.</string>
+
+      <string id="GrantFor">Authorize this machine for a specific account</string>
+      <string id="GrantFor_Help">The account a device grant on this machine works as - a login name, or a literal kb1| identity value. For an unattended machine that has to hold a ticket as a service account rather than as whoever last signed in.
+
+Enabled: the agent authorizes itself for this account and shows the name rather than offering to change it.
+
+Disabled or Not Configured: the machine authorizes itself for whoever signs in on it.
+
+This is not an access control. The broker checks the delegate group whatever the machine asks for; this only decides what it asks for.</string>
+
+    </stringTable>
+    <presentationTable>
+      <presentation id="BrokerUrl">
+        <textBox refId="BrokerUrl">
+          <label>Broker address</label>
+          <defaultValue>https://kerbridge.example.site</defaultValue>
+        </textBox>
+      </presentation>
+      <presentation id="GrantFor">
+        <textBox refId="GrantFor">
+          <label>Account name</label>
+        </textBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

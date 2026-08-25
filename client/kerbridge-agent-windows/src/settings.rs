@@ -467,14 +467,26 @@ fn page_basic(col: &mut Col, view: &agent::SettingsView) {
     set_checked(autostart, view.autostart);
     if view.autostart_locked {
         unsafe { EnableWindow(autostart, 0) };
-        col.wrap(s.settings_startup_managed, ROLE_SUB);
+        // `settings_startup_managed` says IT turned it *on*, which is true of a
+        // machine-wide entry and of a policy that asks for one -- and false of a
+        // policy that forbids it. The neutral sentence covers that case.
+        col.wrap(
+            if view.autostart { s.settings_startup_managed } else { s.settings_broker_managed },
+            ROLE_SUB,
+        );
     }
     a.settings.autostart.set(autostart);
     col.gap(6);
     let wam = checkbox(col, s.settings_wam_label, CMD_WAM);
     set_checked(wam, view.windows_sign_in);
+    if view.windows_sign_in_locked {
+        unsafe { EnableWindow(wam, 0) };
+    }
     a.settings.wam.set(wam);
     col.wrap(s.settings_wam_sub, ROLE_SUB);
+    if view.windows_sign_in_locked {
+        col.wrap(s.settings_broker_managed, ROLE_SUB);
+    }
 }
 
 /// **Presence rules, no text branches.** No broker or no realm yet →

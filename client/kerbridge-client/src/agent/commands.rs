@@ -221,11 +221,13 @@ pub struct SettingsView {
     pub broker_url: String,
     pub broker_locked: bool,
     pub autostart: bool,
-    /// True when a machine-wide entry is what turned it on. The checkbox then
-    /// reads on and does not move: a per-user setting cannot countermand it, and
-    /// an unchecked box beside an app that does start at login is a lie.
+    /// True when a machine-wide entry or machine policy decides it. The checkbox
+    /// then reads the decided value and does not move: a per-user setting cannot
+    /// countermand either, and a box beside an app that ignores it is a lie.
     pub autostart_locked: bool,
     pub windows_sign_in: bool,
+    /// True when machine policy decides the Windows sign-in, same rule.
+    pub windows_sign_in_locked: bool,
     /// The realm the Advanced actions target; empty until it has been discovered.
     pub realm: String,
     /// How many days a device grant would last here. 0 means the deployment has
@@ -244,13 +246,14 @@ pub struct SettingsView {
 }
 
 pub fn settings_view() -> SettingsView {
-    let autostart_locked = config::autostart_locked();
+    let machine_wide = config::autostart_machine_wide();
     with(|a| SettingsView {
         broker_url: a.settings.broker_url().unwrap_or_default().to_string(),
         broker_locked: a.settings.broker_url_locked(),
         autostart: config::autostart_active(),
-        autostart_locked,
+        autostart_locked: machine_wide || a.settings.autostart_managed(),
         windows_sign_in: a.settings.windows_sign_in(),
+        windows_sign_in_locked: a.settings.windows_sign_in_locked(),
         realm: a.kerberos.realm.clone(),
         grant_days: if a.device_grant.enabled() { a.device_grant.days } else { 0 },
         grant_deadline: a.settings.grant().map_or(0, |g| g.sign_in_required_by),
@@ -288,17 +291,22 @@ pub fn apply_settings(
         if !a.settings.grant_for_locked() {
             a.settings.set_grant_for(grant_for);
         }
-        a.settings.set_windows_sign_in(windows_sign_in);
+        if !a.settings.windows_sign_in_locked() {
+            a.settings.set_windows_sign_in(windows_sign_in);
+        }
+        // Under a machine-wide entry or a policy value the checkbox is disabled
+        // and reads the decided value, so what comes back here is not a choice
+        // anyone made: writing it back would leave a per-user entry that
+        // outlives the deployment's, and a `config.toml` line that outlives the
+        // policy.
+        if !config::autostart_machine_wide() && !a.settings.autostart_managed() {
+            a.settings.set_autostart_choice(autostart);
+            if let Err(e) = config::set_autostart(autostart) {
+                log::warn(&format!("could not update the autostart entry: {e:#}"));
+            }
+        }
         if let Err(e) = a.settings.save() {
             log::warn(&format!("could not save config.toml: {e:#}"));
-        }
-        // Under a machine-wide entry the checkbox is disabled and reads on, so
-        // its value here is not a choice anyone made: writing it back would leave
-        // a per-user entry that outlives the deployment's.
-        if !config::autostart_locked()
-            && let Err(e) = config::set_autostart(autostart)
-        {
-            log::warn(&format!("could not update the autostart entry: {e:#}"));
         }
         if a.settings.broker_url().unwrap_or_default() != before {
             log::info("broker URL changed; ending the previous realm's session");

@@ -152,6 +152,11 @@ TLS is required. The client refuses a plaintext URL.
     "max_per_user": 5,
     "audience": "<broker app id>"
   },
+  "client_defaults": {                       // optional; each key optional, absent = no opinion
+    "autostart": true,                       // applied once, to a machine whose user never chose
+    "windows_sign_in": true,
+    "ntlm_fallback_recovery": true
+  },
   "help_url": ""                             // optional; the client uses its own when empty
 }
 ```
@@ -974,7 +979,7 @@ mechanism are per-platform and are in each agent's document.
 
 | File | Contents |
 |---|---|
-| `config.toml` | `broker_url`; `grant_for`; `windows_sign_in` (default `true`) and `ntlm_fallback_recovery` (default `true` on Windows, `false` on macOS); `browser_session`; `expected_working_as`; `[cache]`, the last discovered configuration; and `[grant]`, this machine's device grant with the principal it last obtained. |
+| `config.toml` | `broker_url`; `grant_for`; `autostart`, `windows_sign_in` and `ntlm_fallback_recovery`, each written only once the user or a deployment default has settled it (built-in answers: on, on, and on for Windows and off for macOS); `browser_session`; `expected_working_as`; `[cache]`, the last discovered configuration; and `[grant]`, this machine's device grant with the principal it last obtained. |
 | `kerbridge.log` | The log. It rotates at start once past 10 MB, into three gzipped generations. |
 
 **Broker URL precedence:**
@@ -985,6 +990,26 @@ flowchart LR
   c --> s["SRV record<br/>(memory-only)"]
   s --> p["first-run prompt"]
 ```
+
+**Every other setting's precedence**, which is the same order minus DNS —
+unauthenticated answers may name a broker, never decide how this machine
+behaves:
+
+```mermaid
+flowchart LR
+  h["machine policy<br/>(GPO / MDM profile)"] --> c["config.toml"]
+  c --> d["client_defaults<br/>from GET /config"]
+  d --> b["the client's own default"]
+```
+
+- **A setting the user has not touched is absent from `config.toml`.** Writing
+  it out at its default would be indistinguishable from a decision, and would
+  pin the machine to whatever the build shipped on the day it first ran. This is
+  the same rule the server's own config templates follow.
+- **`client_defaults` reaches the machines no management system owns.** Policy
+  covers a managed fleet; this covers the rest, over the one channel they
+  already trust for the realm and the KDCs. It never overrides a choice — it
+  decides where there is none.
 
 - A policy value makes the Settings field read-only and shows a managed cue. The
   client prepends `https://` when the scheme is missing; TLS is mandatory either
@@ -1000,7 +1025,18 @@ flowchart LR
 - **`ntlm_fallback_recovery`** gates the entire NTLM-fallback machinery, and a
   machine policy value overrides the file. When it is `false` the agent does no
   elevated restart: a stuck fallback is then recoverable only by a reboot or by
-  IT, and the agent does not name it.
+  IT, and the agent does not name it. Windows only whatever any layer says: a
+  deployment-wide `true` may not arm on macOS a repair that macOS neither needs
+  nor offers a switch for.
+- **Autostart is applied, not only recorded.** The login entry is per-user on
+  both platforms, so a policy value or a `client_defaults` answer means nothing
+  until the agent writes one — it does that at startup for policy, and after the
+  first `/config` for the deployment default. A policy answer is applied on every
+  start and never written to `config.toml`, or a machine leaving the policy's
+  scope would go on obeying it; a deployment default is written, because it is a
+  seed for a profile that has never decided, and a later choice then wins. The
+  MSI's machine-wide `Run` value is the third route and needs no agent
+  cooperation at all, and no per-user setting can countermand it.
 - **A change of broker URL purges the realm, releases the grant and drops the
   refresh token.** This is why the Settings field commits explicitly and never on
   focus loss.
@@ -1014,10 +1050,13 @@ flowchart LR
   second handshake reads back the certificate the host presented, so the message
   names evidence instead of restating that trust failed.
 - **The trust floor for an elevated enrollment**: the elevated process fetches and
-  validates the configuration itself, and gates on the user's confirmation of the
-  realm and the KDCs before it writes anything. The broker, over TLS, is trusted
-  to set the realm-to-KDC mapping, so that confirmation is the backstop against a
-  rogue or spoofed KDC.
+  validates the configuration itself, and gates on a confirmation of the realm
+  and the KDCs before it writes anything. The broker, over TLS, is trusted to set
+  the realm-to-KDC mapping, so that confirmation is the backstop against a rogue
+  or spoofed KDC. `kerbridge --enroll --yes` moves it from the person at the
+  keyboard to the administrator who wrote the deployment command; the plan is
+  still printed, so what ran is still on the record, and the confirmation is
+  still made by somebody who can judge a KDC name.
 - **The loopback listener is hardened**: bound to `127.0.0.1`, a random ephemeral
   port, PKCE S256, a `state` nonce, one request, a short timeout, and an exact
   redirect match.

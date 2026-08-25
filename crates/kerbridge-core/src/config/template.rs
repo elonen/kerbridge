@@ -139,6 +139,10 @@ pub fn render(file: &str, source: &str, schema: &serde_json::Value) -> Result<St
     // its own. A table header switches which struct the keys below it belong
     // to, and each is held to its own key set.
     let mut table = Table::root(file, schema)?;
+    // A `[name]` header names a table of the *file*, never of the table above
+    // it: `[notify]` after `[client_defaults]` in main.toml is a sibling, not a
+    // descent. Resolve from the open table and the second header is an error.
+    let root = Table::root(file, schema)?;
     let mut done: Vec<Table> = Vec::new();
 
     for (i, line) in lines.iter().enumerate() {
@@ -147,7 +151,7 @@ pub fn render(file: &str, source: &str, schema: &serde_json::Value) -> Result<St
             // nothing: an adapter's block is `[provider_config]` at the root of
             // its own schema, so the line that opens it is not a descent.
             if name != table.name {
-                let next = table.child(name, schema)?;
+                let next = root.child(name, schema)?;
                 done.push(std::mem::replace(&mut table, next));
             }
             out.push_str(line);
@@ -239,8 +243,8 @@ impl Table {
         Self::of(file, schema, schema)
     }
 
-    /// The struct a `[name]` header opens, found as a property of the root and
-    /// followed through its `$ref` into `$defs`.
+    /// The struct a `[name]` header opens, found as a property of the file's
+    /// root table and followed through its `$ref` into `$defs`.
     pub(super) fn child(&self, name: &str, root: &serde_json::Value) -> Result<Self, String> {
         let property = self
             .properties
@@ -436,6 +440,23 @@ const MAIN_SRC: &str = r#"# KerBridge, entry point.
 # Configurable because one service account across twenty build machines is the
 # economical shape, cloud IdPs licensing per user.
 {{device_grant_max_per_user}}
+
+
+# --- Client defaults: what a workstation agent does where nobody has said ---
+# Served in the broker's /config document, which every agent already reads for
+# the realm and the KDCs. It reaches the machines no management system owns.
+#
+# Below the machine policy (HKLM\Software\Policies\KerBridge on Windows, an MDM
+# profile on macOS) and below the user's own choice, both of which win. Leave an
+# option unset and the agent keeps its own built-in answer -- which is also what
+# lets a later client version change that answer.
+[client_defaults]
+
+{{autostart}}
+
+{{windows_sign_in}}
+
+{{ntlm_fallback_recovery}}
 
 
 # --- Operator notification ---

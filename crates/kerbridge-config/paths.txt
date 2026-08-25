@@ -25,6 +25,9 @@ kbmanage.bind_dn
 kbmanage.bind_password_file
 kbmanage.ldap_ca_file
 kbmanage.ldap_url
+main.client_defaults.autostart
+main.client_defaults.ntlm_fallback_recovery
+main.client_defaults.windows_sign_in
 main.device_grant_days
 main.device_grant_max_per_user
 main.notify.ca_file

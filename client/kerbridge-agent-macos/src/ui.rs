@@ -352,7 +352,12 @@ pub fn settings_sheet() {
     };
     autostart.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(320.0, 20.0)));
     autostart.setState(if view.autostart { NSControlStateValueOn } else { NSControlStateValueOff });
-    autostart.setToolTip(Some(&NSString::from_str(s.settings_startup_sub)));
+    autostart.setToolTip(Some(&NSString::from_str(if view.autostart_locked {
+        s.settings_broker_managed
+    } else {
+        s.settings_startup_sub
+    })));
+    autostart.setEnabled(!view.autostart_locked);
     accessory.addSubview(&autostart);
 
     NSApplication::sharedApplication(mtm).activate();

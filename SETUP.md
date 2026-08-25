@@ -35,6 +35,9 @@ Two pages apply to every step:
   parts. Read this before you pilot KerBridge.
 - [config-management.md](docs/setup/config-management.md) — how the
   configuration files work, and how to carry them to a new version.
+- [mdm-intune.md](docs/setup/mdm-intune.md) — the whole Windows client
+  deployment from Intune: the template, the installer push, and the realm
+  registration.
 
 ---
 
@@ -396,8 +399,10 @@ remaining ticket lifetime.
 ### Windows
 
 Go to **→ [windows-client.md](docs/setup/windows-client.md)** for the two
-executables, the silent and fleet installation, the two HKLM policy values, and
-the locations of the configuration and the logs.
+executables, the silent and fleet installation, the policy values and the Group
+Policy template, and the locations of the configuration and the logs. To
+deploy it from Intune, go to
+**→ [mdm-intune.md](docs/setup/mdm-intune.md)**.
 
 Download the agent, or build it on a machine with Docker:
 

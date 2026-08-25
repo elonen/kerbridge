@@ -101,6 +101,7 @@ there is nothing to do.
 | `kerbridge.exe --sign-off` | Drop this realm's tickets from the logon session (realm-scoped, never blanket). The device grant survives. |
 | `kerbridge.exe --enroll-status` | What does Windows currently believe about the realm? |
 | `kerbridge.exe --enroll` | Register the realm with Windows (prints the exact ksetup batch, then elevates). |
+| `kerbridge.exe --enroll --yes` | The same, with nobody to ask: no prompt, and exit 3010 where Windows needs a restart. For a deployment tool. |
 | `kerbridge.exe --reenroll` | Force re-apply that registration even if Windows already looks set up — the fix for a partial or stale registration (elevates). |
 | `kerbridge.exe --unenroll` | Remove the realm's registration from Windows — the inverse of `--enroll`; a reboot finishes it (prints the keys to delete, then elevates). |
 | `kerbridge.exe --repair` | Clear a stuck NTLM fallback by restarting the Workstation service (elevates; **drops every SMB session on this machine**). |

@@ -23,9 +23,17 @@ document that a helper needs to bootstrap from a broker URL alone:
   "oidc":     { "authority": "...", "client_id": "...", "scopes": ["..."], "display_name": "Entra" },
   "kerberos": { "realm": "EXAMPLE.SITE", "kdcs": [], "services": [] },
   "ticket_format": "mit-ccache-v4",
-  "device_grant": { "days": 0, "max_per_user": 10, "audience": "kerbridge://EXAMPLE.SITE" }
+  "device_grant": { "days": 0, "max_per_user": 10, "audience": "kerbridge://EXAMPLE.SITE" },
+  "client_defaults": { "autostart": true }
 }
 ```
+
+- `client_defaults` is `main.toml`'s `[client_defaults]` republished verbatim,
+  and the block and every key in it are omitted where the operator set none.
+  The broker holds no opinion about any of it: the agent resolves it against its
+  own machine policy and its user's file, both of which win. It exists for the
+  workstations no management system owns — see `client/DESIGN.md`
+  @ Configuration and storage.
 
 - `base_url` says where this source's other routes are. It is a reference that
   the client resolves against the address that the document came from — `/entra`,

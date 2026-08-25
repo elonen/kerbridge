@@ -117,7 +117,7 @@ pub fn autostart_enabled() -> bool {
 
 /// Never: `SMAppService` registers this app for this user alone, so there is no
 /// machine-wide login item the checkbox would be unable to countermand.
-pub fn autostart_locked() -> bool {
+pub fn autostart_machine_wide() -> bool {
     false
 }
 

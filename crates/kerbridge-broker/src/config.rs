@@ -37,6 +37,11 @@ pub struct Config {
     /// component: an operator who sets up a channel sets up one channel.
     pub notify: kerbridge_core::config::Notify,
     pub device_grants: DeviceGrantConfig,
+    /// What a workstation agent should do where nobody at that end has said.
+    /// Read from `main.toml` and republished verbatim: this process holds no
+    /// opinion about any of it, and the agent is the one that resolves it
+    /// against its own policy layer and its user's file.
+    pub client_defaults: kerbridge_core::config::ClientDefaults,
     /// Every source that this process serves, in the order that `main.toml`
     /// lists them. May be empty: a realm part-way through bootstrap has no
     /// source yet, and a broker that refused to start would take down the only
@@ -116,6 +121,31 @@ pub struct Discovery {
     pub kerberos: KerberosDiscovery,
     pub ticket_format: &'static str,
     pub device_grant: DeviceGrantDiscovery,
+    /// Absent where the deployment expressed no preference, which reads to a
+    /// client as "no opinion" -- the same answer a client too old to look gets.
+    #[serde(skip_serializing_if = "ClientDefaultsDiscovery::is_empty")]
+    pub client_defaults: ClientDefaultsDiscovery,
+}
+
+/// The deployment's preferences, as a client reads them. Each absent value is
+/// one the operator left unset, and a client that finds none keeps its own
+/// built-in answer.
+#[derive(Serialize, Default)]
+pub struct ClientDefaultsDiscovery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub autostart: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub windows_sign_in: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ntlm_fallback_recovery: Option<bool>,
+}
+
+impl ClientDefaultsDiscovery {
+    fn is_empty(&self) -> bool {
+        self.autostart.is_none()
+            && self.windows_sign_in.is_none()
+            && self.ntlm_fallback_recovery.is_none()
+    }
 }
 
 /// The device-grant facts a helper needs before it offers one. `days` of 0 is
@@ -162,6 +192,11 @@ impl Config {
                 max_per_user: self.device_grants.max_per_user,
                 audience: self.device_grants.audience.clone(),
             },
+            client_defaults: ClientDefaultsDiscovery {
+                autostart: self.client_defaults.autostart,
+                windows_sign_in: self.client_defaults.windows_sign_in,
+                ntlm_fallback_recovery: self.client_defaults.ntlm_fallback_recovery,
+            },
         }
     }
 
@@ -198,6 +233,7 @@ impl Config {
                 max_per_user: main.device_grant_max_per_user as usize,
                 audience: device_grant_audience(&realm.realm),
             },
+            client_defaults: main.client_defaults,
             ldap_base_dn: realm.base_dn(),
             ldap_url: realm.ldap_url,
             ldap_bind_dn: broker.bind_dn,
