@@ -112,7 +112,9 @@ make the same bytes. So `debian/rules` stages a tree somebody else filled --
 what dpkg reads the version from, so whatever writes it is the release process:
 `debian/make-changelog` writes it from `CHANGELOG.md` and `git describe`, and
 stamps the version into `kerbridge-config.NEWS` from the committed
-`.NEWS.in` beside it.
+`.NEWS.in` beside it -- when a release has one. That file is named
+`.NEWS.in__disabled` while no release needs work from the operator, and
+nothing generates or installs a NEWS file then.
 
 | Path | What |
 |---|---|

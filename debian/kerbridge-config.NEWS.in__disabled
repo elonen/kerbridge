@@ -1,0 +1,13 @@
+kerbridge (@VERSION@) unstable; urgency=@URGENCY@
+
+  Write here what the operator must do by hand for this release: a default
+  that changed, a path that moved, a value only they can set. Then rename
+  this file to kerbridge-config.NEWS.in, by removing __disabled.
+  `debian/make-changelog` stamps the version in, `dh` installs the result,
+  and the package manager shows it during the upgrade.
+
+  Leave the file disabled when a release needs no work from the operator.
+  The stamp takes the version of the build, so a note that is left here is
+  shown again at the next release, for a change that is already behind them.
+
+ -- @MAINTAINER@  @DATE@

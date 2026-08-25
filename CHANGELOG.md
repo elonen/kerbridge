@@ -16,70 +16,27 @@ These rules apply:
   each line, and lintian refuses a line longer than 80 characters.
 
 Some changes need work from the operator. Write those changes in
-`debian/kerbridge-config.NEWS.in` also. The package manager shows that file
-during an upgrade.
+`debian/kerbridge-config.NEWS.in__disabled` also, and rename the file to
+remove `__disabled`. The package manager shows it during the upgrade. Disable
+it again once a release needs no work from the operator: the file takes the
+version of the build, so a note left in it is shown a second time.
 
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
 ## 0.9.1
 
-- Every shipped binary is now position-independent on arm64, as it already
-  was on amd64. A fixed load address made address-space randomization do
-  nothing for the main program.
-- Every shipped binary now carries its dependency list in a `.dep-v0`
-  section, so `cargo audit bin` and the usual scanners can read a static
-  binary they used to report as carrying no dependencies at all.
-- The token verifier no longer encodes the RSA public key itself. It hands
-  the two published integers to `ring`, which takes the hand-written ASN.1
-  out of the most security-critical routine in the project.
-- The warning about unreachable signing keys no longer says that logins are
-  failing. Cached keys keep working, which is the intent, and the old
-  sentence sent an operator after an outage that was not happening.
-- `kerbridge-issuerd` now depends on `samba-ad-provision`. Samba only
-  recommends it, so an installation that skips recommends had no templates
-  to provision the realm from, and `kbsetup realm` died partway.
-- `kbsetup realm` stops before it writes anything when those templates are
-  absent, and names the package to install.
-- A provision that fails now puts your own `/etc/samba/smb.conf` back and
-  says whether the run can be repeated. Before, it left two files and the
-  next run refused to choose between them.
-- `kbsetup realm` and `kbsetup directory` end by pointing at
-  `kbsetup status`, as `kbsetup secrets` already did.
-- `kbsetup directory` and `kbsetup secrets` now start the daemons that were
-  in `failed` for want of what they just wrote. The broker and sync spend
-  their restart budget at install time, hours before the credential they
-  exit without exists, and nothing cleared that afterwards.
-- `kbsetup status` now says when a credential is there but the daemons
-  cannot read it, and gives the `chgrp`/`chmod` that fixes it. A file
-  written `root:root` stops every daemon at start, and no root-run check
-  could feel it -- the permission bits do not stop uid 0.
-- Setting up the notification webhook now says to use `kbsetup secrets`,
-  which writes the file at the group its readers need. The old recipe had
-  you place it with `sudo tee` and correct the group afterwards.
-- `kbsetup status` now quotes the last line each failed daemon wrote, and
-  counts a failed unit as work outstanding. `systemctl status` prints ten
-  lines, and after five restarts every one of them is systemd's own, so the
-  sentence that says why was the one thing an operator could not see.
-- New `kbsetup status` says what is done, what is left, and the command for
-  the next step. It writes nothing and is safe to run at any point.
-- The installation now prints that list as its last word, so an operator at
-  the terminal is told what remains.
-- New `kbsetup secrets` asks for the credentials nothing can generate, and
-  writes each one at the mode its reader needs. No secret goes through
-  debconf, which copies what passes through it to a world-readable file.
-- `kbsetup secrets` refuses an Entra Secret ID in place of the Value, which
-  is the usual mistake, and says which is which.
-- New `/usr/share/doc/kerbridge-config/README.Debian` covers the same ground
-  in prose, for the operator who finds it after the installation scrolled by.
+- Hardening: static-PIE binaries on arm64, a `.dep-v0` dependency
+  list the scanners can read, and `ring` in place of the hand-written ASN.1.
+- New `kbsetup status` says what is done and what is left.
+- New `kbsetup secrets` asks for the credentials nothing can generate and
+  writes each at the mode its reader needs.
+- `kbsetup realm` now needs `samba-ad-provision`, checks for the templates
+  before it writes, restores your own `smb.conf` if the provision fails, and
+  disables `winbind`, `smbd` and `nmbd` on the domain controller.
 - `kbsetup` no longer stops at a password prompt when it has a terminal.
-- The release page ships the MSI only. It holds both Windows programs.
-- The release page ships the macOS agent: arm64, ad-hoc signed.
-- CI builds and tests the macOS agent on each change.
-- The device-grant group example is now `KerBridge Device Grant Users`.
-- `kbsetup realm` disables `winbind`, `smbd` and `nmbd`. A domain controller
-  runs both daemons itself, and the standalone units stopped it from starting.
-- The deployment guide says to point the DC's resolver at the DC itself.
+- CI and release improvements.
+- Documentation improvements.
 
 ## 0.9.0
 
