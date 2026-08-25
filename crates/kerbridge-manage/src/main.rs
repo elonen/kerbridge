@@ -12,6 +12,7 @@ use std::io::{IsTerminal, Write};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
+use kerbridge_core::dn::parent_of;
 use kerbridge_core::problem::Problem;
 use kerbridge_core::state::{
     GROUP_TYPE_DOMAIN_LOCAL_SECURITY, ROLE_ADMISSION, ROLE_DELEGATES, ST_NAME_PINNED,
@@ -836,27 +837,30 @@ impl Renderer {
     }
 
     fn group_list(&self, snap: &Snapshot) {
+        let mut groups: Vec<_> = snap.resources.iter().collect();
+        groups.sort_by_key(|g| g.sam.to_lowercase());
         if self.json {
-            return print_json(&snap.resources);
+            return print_json(&groups);
         }
-        if snap.resources.is_empty() {
+        if groups.is_empty() {
             println!("no resource groups under {}", snap.resource_ou);
             return;
         }
-        for g in &snap.resources {
+        for (i, g) in groups.iter().enumerate() {
+            if i > 0 {
+                println!();
+            }
             let scope = if g.is_domain_local() {
                 "domain-local".to_owned()
             } else {
-                format!("groupType {} -- NOT domain-local", g.group_type.as_deref().unwrap_or("?"))
+                format!("NOT domain-local -- groupType {}", g.group_type.as_deref().unwrap_or("?"))
             };
-            println!("{}  [{scope}]", g.sam);
-            println!("    {}", g.dn);
-            if let Some(sid) = &g.sid {
-                println!("    {sid}");
-            }
-            for m in &g.members {
-                println!("    contains {}", member_line(snap, m));
-            }
+            println!("{}", g.sam);
+            println!("  type:     {scope}");
+            println!("  DN:       {}", g.dn);
+            println!("  SID:      {}", g.sid.as_deref().unwrap_or("(unreadable)"));
+            println!("  members:");
+            print_members(snap, &g.members, "    ");
         }
     }
 
@@ -868,13 +872,8 @@ impl Renderer {
             return print_json(&serde_json::json!({ "group": dn, "members": members }));
         }
         println!("{dn}");
-        if members.is_empty() {
-            println!("    contains nothing");
-            return;
-        }
-        for m in members {
-            println!("    contains {}", member_line(snap, m));
-        }
+        println!("  members:");
+        print_members(snap, members, "    ");
     }
 
     /// The delegation chain, account first: who the grants are for, the group
@@ -915,36 +914,64 @@ impl Renderer {
             }
             println!("    device grants may be authorized by {}", g.dn);
             if g.members.is_empty() {
-                println!("        contains nothing -- so nobody but this account can");
-            }
-            for m in &g.members {
-                println!("        contains {}", member_line(snap, m));
+                println!("        (none) -- so nobody but this account can");
+            } else {
+                print_members(snap, &g.members, "        ");
             }
         }
     }
 
+    /// Name last: it is the only field of unbounded width. The held age and the
+    /// role markers are notes rather than columns -- as a column, one retired
+    /// object pushes every name sideways.
     fn cloud_list(&self, snap: &Snapshot, want: Option<Kind>) {
-        let objects: Vec<_> =
+        let mut objects: Vec<_> =
             snap.cloud.iter().filter(|o| want.is_none_or(|k| o.kind == k)).collect();
+        objects.sort_by_key(|o| (word(o.kind), o.sam.to_lowercase()));
         if self.json {
             return print_json(&objects);
         }
-        for o in objects {
-            let state = match o.state() {
-                State::Live => "live".to_owned(),
-                s => match o.held_days(snap.now) {
-                    Some(d) => format!("{s:?} {d}d, holding its SID"),
-                    None => format!("{s:?}, timestamp unreadable"),
-                },
-            };
-            let mut role = String::new();
-            if o.is_admission_group() {
-                role.push_str("  [admission group]");
-            }
-            if o.is_grant_group() {
-                role.push_str("  [device-grant group]");
-            }
-            println!("{:<24} {:<6} {state}{role}", o.sam, format!("{:?}", o.kind).to_lowercase());
+        if objects.is_empty() {
+            println!("no managed objects under {}", snap.cloud_idp_ou);
+            return;
+        }
+        let rows: Vec<(String, String, &str, String)> = objects
+            .iter()
+            .map(|o| {
+                let mut note: Vec<String> = Vec::new();
+                let state = match o.state() {
+                    State::Live => "live".to_owned(),
+                    s => {
+                        note.push(match o.held_days(snap.now) {
+                            Some(d) => format!("[held {d}d, holding its SID]"),
+                            None => "[held, timestamp unreadable]".to_owned(),
+                        });
+                        word(s)
+                    }
+                };
+                if o.is_admission_group() {
+                    note.push("[admission group]".to_owned());
+                }
+                if o.is_grant_group() {
+                    note.push("[device-grant group]".to_owned());
+                }
+                (word(o.kind), state, o.sam.as_str(), note.join("  "))
+            })
+            .collect();
+        let width = |f: fn(&(String, String, &str, String)) -> usize, header: &str| {
+            rows.iter().map(f).max().unwrap_or(0).max(header.len())
+        };
+        let (kw, sw, nw) = (
+            width(|r| r.0.len(), "TYPE"),
+            width(|r| r.1.len(), "STATE"),
+            width(|r| r.2.len(), "NAME"),
+        );
+        let line = |kind: &str, state: &str, name: &str, note: &str| {
+            println!("{}", format!("{kind:<kw$}  {state:<sw$}  {name:<nw$}  {note}").trim_end());
+        };
+        line("TYPE", "STATE", "NAME", "");
+        for (kind, state, name, note) in &rows {
+            line(kind, state, name, note);
         }
     }
 
@@ -1140,17 +1167,47 @@ impl Renderer {
     }
 }
 
-/// One member of a group, annotated with the two things that make a nesting
-/// read as working when it is not: whose object it is, and whether it is being
-/// held for its SID and therefore grants nothing.
-fn member_line(snap: &Snapshot, dn: &str) -> String {
-    let held = snap
-        .find_cloud(dn)
-        .filter(|o| o.state() != State::Live)
-        .map(|o| format!("  <- {:?}, grants nothing", o.state()))
-        .unwrap_or_default();
-    let synced = if dn_is_at_or_within(dn, &snap.cloud_idp_ou) { "  (synced)" } else { "" };
-    format!("{dn}{synced}{held}")
+/// The members of one group: login name, object, and the two things that make a
+/// nesting read as working when it is not -- whose object it is, and whether it
+/// is being held for its SID and therefore grants nothing.
+fn print_members(snap: &Snapshot, members: &[String], indent: &str) {
+    if members.is_empty() {
+        println!("{indent}(none)");
+        return;
+    }
+    let mut rows: Vec<(&str, &str, String)> = members
+        .iter()
+        .map(|dn| {
+            let name = snap
+                .find_cloud(dn)
+                .map(|o| o.sam.as_str())
+                .or_else(|| snap.find_resource(dn).map(|g| g.sam.as_str()))
+                .unwrap_or_else(|| rdn_value(dn));
+            let synced = dn_is_at_or_within(dn, &snap.cloud_idp_ou).then(|| "(synced)".to_owned());
+            let held = snap
+                .find_cloud(dn)
+                .filter(|o| o.state() != State::Live)
+                .map(|o| format!("<- {}, grants nothing", word(o.state())));
+            (name, dn.as_str(), [synced, held].into_iter().flatten().collect::<Vec<_>>().join("  "))
+        })
+        .collect();
+    rows.sort_by_key(|(name, ..)| name.to_lowercase());
+    let nw = rows.iter().map(|(n, ..)| n.len()).max().unwrap_or(0);
+    let dw = rows.iter().map(|(_, d, _)| d.len()).max().unwrap_or(0);
+    for (name, dn, note) in &rows {
+        println!("{}", format!("{indent}- {name:<nw$}  {dn:<dw$}  {note}").trim_end());
+    }
+}
+
+/// A `Kind` or a `State` as the one lowercase word every listing prints.
+fn word(value: impl std::fmt::Debug) -> String {
+    format!("{value:?}").to_lowercase()
+}
+
+/// The RDN's value: what to call a member that neither OU knows.
+fn rdn_value(dn: &str) -> &str {
+    let rdn = dn[..dn.len() - parent_of(dn).len()].trim_end_matches(',');
+    rdn.split_once('=').map_or(rdn, |(_, value)| value)
 }
 
 fn mark(s: Status) -> &'static str {

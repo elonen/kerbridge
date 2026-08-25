@@ -33,6 +33,8 @@ names the tag, and it stops if that section is absent or empty.
   use the new `%ICON%` placeholder.
 - `kbmanage doctor` no longer says that a device-grant group authorizes
   nothing. That group gates the exchange, not a share.
+- `kbmanage cloud list` and `kbmanage group list` read more easily: sorted
+  rows, aligned columns, and a login name beside each member DN.
 
 ## 0.9.1
 
