@@ -39,7 +39,9 @@ ENV OPENSSL_STATIC=1
 # Then the assertion. A dynamically linked binary here would run in the alpine
 # image it was built in and nowhere else -- and the failure is not a link error,
 # it is `docker compose exec nas1 kerbridge` printing "not found" for a file that
-# is plainly there, which reads like a mount problem and is not one.
+# is plainly there, which reads like a mount problem and is not one. The test is
+# negative because a static musl binary reads as "statically linked" on aarch64
+# but "static-pie linked" on x86_64.
 RUN case "$(rustc -vV | sed -n 's/^host: //p')" in \
       x86_64-*)  triple="x86_64-unknown-linux-musl";; \
       aarch64-*) triple="aarch64-unknown-linux-musl";; \
@@ -47,7 +49,7 @@ RUN case "$(rustc -vV | sed -n 's/^host: //p')" in \
     esac; \
     cd client && cargo build --release --target "$triple" -p kerbridge-client --bin kerbridge; \
     cp "target/$triple/release/kerbridge" /kerbridge; \
-    file /kerbridge | grep -q 'statically linked' || { \
+    file /kerbridge | grep -q 'dynamically linked' && { \
       echo "FAIL: the client is not statically linked:"; file /kerbridge; exit 1; }; \
     /kerbridge --help > /dev/null
 
