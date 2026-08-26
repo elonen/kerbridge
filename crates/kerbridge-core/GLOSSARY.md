@@ -221,10 +221,12 @@ The `groupType` value distinguishing a `synced group` (global security,
 
 ### GUID shape
 
-The `8-4-4-4-12` hex form. A shape check and deliberately not a parse: the
-broker requires it of a token's `tid` and `oid`, sync refuses a credential file
-that *has* it (that is a `secret ID`), and the braced and URN forms a UUID
-parser would accept are neither.
+The canonical `8-4-4-4-12` hex form, in lowercase. A shape check and
+deliberately not a parse: the broker requires it of a token's `tid` and `oid`,
+sync refuses a credential file that *has* it (that is a `secret ID`), and the
+braced and URN forms a UUID parser would accept are neither. Case is part of the
+form: an `oid` becomes a `subject` that the broker and sync compare byte for
+byte. A caller that wants the shape in any case lowercases first.
 <!-- refs: `kerbridge_core::is_guid` -->
 <!-- avoid: uuid -->
 

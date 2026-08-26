@@ -35,7 +35,15 @@ pub const DEFAULT_LEEWAY_SECONDS: i64 = 300;
 /// Changing this encoding later orphans every object in this source, so it is
 /// not a knob: it was decided once, deliberately, and moving it is a migration
 /// and not an edit.
+///
+/// **The subject rule lives here.** Both faces reach it -- the broker through
+/// [`verify`], sync from a Graph object -- so one rule holds for both. `oid`
+/// must be a canonical GUID: the two are compared byte for byte, and Entra
+/// emitting one object id in two spellings orphans the account.
 pub fn identity(source: &Source, oid: &str) -> Result<ExternalIdentity, IdentityError> {
+    if !is_guid(oid) {
+        return Err(IdentityError::SubjectShape("a GUID in canonical lowercase form"));
+    }
     ExternalIdentity::new(source, oid)
 }
 
@@ -321,7 +329,10 @@ fn binding(
              is what the group is bound by, and a name beside it would select nothing"
         ),
         (None, Some(id)) => {
-            if !is_guid(&id) {
+            // Folded: this refuses a *mistake*, and an uppercase Object ID is
+            // still an Object ID. The message below would send them to the
+            // wrong key.
+            if !is_guid(&id.to_ascii_lowercase()) {
                 bail!(
                     "[provider_config]: {id_key} is not a group object id (GUID): {id:?} -- a \
                      display name goes in {name_key}"
@@ -787,11 +798,9 @@ async fn verify(
         return Err(reject("azp is not the authorized public client"));
     }
 
+    // Presence is this function's, shape is `identity`'s -- sync goes through it
+    // too. The cause is interpolated, so an `oid` refused for its case says so.
     let oid = claims.oid.ok_or_else(|| reject("no oid"))?;
-    if !is_guid(&oid) {
-        return Err(reject("oid is not a GUID"));
-    }
-
     identity(source, &oid).map_err(|e| reject(format!("oid is not a usable subject: {e}")))
 }
 
@@ -946,6 +955,25 @@ pub mod tests {
             crate::encode_identity(crate::Provider::Entra, &source(), USER_OID).unwrap();
         assert_eq!(from_token.encode(), from_graph.encode());
         assert_eq!(from_token, from_graph);
+    }
+
+    /// One rule at both faces: the directory face is `encode_identity`, the
+    /// token face is the reduction `verify` ends on. No fixture reaches the
+    /// token face -- the corpus signing key is not committed, so one new token
+    /// means regenerating all of them. The words are asserted because `verify`
+    /// wraps them.
+    #[test]
+    fn an_uppercase_oid_is_refused_on_both_faces() {
+        assert!(identity(&source(), USER_OID).is_ok(), "the canonical form still passes");
+        let uppercase = USER_OID.to_ascii_uppercase();
+
+        let from_graph = crate::encode_identity(crate::Provider::Entra, &source(), &uppercase)
+            .expect_err("the directory face refuses it");
+        let from_token = identity(&source(), &uppercase).expect_err("the token face refuses it");
+        assert_eq!(from_graph, from_token, "one rule, so one refusal");
+
+        let why = from_token.to_string();
+        assert!(why.contains("GUID") && why.contains("lowercase"), "{why}");
     }
 
     #[tokio::test]

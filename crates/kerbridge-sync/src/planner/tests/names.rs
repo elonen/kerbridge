@@ -4,14 +4,27 @@
 
 use super::*;
 
+/// Jane, whose login name the rename tests follow.
+const JANE: &str = "d0e00001-0000-0000-0000-000000000001";
+
+/// A second Carol, live where [`CAROL`] is retired, so the held name is taken.
+const CAROL_TWIN: &str = "d0ff1006-0000-0000-0000-000000000006";
+
+/// Two contractors whose login names are already at the sam budget.
+const CONTRACTOR_ONE: &str = "aaaa0001-0000-0000-0000-000000000001";
+const CONTRACTOR_TWO: &str = "bbbb0002-0000-0000-0000-000000000002";
+
+/// Only the source of the four characters a group-name collision falls back on.
+const A_GROUP: &str = "9202b000-0000-0000-0000-000000000001";
+
 /// A live account's login name follows a display-name change. It is what
 /// Windows shows as the file owner and in the *Security* tab, so leaving a
 /// renamed person's old name on their files is a directory failing at its
 /// job. The cost is one sign-out, because the sam is a Kerberos principal.
 #[test]
 fn a_live_login_name_follows_the_display_name() {
-    let cur = current(vec![("oid-jane", cur_user("jane.smith", "Jane Smith"))], vec![]);
-    let des = desired(vec![("oid-jane", des_user("Jane Doe"))], vec![]);
+    let cur = current(vec![(JANE, cur_user("jane.smith", "Jane Smith"))], vec![]);
+    let des = desired(vec![(JANE, des_user("Jane Doe"))], vec![]);
     let ops = plan_sync(&des, &cur, &ctx()).unwrap().ops;
 
     assert!(
@@ -38,8 +51,8 @@ fn a_live_login_name_follows_the_display_name() {
 /// have a stale login name than a sign-out.
 #[test]
 fn automatic_renames_off_freezes_a_live_login_name() {
-    let cur = current(vec![("oid-jane", cur_user("jane.smith", "Jane Smith"))], vec![]);
-    let des = desired(vec![("oid-jane", des_user("Jane Doe"))], vec![]);
+    let cur = current(vec![(JANE, cur_user("jane.smith", "Jane Smith"))], vec![]);
+    let des = desired(vec![(JANE, des_user("Jane Doe"))], vec![]);
     let ctx = PlanCtx { automatic_sam_renames: false, ..ctx() };
     let ops = plan_sync(&des, &cur, &ctx).unwrap().ops;
 
@@ -60,7 +73,7 @@ fn automatic_renames_off_freezes_a_live_login_name() {
 fn a_pinned_login_name_outranks_the_display_name() {
     let cur = current(
         vec![(
-            "oid-jane",
+            JANE,
             CurrentUser {
                 markers: vec![format!("{ST_NAME_PINNED}2026-07-29T10:00:00Z")],
                 ..cur_user("jd", "Jane Smith")
@@ -68,7 +81,7 @@ fn a_pinned_login_name_outranks_the_display_name() {
         )],
         vec![],
     );
-    let des = desired(vec![("oid-jane", des_user("Jane Doe"))], vec![]);
+    let des = desired(vec![(JANE, des_user("Jane Doe"))], vec![]);
     let ops = plan_sync(&des, &cur, &ctx()).unwrap().ops;
 
     assert!(
@@ -81,8 +94,8 @@ fn a_pinned_login_name_outranks_the_display_name() {
 /// and nobody is signed out by a cycle that had no news.
 #[test]
 fn an_unchanged_display_name_plans_no_rename() {
-    let cur = current(vec![("oid-jane", cur_user("jane.doe", "Jane Doe"))], vec![]);
-    let des = desired(vec![("oid-jane", des_user("Jane Doe"))], vec![]);
+    let cur = current(vec![(JANE, cur_user("jane.doe", "Jane Doe"))], vec![]);
+    let des = desired(vec![(JANE, des_user("Jane Doe"))], vec![]);
     assert_eq!(plan_sync(&des, &cur, &ctx()).unwrap().ops, vec![]);
 }
 
@@ -94,7 +107,7 @@ fn a_reappearing_user_takes_her_name_back() {
     let held = format!("CN=Carol Cycle (retired),{BASE}");
     let cur = current(
         vec![(
-            "ca201005-0000",
+            CAROL,
             CurrentUser {
                 dn: held.clone(),
                 enabled: false,
@@ -104,7 +117,7 @@ fn a_reappearing_user_takes_her_name_back() {
         )],
         vec![],
     );
-    let des = desired(vec![("ca201005-0000", des_user("Carol Cycle"))], vec![]);
+    let des = desired(vec![(CAROL, des_user("Carol Cycle"))], vec![]);
     assert_eq!(
         plan_sync(&des, &cur, &ctx()).unwrap().ops,
         vec![
@@ -130,7 +143,7 @@ fn a_reappearing_user_whose_name_was_taken_gets_the_suffixed_one() {
     let cur = current(
         vec![
             (
-                "ca201005-0000",
+                CAROL,
                 CurrentUser {
                     dn: held.clone(),
                     enabled: false,
@@ -138,15 +151,12 @@ fn a_reappearing_user_whose_name_was_taken_gets_the_suffixed_one() {
                     ..cur_user("_retired-carol.cycle", "Carol Cycle")
                 },
             ),
-            ("d0ff1006-0000", cur_user("carol.cycle", "Carol Cycle")),
+            (CAROL_TWIN, cur_user("carol.cycle", "Carol Cycle")),
         ],
         vec![],
     );
     let des = desired(
-        vec![
-            ("ca201005-0000", des_user("Carol Cycle")),
-            ("d0ff1006-0000", des_user("Carol Cycle")),
-        ],
+        vec![(CAROL, des_user("Carol Cycle")), (CAROL_TWIN, des_user("Carol Cycle"))],
         vec![],
     );
     assert_eq!(
@@ -172,8 +182,8 @@ fn a_full_length_sam_retires_within_the_twenty_char_budget() {
     let cur = current(
         [
             vec![
-                ("aaaa0001-0000", cur_user("jane.doe.contractor1", "Jane Doe One")),
-                ("bbbb0002-0000", cur_user("jane.doe.contractor2", "Jane Doe Two")),
+                (CONTRACTOR_ONE, cur_user("jane.doe.contractor1", "Jane Doe One")),
+                (CONTRACTOR_TWO, cur_user("jane.doe.contractor2", "Jane Doe Two")),
             ],
             steady_current(),
         ]
@@ -207,10 +217,7 @@ fn a_sub_ou_object_is_renamed_inside_its_own_ou() {
     des.membership.insert(proj.to_owned(), vec![]);
     let cur = current(
         [
-            vec![(
-                "ca201005-0000",
-                CurrentUser { dn: sub.clone(), ..cur_user("sub.user", "Sub User") },
-            )],
+            vec![(CAROL, CurrentUser { dn: sub.clone(), ..cur_user("sub.user", "Sub User") })],
             steady_current(),
         ]
         .concat(),
@@ -435,16 +442,16 @@ fn a_name_keeps_nothing_a_dn_or_a_sam_would_choke_on() {
 #[test]
 fn a_group_suffix_is_spent_from_the_sam_budget_not_added_past_it() {
     let long = "G".repeat(80);
-    let (cn, sam) = group_names(&long, "aaaa0001-0000", "-goog");
+    let (cn, sam) = group_names(&long, A_GROUP, "-goog");
     assert_eq!(cn, long, "the CN keeps the whole display name and the suffix stays off it");
     assert_eq!(sam.chars().count(), 64, "{sam}");
     assert!(sam.ends_with("-goog"), "{sam}");
 
     // The ordinary case, and the trailing-space trim still happening before the
     // suffix rather than after it.
-    assert_eq!(group_names("payroll", "aaaa0001-0000", "-goog").1, "payroll-goog");
-    assert_eq!(group_names("payroll ", "aaaa0001-0000", "-goog").1, "payroll-goog");
-    assert_eq!(group_names("payroll", "aaaa0001-0000", "").1, "payroll");
+    assert_eq!(group_names("payroll", A_GROUP, "-goog").1, "payroll-goog");
+    assert_eq!(group_names("payroll ", A_GROUP, "-goog").1, "payroll-goog");
+    assert_eq!(group_names("payroll", A_GROUP, "").1, "payroll");
 }
 
 /// Refused, not sanitized: this one is an operator's, and it lands in every

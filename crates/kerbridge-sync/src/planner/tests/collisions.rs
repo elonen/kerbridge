@@ -4,6 +4,10 @@
 
 use super::*;
 
+/// Two groups, told apart only by which one the test names first.
+const GROUP_A: &str = "aaaa0001-0000-0000-0000-000000000001";
+const GROUP_B: &str = "bbbb0002-0000-0000-0000-000000000002";
+
 /// One group's sAMAccountName colliding with an existing object refuses the
 /// *whole* cycle -- no partial sync -- so deploying against a directory that
 /// already holds a same-named object never half-applies. Here the admission
@@ -169,8 +173,8 @@ fn groups_differing_only_in_case_are_one_collision() {
         &desired(
             vec![],
             vec![
-                ("aaaa0001-0000", DesiredGroup { display_name: "Sales".to_owned() }),
-                ("bbbb0002-0000", DesiredGroup { display_name: "sales".to_owned() }),
+                (GROUP_A, DesiredGroup { display_name: "Sales".to_owned() }),
+                (GROUP_B, DesiredGroup { display_name: "sales".to_owned() }),
             ],
         ),
         &current(vec![], vec![]),
@@ -190,7 +194,7 @@ fn groups_differing_only_in_case_are_one_collision() {
 fn a_group_suffix_keeps_another_sources_group_name_out_of_the_way() {
     let mut cur = current(vec![], vec![]);
     cur.foreign_sams = vec!["payroll".to_owned()];
-    let group = vec![("aaaa0001-0000", DesiredGroup { display_name: "payroll".to_owned() })];
+    let group = vec![(GROUP_A, DesiredGroup { display_name: "payroll".to_owned() })];
 
     let unsuffixed = plan_sync(&desired(vec![], group.clone()), &cur, &ctx());
     assert!(
@@ -215,10 +219,7 @@ fn a_foreign_name_blocks_a_case_only_variant() {
     let mut cur = current(vec![], vec![]);
     cur.foreign_sams = vec!["Payroll".to_owned()];
     let result = plan_sync(
-        &desired(
-            vec![],
-            vec![("aaaa0001-0000", DesiredGroup { display_name: "payroll".to_owned() })],
-        ),
+        &desired(vec![], vec![(GROUP_A, DesiredGroup { display_name: "payroll".to_owned() })]),
         &cur,
         &ctx(),
     );

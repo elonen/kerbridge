@@ -465,11 +465,13 @@ struct Builder<'a> {
 
 /// The stored identity for a subject, or `None` with a conflict recorded.
 ///
-/// Unreachable for an Entra `oid` -- a GUID is 36 characters and the format
-/// holds 256 -- and here because the subject is the adapter's to shape, so the
-/// next one is not this crate's to reason about. Reported rather than skipped
-/// silently: an account that quietly never appears is the failure an operator
-/// cannot debug.
+/// Here because the subject is the adapter's to shape, so the next one is not
+/// this crate's to reason about. Reported rather than skipped silently: an
+/// account that quietly never appears is the failure an operator cannot debug.
+///
+/// For Entra the length never binds -- a GUID is 36 characters and the format
+/// holds 256 -- but the shape does: the adapter refuses an `oid` that is not a
+/// canonical GUID, here as at the broker.
 fn encoded_identity(b: &mut Builder<'_>, ctx: &PlanCtx<'_>, oid: &str) -> Option<String> {
     match (ctx.identity)(oid) {
         Ok(value) => Some(value),

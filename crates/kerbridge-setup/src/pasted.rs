@@ -179,7 +179,9 @@ pub fn refuse(value: &str, path: &Path) -> Option<String> {
     if value.is_empty() {
         return Some("nothing was typed".to_owned());
     }
-    if kerbridge_core::is_guid(value) {
+    // Folded: `is_guid` is canonical-only, and an uppercase Secret ID is still
+    // a Secret ID.
+    if kerbridge_core::is_guid(&value.to_ascii_lowercase()) {
         return Some(format!(
             "that is a GUID. For an Entra client secret it is the Secret ID rather than the \
              Value -- the Value is the longer string beside it, and the portal masks it as soon \
@@ -248,6 +250,7 @@ mod tests {
         let path = Path::new("/etc/kerbridge.secrets/idp/entra/credential");
         let guid = "77778888-bbbb-9999-cccc-0000dddd1111";
         assert!(refuse(guid, path).unwrap().contains("Secret ID"));
+        assert!(refuse(&guid.to_ascii_uppercase(), path).unwrap().contains("Secret ID"));
         assert!(refuse("", path).is_some());
         assert!(refuse("aB3~qX9.some-real-looking-secret-value-Zz0", path).is_none());
     }

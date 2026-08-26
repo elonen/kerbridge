@@ -3,6 +3,9 @@
 
 use super::*;
 
+/// The service account holding the device grant reconciliation must not touch.
+const BUILDER: &str = "bu11d000-0000-0000-0000-000000000001";
+
 /// A device grant is a stored `extensionName` value on a live user, and
 /// nothing in reconciliation may touch it. Two facts hold it there and both
 /// are pinned here, because either one silently failing revokes or
@@ -24,13 +27,11 @@ fn reconciliation_never_touches_a_stored_device_grant() {
          |start=1785000000|end=1787592000"
     );
     let holder = (
-        "bu11d0001-0000",
+        BUILDER,
         CurrentUser { markers: vec![grant], ..cur_user("service.builder", "Service Builder") },
     );
-    let want = desired(
-        [vec![("bu11d0001-0000", des_user("Service Builder"))], steady_desired()].concat(),
-        vec![],
-    );
+    let want =
+        desired([vec![(BUILDER, des_user("Service Builder"))], steady_desired()].concat(), vec![]);
     let cur = current([vec![holder], steady_current()].concat(), vec![]);
     let ops = plan_sync(&want, &cur, &ctx()).unwrap().ops;
     assert!(ops.is_empty(), "a grant must not read as drift: {ops:?}");
@@ -39,7 +40,7 @@ fn reconciliation_never_touches_a_stored_device_grant() {
     // applier will accept -- `directory::SETTABLE_ATTRS`, which refuses the
     // rest outright rather than trusting this to stay true.
     let mut renamed = want.clone();
-    renamed.users.get_mut("bu11d0001-0000").unwrap().display_name = "Renamed Builder".to_owned();
+    renamed.users.get_mut(BUILDER).unwrap().display_name = "Renamed Builder".to_owned();
     let ops = plan_sync(&renamed, &cur, &ctx()).unwrap().ops;
     assert!(ops.iter().any(|o| matches!(o, Op::SetAttr { .. })), "{ops:?}");
     for op in &ops {
@@ -68,7 +69,7 @@ fn retirement_clears_every_grant_on_the_object() {
     let cur = current(
         [
             vec![(
-                "ca201005-0000",
+                CAROL,
                 CurrentUser { markers: vec![grant], ..cur_user("carol.cycle", "Carol Cycle") },
             )],
             steady_current(),
@@ -87,10 +88,9 @@ fn retirement_clears_every_grant_on_the_object() {
     // check already makes them inert, and restoring access is usually the
     // intent.
     let mut disabled = desired(steady_desired(), vec![]);
-    disabled.users.insert(
-        "ca201005-0000".to_owned(),
-        DesiredUser { enabled: false, ..des_user("Carol Cycle") },
-    );
+    disabled
+        .users
+        .insert(CAROL.to_owned(), DesiredUser { enabled: false, ..des_user("Carol Cycle") });
     let ops = plan_sync(&disabled, &cur, &ctx()).unwrap().ops;
     assert_eq!(ops, vec![Op::DisableUser { dn: live }], "{ops:?}");
 }
@@ -307,8 +307,7 @@ fn retirement_frees_the_name_once_and_then_plans_nothing() {
     let live = format!("CN=Carol Cycle,{BASE}");
     let gone = desired(steady_desired(), vec![]);
     let cur = current(
-        [vec![("ca201005-0000", cur_user("carol.cycle", "Carol Cycle"))], steady_current()]
-            .concat(),
+        [vec![(CAROL, cur_user("carol.cycle", "Carol Cycle"))], steady_current()].concat(),
         vec![],
     );
     assert_eq!(
@@ -330,7 +329,7 @@ fn retirement_frees_the_name_once_and_then_plans_nothing() {
     let settled = current(
         [
             vec![(
-                "ca201005-0000",
+                CAROL,
                 CurrentUser {
                     dn: format!("CN=Carol Cycle (retired),{BASE}"),
                     enabled: false,
@@ -357,7 +356,7 @@ fn an_object_retired_before_this_shipped_is_migrated_next_cycle() {
     let cur = current(
         [
             vec![(
-                "ca201005-0000",
+                CAROL,
                 CurrentUser {
                     enabled: false,
                     markers: vec![retired_marker()],

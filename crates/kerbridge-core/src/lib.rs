@@ -135,6 +135,9 @@ pub enum IdentityError {
     BadEscape,
     /// A field that must be non-empty was empty.
     EmptyField(&'static str),
+    /// A subject that is not in the form its adapter requires. The adapter
+    /// supplies the words.
+    SubjectShape(&'static str),
     /// Longer than the attribute can hold, in characters.
     TooLong(usize),
 }
@@ -146,6 +149,7 @@ impl fmt::Display for IdentityError {
             Self::FieldCount(n) => write!(f, "expected {FIELD_COUNT} fields, found {n}"),
             Self::BadEscape => write!(f, "malformed percent escape"),
             Self::EmptyField(name) => write!(f, "empty {name} field"),
+            Self::SubjectShape(want) => write!(f, "subject is not {want}"),
             Self::TooLong(n) => {
                 write!(f, "{n} characters, over the {MAX_IDENTITY_LEN} the attribute holds")
             }
@@ -347,20 +351,26 @@ pub fn require_ldaps(url: &str) -> anyhow::Result<()> {
     )
 }
 
-/// Is this the `8-4-4-4-12` hex shape of a GUID?
+/// Is this the canonical GUID form -- `8-4-4-4-12` hex, in lowercase?
 ///
 /// A shape check and deliberately not a parse: the two callers want opposite
 /// things from it and neither wants the value. The broker refuses a token whose
-/// `tid` or `oid` is not GUID-shaped, because those become directory
-/// coordinates; sync refuses a Graph credential file that *is* GUID-shaped,
-/// because that is the portal's *Secret ID* pasted in place of the secret
-/// *Value*. Parsing with a UUID crate would accept the braced and URN forms too,
-/// which loosens the first check and breaks the second.
+/// `tid` or `oid` is not in this form, because those become directory
+/// coordinates; sync refuses a Graph credential file that *is* in it, because
+/// that is the portal's *Secret ID* pasted in place of the secret *Value*.
+/// Parsing with a UUID crate would accept the braced and URN forms too, which
+/// loosens the first check and breaks the second.
+///
+/// Case is part of the form. The broker stores a subject from a token and sync
+/// stores it from the directory; the two are compared byte for byte, so two
+/// spellings orphan every account in that source.
+///
+/// A caller that wants the shape in any case lowercases first, and says so.
 pub fn is_guid(s: &str) -> bool {
     let mut parts = s.split('-');
     for len in [8usize, 4, 4, 4, 12] {
         let Some(p) = parts.next() else { return false };
-        if p.len() != len || !p.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if p.len() != len || !p.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
             return false;
         }
     }
@@ -539,8 +549,14 @@ mod tests {
     #[test]
     fn recognizes_guids() {
         assert!(is_guid("33334444-dddd-5555-eeee-6666ffff7777"));
-        assert!(is_guid("690222BE-FF1A-4D56-ABD1-7E4F7D38E474"));
         assert!(is_guid("0a94cc71-1a92-4730-a2d9-8213912b4e6d"));
+        // An uppercase spelling is a different subject.
+        assert!(!is_guid("690222BE-FF1A-4D56-ABD1-7E4F7D38E474"));
+        // One uppercase digit is enough.
+        assert!(!is_guid("690222be-ff1a-4d56-abd1-7e4f7d38e47A"));
+        assert!(!is_guid("690222bE-ff1a-4d56-abd1-7e4f7d38e474"));
+        // What a caller that wants the shape in any case does.
+        assert!(is_guid(&"690222BE-FF1A-4D56-ABD1-7E4F7D38E474".to_ascii_lowercase()));
         // One hex digit short in the last group.
         assert!(!is_guid("690222be-ff1a-4d56-abd1-7e4f7d38e47"));
         assert!(!is_guid("33334444-dddd-5555-eeee-6666ffff7777-extra"));

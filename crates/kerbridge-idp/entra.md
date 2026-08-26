@@ -47,14 +47,14 @@ different Entra apps, and the difference is what the verifier depends on.
 |---|---|---|
 | `aud` | The resource the client asked for. The client requests `api://<broker API app>/access_as_user`, so Entra sets the broker API app. | Must equal the configured `broker_api_client_id`. A string or an array; both are accepted. |
 | `iss` | The tenant-specific v2 issuer. | Compares it to the configured `issuer`, byte for byte. |
-| `tid` | The tenant the user signed in to. | Must be a GUID, and must equal the configured `tenant_id`. |
+| `tid` | The tenant the user signed in to. | Must be a GUID in canonical lowercase form, and must equal the configured `tenant_id`. |
 | `exp`, `nbf` | The validity window. | Both required. 300 s of clock skew, which is Microsoft's own `DefaultClockSkew`. |
 | `iat` | Time of issue. | Required to be present. The value is not compared. |
 | `ver` | `"2.0"`, but only if the broker API app sets `requestedAccessTokenVersion: 2`. | Must be `"2.0"`. This catches the null default, which gives v1 tokens with a different `aud` and `iss`. |
 | `idtyp` | `"user"` or `"app"`. An optional claim that the broker API app must request. | Refuses `"app"`. |
 | `scp` | The delegated scopes, separated by spaces. Absent on an app-only token. | Must be present, and must contain the required scope. |
 | `azp` | The client that received the token. | Must equal the configured `public_client_id`. |
-| `oid` | The user's object id. Immutable, and unique in the tenant. | Must be a GUID. Becomes the stored subject. |
+| `oid` | The user's object id. Immutable, and unique in the tenant. | Must be a GUID in canonical lowercase form. Becomes the stored subject. |
 
 ## What the broker ignores
 
@@ -68,6 +68,13 @@ differs for each application. A new app registration would issue a different
 `sub` for the same person, and every synchronized account keyed to the old one
 would be orphaned. `oid` is the same value for the whole tenant, so the stored
 subject is the bare `oid`.
+
+**Case is part of the `oid` rule.** The stored subject is compared byte for
+byte against what sync writes from Graph, so `690222BE-…` and `690222be-…`
+would be two accounts for one person. The rule therefore lives in
+`entra::identity`, the one function both the broker and sync build a subject
+with. `tid` is held to the same form, which changes nothing: the comparison
+against the configured `tenant_id` is exact either way.
 
 ## The order of the checks
 

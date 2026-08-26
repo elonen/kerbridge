@@ -1,5 +1,8 @@
 //! Planner unit tests. The builders below are the shared fixture vocabulary --
 //! every submodule reaches them through `use super::*`.
+//!
+//! Every *user* object id below is a canonical GUID, because the encoder these
+//! tests plan with is the adapter's own. Group ids never reach it.
 
 mod collisions;
 mod corpus;
@@ -122,6 +125,9 @@ fn retired_marker() -> String {
 }
 
 const STEADY: &str = "5c0ffee0-0000-0000-0000-000000000001";
+
+/// Carol, retired and brought back in `names`, cleared of a grant in `grants`.
+const CAROL: &str = "ca201005-0000-0000-0000-000000000005";
 
 /// A user unchanged on both sides: she plans no ops of her own, and her
 /// presence is what keeps the empty-desired-state freeze out of the way in

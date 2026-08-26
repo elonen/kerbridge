@@ -205,7 +205,9 @@ impl SourceConfig {
             Ok(raw) if raw.trim().is_empty() => Ok(None),
             Ok(_) => {
                 let value = kerbridge_core::secret::read(&self.credential_file)?;
-                if is_guid(&value) {
+                // Folded: `is_guid` is canonical-only, and an uppercase Secret
+                // ID is still a Secret ID. Losing the fold is fail-open.
+                if is_guid(&value.to_ascii_lowercase()) {
                     bail!(
                         "secret file {shown} contains a GUID: that is the credential's Secret ID, \
                          not its Value"
@@ -299,9 +301,11 @@ mod tests {
     /// generated password could legitimately come out GUID-shaped.
     #[test]
     fn a_secret_id_is_refused_where_a_secret_value_is_not() {
+        let refused = |value: &str| is_guid(&value.to_ascii_lowercase());
         let secret_id = "0a94cc71-1a92-4730-a2d9-8213912b4e6d";
-        assert!(is_guid(secret_id), "a Secret ID is GUID-shaped");
-        assert!(!is_guid("aB3~qX9.some-real-looking-secret-value-Zz0"));
+        assert!(refused(secret_id), "a Secret ID is GUID-shaped");
+        assert!(refused(&secret_id.to_ascii_uppercase()), "in uppercase too");
+        assert!(!refused("aB3~qX9.some-real-looking-secret-value-Zz0"));
     }
 
     /// The expiry is an operator's assertion in a file, so the whole range
