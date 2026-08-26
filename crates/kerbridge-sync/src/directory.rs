@@ -15,7 +15,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use ldap3::{LdapConnAsync, LdapConnSettings, Mod, Scope, SearchEntry};
+use ldap3::adapters::{Adapter, EntriesOnly, PagedResults};
+use ldap3::{LdapConnAsync, LdapConnSettings, Mod, ResultEntry, Scope, SearchEntry};
 
 use kerbridge_core::state::{
     GROUP_TYPE_GLOBAL_SECURITY, ROLE_ADMISSION, UAC_DISABLED, UAC_ENABLED,
@@ -108,25 +109,22 @@ impl Directory {
     }
 
     async fn read_current_inner(&self, ldap: &mut ldap3::Ldap, source: &Source) -> Result<Current> {
-        let (entries, _) = ldap
-            .search(
-                &self.idp_ou,
-                Scope::Subtree,
-                "(|(objectClass=user)(objectClass=group))",
-                vec![
-                    "sAMAccountName",
-                    "displayName",
-                    "userAccountControl",
-                    "msDS-ExternalDirectoryObjectId",
-                    "extensionName",
-                    "member",
-                    "objectClass",
-                ],
-            )
-            .await
-            .context("reading the IdP-specific OU")?
-            .success()
-            .context("the IdP-specific OU search was refused")?;
+        let entries = search_paged(
+            ldap,
+            &self.idp_ou,
+            "(|(objectClass=user)(objectClass=group))",
+            vec![
+                "sAMAccountName",
+                "displayName",
+                "userAccountControl",
+                "msDS-ExternalDirectoryObjectId",
+                "extensionName",
+                "member",
+                "objectClass",
+            ],
+        )
+        .await
+        .context("reading the IdP-specific OU")?;
 
         let mut users: Vec<(String, CurrentUser)> = Vec::new();
         let mut groups: Vec<(String, CurrentGroup)> = Vec::new();
@@ -216,17 +214,14 @@ impl Directory {
         ldap: &mut ldap3::Ldap,
         managed: &HashSet<String>,
     ) -> Result<Vec<String>> {
-        let (entries, _) = ldap
-            .search(
-                &self.base_dn,
-                Scope::Subtree,
-                "(|(objectClass=user)(objectClass=group))",
-                vec!["sAMAccountName"],
-            )
-            .await
-            .context("reading domain sAMAccountNames")?
-            .success()
-            .context("domain sAMAccountName search was refused")?;
+        let entries = search_paged(
+            ldap,
+            &self.base_dn,
+            "(|(objectClass=user)(objectClass=group))",
+            vec!["sAMAccountName"],
+        )
+        .await
+        .context("reading domain sAMAccountNames")?;
         Ok(entries
             .into_iter()
             .filter_map(|e| first(&SearchEntry::construct(e), "sAMAccountName"))
@@ -387,6 +382,49 @@ impl Directory {
             }
         }
     }
+}
+
+/// Entries asked for per page. The server caps a page at its own `MaxPageSize`
+/// whatever this says, so it only decides how few round trips a small realm costs.
+const PAGE_SIZE: i32 = 1000;
+
+/// A subtree search that reads past the server's `MaxPageSize`, for the two
+/// reads whose result set grows with the realm.
+///
+/// Measured on the bench (2026-08-26, disposable realm, 12 055 users and groups
+/// against the default `MaxPageSize=1000`): an unpaged search returns every one
+/// of them with `rc=0`, and Samba ignores the client's own `sizeLimit` as well.
+/// So on this server the ceiling is inert and the control below changes nothing
+/// -- the same finding, and the same answer, as `MaxValRange` in `members_of`.
+///
+/// It is here for the server that does enforce it, which is every Windows DC and
+/// could be a later Samba. That one answers a larger result set with
+/// `sizeLimitExceeded` and the first `MaxPageSize` entries, and `foreign_sams`
+/// counts every user and group in the realm -- so the cycle would stop at 1 001
+/// objects and never run again. A server that answered short with `rc=0` instead
+/// would be worse and silent: sync would read a `sAMAccountName` as free when the
+/// realm already holds it. The control is not critical, so a server that does not
+/// implement it answers exactly as it does today.
+async fn search_paged(
+    ldap: &mut ldap3::Ldap,
+    base: &str,
+    filter: &str,
+    attrs: Vec<&str>,
+) -> Result<Vec<ResultEntry>> {
+    // `EntriesOnly` before `PagedResults`, the order ldap3's own example uses:
+    // it keeps referrals out of the entries.
+    let adapters: Vec<Box<dyn Adapter<_, _>>> =
+        vec![Box::new(EntriesOnly::new()), Box::new(PagedResults::new(PAGE_SIZE))];
+    let mut stream =
+        ldap.streaming_search_with(adapters, base, Scope::Subtree, filter, attrs).await?;
+    let mut entries = Vec::new();
+    while let Some(entry) = stream.next().await? {
+        entries.push(entry);
+    }
+    // A refusal on any page fails the cycle. The pages that did arrive are not
+    // the realm, and returning them as if they were is the bug paging prevents.
+    stream.finish().await.success().context("the search was refused")?;
+    Ok(entries)
 }
 
 /// Every `member` of a group entry, following ranged retrieval when the server
