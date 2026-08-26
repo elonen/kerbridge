@@ -44,20 +44,7 @@ pub fn login(cfg: &OidcConfig, cancel: &AtomicBool) -> Result<Option<Tokens>> {
     let redirect = format!("http://127.0.0.1:{}", listener.local_addr()?.port());
     let scope = cfg.scopes.join(" ");
 
-    let auth_url = format!(
-        "{}?{}",
-        cfg.authorization_endpoint,
-        form_urlencoded::Serializer::new(String::new())
-            .append_pair("client_id", &cfg.client_id)
-            .append_pair("response_type", "code")
-            .append_pair("redirect_uri", &redirect)
-            .append_pair("response_mode", "query")
-            .append_pair("scope", &scope)
-            .append_pair("state", &state)
-            .append_pair("code_challenge", &challenge)
-            .append_pair("code_challenge_method", "S256")
-            .finish()
-    );
+    let auth_url = authorize_url(cfg, &redirect, &state, &challenge);
 
     crate::log::info("opening the system browser for sign-in");
     // Best effort: a failure here surfaces as the login timeout.
@@ -78,6 +65,36 @@ pub fn login(cfg: &OidcConfig, cancel: &AtomicBool) -> Result<Option<Tokens>> {
         .finish();
 
     token_request(cfg, body).map(Some)
+}
+
+/// The authorization request URL. Pure, so the ordering rule below is testable
+/// without a browser or a listener.
+///
+/// The broker's `extra_auth_params` go on **first** and the flow's own pairs
+/// after them, so an adapter that names one of ours does not displace it on any
+/// authority that reads the last duplicate. Which one an authority reads is its
+/// framework's choice, not a rule -- Django takes the last, Werkzeug the first --
+/// so this ordering decides whether such a request works, never whether it is
+/// safe. Safety is local and does not depend on it: `state` is compared against
+/// the value this process generated, and the verifier never leaves this process,
+/// so a displaced reserved name costs a sign-in rather than a check.
+fn authorize_url(cfg: &OidcConfig, redirect: &str, state: &str, challenge: &str) -> String {
+    let scope = cfg.scopes.join(" ");
+    let mut query = form_urlencoded::Serializer::new(String::new());
+    for (name, value) in &cfg.extra_auth_params {
+        query.append_pair(name, value);
+    }
+    let query = query
+        .append_pair("client_id", &cfg.client_id)
+        .append_pair("response_type", "code")
+        .append_pair("redirect_uri", redirect)
+        .append_pair("response_mode", "query")
+        .append_pair("scope", &scope)
+        .append_pair("state", state)
+        .append_pair("code_challenge", challenge)
+        .append_pair("code_challenge_method", "S256")
+        .finish();
+    format!("{}?{}", cfg.authorization_endpoint, query)
 }
 
 /// Silent re-authentication with a refresh token -- what makes re-injection
@@ -389,6 +406,82 @@ fn b64url(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn config(extras: &[(&str, &str)]) -> OidcConfig {
+        OidcConfig {
+            client_id: "public-client".into(),
+            display_name: "Example ID".into(),
+            authority: "https://idp.example.site".into(),
+            scopes: vec!["openid".into(), "profile".into()],
+            extra_auth_params: extras
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
+            authorization_endpoint: "https://idp.example.site/authorize".into(),
+            token_endpoint: "https://idp.example.site/token".into(),
+            end_session_endpoint: None,
+        }
+    }
+
+    /// The escape hatch reaches the authorization request without the IdP being
+    /// named anywhere in this file.
+    #[test]
+    fn an_extra_parameter_the_broker_named_is_on_the_authorization_request() {
+        let cfg = config(&[("access_type", "offline"), ("prompt", "consent")]);
+        let pairs = query_of(&authorize_url(&cfg, "http://127.0.0.1:1234", "st", "ch"));
+
+        assert!(pairs.contains(&("access_type".to_owned(), "offline".to_owned())));
+        assert!(pairs.contains(&("prompt".to_owned(), "consent".to_owned())));
+        assert!(pairs.contains(&("code_challenge".to_owned(), "ch".to_owned())));
+        assert!(pairs.contains(&("scope".to_owned(), "openid profile".to_owned())));
+    }
+
+    /// `extra_auth_params` reaches here from an adapter's `client_config`, so a
+    /// reserved name in it is an adapter's mistake rather than an attack -- but it
+    /// still must not be the copy an authority reads.
+    #[test]
+    fn a_reserved_name_in_the_extras_cannot_displace_ours() {
+        let cfg = config(&[
+            ("state", "forged"),
+            ("code_challenge_method", "plain"),
+            ("code_challenge", "attacker-chosen"),
+            ("redirect_uri", "https://elsewhere.example/"),
+            ("client_id", "someone-else"),
+            ("response_type", "token"),
+            ("response_mode", "fragment"),
+            ("scope", "nothing"),
+        ]);
+        let url = authorize_url(&cfg, "http://127.0.0.1:1234", "generated-state", "generated-ch");
+        let pairs = query_of(&url);
+
+        // Our own output, not an authority's behaviour: this asserts which copy
+        // is last, and authorities differ on which one they then read. Measured
+        // on authentik 2026.8.0: the last, for `state` and `code_challenge` both.
+        for (name, ours) in [
+            ("state", "generated-state"),
+            ("code_challenge", "generated-ch"),
+            ("code_challenge_method", "S256"),
+            ("redirect_uri", "http://127.0.0.1:1234"),
+            ("client_id", "public-client"),
+            ("response_type", "code"),
+            ("response_mode", "query"),
+            ("scope", "openid profile"),
+        ] {
+            let last = pairs
+                .iter()
+                .rev()
+                .find(|(k, _)| k == name)
+                .unwrap_or_else(|| panic!("`{name}` is on the URL at all"));
+            assert_eq!(last.1, ours, "the last `{name}` must be ours, not the extras'");
+        }
+    }
+
+    fn query_of(url: &str) -> Vec<(String, String)> {
+        let query = url.split_once('?').expect("the URL carries a query").1;
+        form_urlencoded::parse(query.as_bytes())
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect()
+    }
 
     fn token(claims: serde_json::Value) -> String {
         format!("{}.{}.{}", b64url(b"{}"), b64url(claims.to_string().as_bytes()), b64url(b"sig"))

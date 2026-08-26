@@ -59,6 +59,12 @@ pub struct OidcDiscovery {
     /// not every IdP takes it that way -- some want it as a parameter on the
     /// authorization request. One field here beats an IdP branch in the client.
     /// Omitted from the wire when empty, which is every Entra deployment.
+    ///
+    /// Never name a parameter the flow sets itself -- `client_id`,
+    /// `response_type`, `redirect_uri`, `response_mode`, `scope`, `state`,
+    /// `code_challenge`, `code_challenge_method`. The client appends its own
+    /// after these, so a duplicate here costs a sign-in on any authority that
+    /// reads the first of the two.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub extra_auth_params: BTreeMap<String, String>,
 }
