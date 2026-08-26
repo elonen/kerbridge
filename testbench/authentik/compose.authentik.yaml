@@ -6,9 +6,9 @@
 # WebSocket layer moved into Postgres in 2025.10 (#4). Any recipe that adds a
 # `redis` service is stale.
 #
-# Both images are pinned tag-and-digest per #20: the version number is a
-# load-bearing fact for half of this map, and a bare digest hides it from every
-# diff. Do not pin below 2025.12 -- role-based access control, which the sync
+# Both images are pinned tag-and-digest: half of this map depends on the version
+# number, and a bare digest hides it from every diff.
+# Do not pin below 2025.12 -- role-based access control, which the sync
 # service account's read-only grant needs, does not exist before it. Do not
 # chase `2026.11.0-rc1`; that string is main's in-development version, not a
 # release.

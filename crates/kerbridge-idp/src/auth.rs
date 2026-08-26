@@ -98,6 +98,18 @@ pub(crate) fn reject(msg: impl Into<String>) -> Reject {
 /// INVARIANT: the [`Source`] an adapter builds identities against must be the
 /// one this IdP's sync writes. Separate processes, no channel between them; a
 /// disagreement breaks every login for that IdP and nothing reports it.
+///
+/// INVARIANT: the credential [`IdentityProvider::identify`] receives is opaque.
+/// Nothing in this trait requires a JWT, nor a JWKS or an OIDC discovery
+/// document behind it. An adapter verifies its IdP's credential however that
+/// IdP works, and establishes trust in the key however that IdP publishes one
+/// -- the seam is "prove an identity", not "validate a token". Only the `&str`
+/// in the signature holds that open.
+///
+/// A helper two adapters come to share therefore stays private to this crate.
+/// A public type is a contract: it makes every future adapter's protocol a
+/// commitment this trait never asked for. ([`b64url`] is public for the
+/// broker's device grant, which is no IdP adapter.)
 #[async_trait::async_trait]
 pub trait IdentityProvider: Send + Sync {
     fn client_config(&self) -> OidcDiscovery;
