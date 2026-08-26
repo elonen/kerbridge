@@ -24,9 +24,11 @@
 //! deployment that sets it must set `KRB5CCNAME` too, and the log line is what
 //! makes the disagreement visible instead of mysterious.
 //!
-//! A cache type this arm cannot write -- `DIR:`, `KEYRING:`, `KCM:` -- is refused
-//! by name rather than written to the wrong place. `FILE:` is what the bench
-//! drives `smbclient` with; a second cache type is a real Linux client's problem.
+//! A `KRB5CCNAME` this arm cannot turn into a path -- a cache type it cannot
+//! write (`DIR:`, `KEYRING:`, `KCM:`), or a `FILE:` with nothing after it -- is
+//! refused by name rather than written to the wrong place. `FILE:` is what the
+//! bench drives `smbclient` with; a second cache type is a real Linux client's
+//! problem.
 //!
 //! # What it does not do
 //!
@@ -62,11 +64,13 @@ fn cache_path() -> Result<(PathBuf, bool)> {
         return Ok((default_path(), false));
     };
     match name.split_once(':') {
-        Some(("FILE", path)) => Ok((PathBuf::from(path), true)),
+        // The empty path is refused here rather than carried: it reaches the
+        // open as "", and the error then names no file at all.
+        Some(("FILE", path)) if !path.is_empty() => Ok((PathBuf::from(path), true)),
         // A bare path, which MIT reads as FILE:.
         None if name.starts_with('/') => Ok((PathBuf::from(name), true)),
         _ => bail!(
-            "KRB5CCNAME is {name}: this client writes only a FILE: credential cache. \
+            "KRB5CCNAME is \"{name}\": this client writes only a FILE: credential cache. \
              Set KRB5CCNAME=FILE:/path (or an absolute path) and try again."
         ),
     }
@@ -247,10 +251,12 @@ mod tests {
         assert!(bare.exists());
         assert!(realm_tgt("EXAMPLE.SITE").unwrap().is_some());
 
-        // A cache type this arm cannot write is refused *by name*, because the
-        // alternative -- writing a FILE: cache anyway -- lands the ticket where
-        // nothing is looking and reports success.
-        for name in ["KEYRING:persistent:1000", "KCM:1000", "DIR:/run/user/1000/krb5cc"] {
+        // A name this arm cannot turn into a path is refused *by name*, because
+        // the alternative -- writing a FILE: cache anyway -- lands the ticket
+        // where nothing is looking and reports success. `FILE:` is in the list
+        // because an empty path otherwise reaches the open and fails there,
+        // naming no file.
+        for name in ["KEYRING:persistent:1000", "KCM:1000", "DIR:/run/user/1000/krb5cc", "FILE:"] {
             unsafe { std::env::set_var("KRB5CCNAME", name) };
             let e = inject(ccache, &tgt).expect_err("this arm writes only FILE: caches");
             assert!(e.to_string().contains(name), "the refusal has to name what it refused: {e}");
