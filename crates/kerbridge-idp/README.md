@@ -34,7 +34,8 @@ all it needs of an identity is that the stored value parses — which
 ## What is provider-specific, and therefore lives here
 
 - Token verification: which algorithm, which issuer, which audience, which claim
-  is the subject, and in which order those are checked.
+  is the subject, and in which order those are checked. Entra's is written out
+  claim by claim in [`entra.md`](entra.md).
 - Key acquisition. JWKS is one IdP's answer, not the only one, so the cache
   sits inside the adapter rather than beside it: an adapter whose IdP does not
   publish keys establishes trust some other way, and nothing outside it should

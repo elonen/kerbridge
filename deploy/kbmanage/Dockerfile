@@ -15,8 +15,8 @@ FROM rust@sha256:3c38f3f82c2f3d73da3b38e18d279393a04cb43ddded0e35088a8c3324d4090
 RUN apk add --no-cache musl-dev gcc file binutils
 # `cargo auditable` writes the dependency list into a `.dep-v0` ELF section, so
 # `cargo audit bin` and the usual scanners can read a static binary they would
-# otherwise report as having no dependencies at all. Costs ~2 KB. Version-pinned
-# for the reason cargo-about is in debian/Dockerfile.
+# otherwise report as having no dependencies at all. Costs ~2 KB. Version-pinned:
+# unpinned, what a release ships depends on the build date.
 RUN cargo install cargo-auditable --locked --version 0.7.0
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
@@ -38,7 +38,7 @@ COPY crates ./crates
 # the main image. `-C relocation-model=pic` alone does not fix it; the link
 # argument is the part that does.
 #
-# `-C link-self-contained=no` is load-bearing on aarch64, and a binary built
+# `-C link-self-contained=no` is necessary on aarch64, and a binary built
 # without it segfaults before main. rustc otherwise passes its own crt1.o,
 # musl's non-PIE startup object; a static-PIE ET_DYN has no interpreter, so
 # nothing self-relocates it and it jumps into unrelocated code. rustc chooses

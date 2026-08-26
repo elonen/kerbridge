@@ -257,18 +257,11 @@ code in a project whose code is mostly agent-written.
   from the raw token. It does not re-encode the header or the claims.
 - If a JWK states its own `alg`, a token that names a different `alg` for that
   key is refused.
-- The verifier checks all of these. It refuses the token if one fails:
-  - a three-part structure, and a `kid` in the header;
-  - the signature;
-  - an exact `iss`, and an exact `aud`;
-  - `exp` and `nbf`, with 300 s of clock skew;
-  - the presence of `iat`;
-  - `tid` against the configured tenant;
-  - `ver == "2.0"`, which catches a v1 token;
-  - `idtyp != "app"`, which refuses an app-only token;
-  - the required `scp`;
-  - `azp` against the authorized public client;
-  - a GUID-shaped `oid`.
+- The verifier checks the structure, the algorithm, the signature, the issuer,
+  the audience, the lifetime, the tenant, the token version, the token type, the
+  delegated scope, the authorized client and the shape of the subject. It
+  refuses the token if one fails. Each check, claim by claim, is in
+  [`crates/kerbridge-idp/entra.md`](crates/kerbridge-idp/entra.md).
 - The `scp` and `idtyp` checks are the real access control, not defence in
   depth. Entra issues app-only tokens with the broker audience to **any**
   confidential client in the tenant. The spike `entra-token-validation` measured

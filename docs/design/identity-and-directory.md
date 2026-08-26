@@ -196,18 +196,17 @@ The locked contract, live-verified
 
 - v2.0 access tokens. The API app registration must set
   `api.requestedAccessTokenVersion: 2`. It defaults to null, which means v1.
-- The issuer is exactly `https://login.microsoftonline.com/{tid}/v2.0`. The
-  audience is the broker API client GUID. RS256 only.
-- `azp` must be the authorized public client. `scp` must contain
-  `access_as_user`. `idtyp == "app"` is refused.
 - The stored subject is the bare `oid`. `tid` is pinned to the configured tenant
   on each token, but is not part of the identity: it is recorded once, on the
-  IdP-specific OU. Clock skew is 300 s. The JWKS cache is 24 h, with
-  rate-limited refresh on an unknown `kid`.
+  IdP-specific OU.
+- The JWKS cache is 24 h, with rate-limited refresh on an unknown `kid`.
 - The `scp`-presence check and the `idtyp` check are the actual access control,
   and not defense in depth. Entra issues app-only tokens with the broker
   audience to each confidential client in the tenant. No app role, no consent and
   no grant is necessary.
+
+Every claim the verifier reads, what Entra puts in it, and the order of the
+checks: [`crates/kerbridge-idp/entra.md`](../../crates/kerbridge-idp/entra.md).
 
 ## Directory ownership and synchronization
 

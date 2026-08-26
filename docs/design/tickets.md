@@ -40,7 +40,8 @@ sequenceDiagram
 4. The broker validates the signature, the algorithm, the exact issuer, the
    audience, the lifetime, the tenant, the delegated scope and the authorized
    client application.
-5. The broker normalizes the Entra claims to `(issuer, tenant_id, object_id)`.
+5. The broker reduces the Entra claims to a source name and the bare `oid`,
+   which is the stored subject.
 6. The broker searches Samba LDAP for the matching synchronized user object.
 7. The broker requires exactly one result, an enabled account, and effective
    membership in the synchronized realm-admission group. The directory-sync spike
