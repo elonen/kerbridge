@@ -1,0 +1,97 @@
+# The whole fixture #17 needs, as one atomic blueprint.
+#
+#   docker compose exec worker ak apply_blueprint /blueprints/kerbridge/kerbridge-bench.yaml
+#
+# `ak apply_blueprint` is synchronous and the entries are one transaction: any
+# entry that fails rolls the whole file back, so a partial fixture is not a
+# state this can reach. Do not wait on the worker's hourly scheduler or its
+# filesystem watcher (#4).
+#
+# Five things are pinned here, and four of them are pinned because the default
+# is wrong for us:
+#
+#  1. `signing_key` -- WITHOUT it a provider signs HS256 with its client secret
+#     and publishes a JWKS of `{}`, with no `keys` array at all (#2). That is
+#     the default, not a corner case. `!Find` picks up the RSA self-signed
+#     keypair authentik generates on first boot, which yields RS256. A blueprint
+#     cannot generate a keypair -- it takes PEM only -- so this is the one entry
+#     that depends on the server having booted at least once.
+#  2. `sub_mode: user_uuid` -- the default `hashed_user_id` is sha256(id +
+#     install ID) and is not queryable through the REST API, which breaks the
+#     two-faces rule outright (#2, #6).
+#  3. `offline_access` -- a refresh token needs the mapping attached
+#     provider-side AND requested by the client. A new provider gets neither.
+#  4. `client_type: public` + no secret -- the agent is a public client on PKCE.
+#  5. the application `slug` -- every per-provider URL is keyed by it, and it is
+#     therefore known before the container starts. Some slugs are reserved
+#     (`authorize`, `token`, `device`, `userinfo`, `introspect`, `revoke`).
+version: 1
+metadata:
+  name: kerbridge bench fixture
+
+entries:
+  - model: authentik_providers_oauth2.oauth2provider
+    id: kerbridge-provider
+    identifiers:
+      name: kerbridge-bench
+    attrs:
+      client_type: public
+      client_id: kerbridge-bench-client
+      # A loopback callback: nothing listens on it. The script reads the code
+      # out of the Location header rather than letting curl follow it.
+      redirect_uris:
+        - matching_mode: strict
+          url: http://127.0.0.1:8765/callback
+      # MEASURED ON 2026.8.0, AND THE SECOND DEFAULT THAT IS WRONG FOR US: a
+      # blueprint-created provider gets `grant_types: []`, and
+      # `views/authorize.py:233` refuses anything not in that list. Without
+      # these two lines /application/o/authorize/ 302s straight back to the
+      # redirect_uri with `error=invalid_request` and logs "Invalid grant_type
+      # for provider" -- an error that names neither the field nor the fix. The
+      # admin UI fills the list in for you; a blueprint does not. Wire strings
+      # are `GrantType` in `providers/oauth2/models.py:88-98`.
+      grant_types:
+        - authorization_code
+        - refresh_token
+      sub_mode: user_uuid
+      include_claims_in_id_token: true
+      # Explicitly the per-provider issuer, not the "same identifier for all
+      # providers" mode -- under that mode `iss` is the bare root and no longer
+      # shares a prefix with the discovery URL (#2).
+      issuer_mode: per_provider
+      access_code_validity: minutes=5
+      signing_key:
+        !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+      authorization_flow:
+        !Find [authentik_flows.flow, [slug, "default-provider-authorization-implicit-consent"]]
+      invalidation_flow:
+        !Find [authentik_flows.flow, [slug, "default-provider-invalidation-flow"]]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-openid"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-email"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-profile"]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-offline_access"]]
+
+  - model: authentik_core.application
+    identifiers:
+      slug: kerbridge-bench
+    attrs:
+      name: Kerbridge Bench
+      provider: !KeyOf kerbridge-provider
+      # No policies bound, so no policy engine decision stands between the
+      # authorization flow and the code.
+      policy_engine_mode: any
+
+  - model: authentik_core.user
+    identifiers:
+      username: benchuser
+    attrs:
+      name: Bench User
+      email: benchuser@bench.invalid
+      is_active: true
+      # `password` is a blueprint-only field. Note `type` -- UserWriteStage
+      # would default an enrolled account to `external`, and both internal and
+      # external are people (#18).
+      type: internal
+      password: bench-user-password
+      path: users
