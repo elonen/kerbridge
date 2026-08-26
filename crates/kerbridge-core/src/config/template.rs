@@ -762,10 +762,16 @@ const SYNC_SRC: &str = r#"# Sync: what the mirror does, and how it names what it
 # that the option has no default: the comment above the line says what
 # KerBridge does instead, and shows an example. main.toml gives the full rule.
 
-# The deadline bounds one cycle: a read that overruns it is discarded rather
-# than planned from, so keep it below the interval.
+# interval_seconds is the pause between cycles, not the rate of them. One cycle
+# reads every source in turn, so the time between two reads of one source is
+# that cycle plus this pause.
+#
+# read_deadline_seconds bounds each attempt of the read from the cloud IdP. A
+# read that overruns it is discarded, and nothing is planned from it. A cycle
+# that meets an expired or corrupt delta cursor reads a second time, and the
+# second attempt gets this allowance again.
 {{interval_seconds}}
-{{cycle_deadline_seconds}}
+{{read_deadline_seconds}}
 
 # Which cloud-IdP attribute a *newly created* account's login name
 # (sAMAccountName) is minted from. Existing accounts are never renamed by a

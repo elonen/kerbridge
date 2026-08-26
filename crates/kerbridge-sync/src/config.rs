@@ -24,8 +24,12 @@ use crate::planner::SamSource;
 /// below are read once and shared, and a value that belongs per source but sat
 /// here would silently make the second source a copy of the first.
 pub struct Config {
+    /// The pause between cycles, not the rate of them.
     pub interval: Duration,
-    pub cycle_deadline: Duration,
+    /// What one attempt of one source's Graph read is allowed. Not a bound on
+    /// the cycle: the LDAP read and the apply run outside it, and a cycle that
+    /// resyncs reads a second time under a fresh one.
+    pub read_deadline: Duration,
     /// Compute and log the plan but apply nothing. A safe way to watch a new
     /// deployment before letting it write.
     pub dry_run: bool,
@@ -113,8 +117,8 @@ impl Config {
         }
 
         let config = Self {
-            interval: Duration::from_secs(sync.interval_seconds.into()),
-            cycle_deadline: Duration::from_secs(sync.cycle_deadline_seconds.into()),
+            interval: interval(sync.interval_seconds)?,
+            read_deadline: Duration::from_secs(sync.read_deadline_seconds.into()),
             dry_run: sync.dry_run,
             sam_source: sam_source(&sync.sam_source)?,
             automatic_sam_renames: sync.automatic_sam_renames,
@@ -241,6 +245,19 @@ impl SourceConfig {
     }
 }
 
+/// `sync.toml`'s `interval_seconds`, which is the pause between cycles.
+///
+/// Zero is refused: it asks for no pause at all, which spends the tenant's
+/// Graph quota and the directory's write capacity on a loop that never rests.
+/// Nothing above zero is refused. Where a floor belongs is policy, and no
+/// measurement says where to put it.
+fn interval(seconds: u32) -> Result<Duration> {
+    if seconds == 0 {
+        bail!("sync.toml: interval_seconds is the pause between cycles; 0 is not a pause");
+    }
+    Ok(Duration::from_secs(seconds.into()))
+}
+
 /// `sync.toml`'s `device_grant_notify`: `off`, or a number of days ahead of a
 /// grant's deadline to start warning.
 ///
@@ -349,6 +366,15 @@ mod tests {
         assert!(notify_days("yes").is_err());
         assert_eq!(sam_source("upn").unwrap(), SamSource::Upn);
         assert!(sam_source("").is_err());
+    }
+
+    /// A pause of nothing is the one interval that is refused, and the refusal
+    /// stops there: every other value is the operator's to choose.
+    #[test]
+    fn the_interval_refuses_zero_and_nothing_above_it() {
+        assert!(interval(0).is_err());
+        assert_eq!(interval(1).unwrap(), Duration::from_secs(1));
+        assert_eq!(interval(300).unwrap(), Duration::from_secs(300));
     }
 
     fn blank() -> SourceConfig {

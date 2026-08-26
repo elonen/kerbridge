@@ -83,8 +83,8 @@ sources.entra.tenant_id
 sync.audit_log_file
 sync.automatic_sam_renames
 sync.credential_warn_before_days
-sync.cycle_deadline_seconds
 sync.device_grant_notify
 sync.dry_run
 sync.interval_seconds
+sync.read_deadline_seconds
 sync.sam_source

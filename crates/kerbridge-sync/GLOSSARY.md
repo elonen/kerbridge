@@ -132,7 +132,7 @@ touched.
 
 ### cycle
 
-One read / plan / apply pass, repeated on an interval. A cycle plans
+One read / plan / apply pass, repeated after a pause. A cycle plans
 whole or is discarded — an `incomplete read`, an ambiguous admission marker or a
 `sAMAccountName` collision refuses the entire plan — but once applying has
 started a failed op is recorded and the remaining ops still run.
@@ -250,7 +250,7 @@ a live-form `sAMAccountName`.
 
 ### incomplete read
 
-A Graph stream read cut short by the cycle deadline,
+A Graph stream read cut short by the read deadline,
 having been throttled or paged past it, and therefore no evidence that anything
 is absent. Nothing may be planned from one: the
 `cycle` is discarded and counted toward the consecutive-failure alert.

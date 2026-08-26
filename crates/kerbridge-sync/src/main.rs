@@ -252,11 +252,14 @@ impl SourceSync {
         let mut users_cursor = self.state.users_cursor.clone();
         let mut groups_cursor = self.state.groups_cursor.clone();
         for attempt in 0..2 {
-            let deadline = Instant::now() + shared.cycle_deadline;
+            let deadline = Instant::now() + shared.read_deadline;
             let users = outcome(graph.read_users(&token, users_cursor.as_deref(), deadline).await?);
             let groups =
                 outcome(graph.read_groups(&token, groups_cursor.as_deref(), deadline).await?);
             use Outcome::*;
+            // Read before the match consumes them: the discard arm has to name
+            // which cause it met, and only the deadline has an operator action.
+            let deadline_cut = matches!(users, Incomplete) || matches!(groups, Incomplete);
             match (users, groups) {
                 (Ready(uv, ucur), Ready(gv, gcur)) => {
                     self.state.shadow.apply_users(uv);
@@ -308,8 +311,13 @@ impl SourceSync {
                     groups_cursor = None;
                 }
                 _ => {
-                    cycle_failed(self, notifier, "cycle discarded (incomplete read)".to_owned())
-                        .await;
+                    let why = if deadline_cut {
+                        "cycle discarded (incomplete read): the read did not finish inside \
+                         read_deadline_seconds"
+                    } else {
+                        "cycle discarded: a delta cursor was still refused after a full resync"
+                    };
+                    cycle_failed(self, notifier, why.to_owned()).await;
                     return Ok(());
                 }
             }
@@ -600,9 +608,9 @@ async fn main() -> Result<()> {
     }
 
     eprintln!(
-        "[sync] starting; interval {}s, deadline {}s, dry_run={}, {}, {trail}",
+        "[sync] starting; interval {}s, read deadline {}s, dry_run={}, {}, {trail}",
         shared.interval.as_secs(),
-        shared.cycle_deadline.as_secs(),
+        shared.read_deadline.as_secs(),
         shared.dry_run,
         listed(&sources),
     );

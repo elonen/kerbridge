@@ -61,6 +61,11 @@ pub const MIGRATIONS: &[Migration] = &[
         from: "/var/lib/kerbridge-audit/broker.log",
         to: "/var/log/kerbridge/broker/audit.log",
     },
+    Migration::Renamed {
+        file: "sync.toml",
+        from: "cycle_deadline_seconds",
+        to: "read_deadline_seconds",
+    },
 ];
 
 /// What a source file is called in an entry. A deployment names its own source

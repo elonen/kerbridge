@@ -24,6 +24,11 @@ version of the build, so a note left in it is shown a second time.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
+## Unreleased
+
+- Config `sync.toml`: `cycle_deadline_seconds` is now `read_deadline_seconds`.
+  Run `kbconfig upgrade` to rename it, or edit the file.
+
 ## 0.9.2
 
 - Intune config and installation automation for Windows agent (Group Policy

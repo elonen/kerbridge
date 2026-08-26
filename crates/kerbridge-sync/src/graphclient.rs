@@ -13,8 +13,9 @@
 //!   a fresh delta, and the caller alerts. Only on a request that *carried* a
 //!   cursor: a `400` on a URL built here from constants is a fault to surface,
 //!   not a cursor to throw away.
-//! - A cycle has a deadline; a read that cannot finish returns [`StreamResult::Incomplete`]
-//!   and the caller discards it -- a partial read must never reach the planner.
+//! - Each read attempt has a deadline; a read that cannot finish returns
+//!   [`StreamResult::Incomplete`] and the caller discards the cycle -- a partial
+//!   read must never reach the planner.
 
 use std::time::{Duration, Instant};
 
@@ -60,7 +61,7 @@ pub enum StreamResult<T> {
     /// `400`: the stored cursor is corrupt. Discard it, resync from a fresh
     /// delta, and alert -- this is local state corruption, not a Graph outage.
     CursorCorrupt,
-    /// The cycle deadline passed mid-read. Discard; produce no plan.
+    /// The read deadline passed mid-read. Discard; produce no plan.
     Incomplete,
 }
 
@@ -198,7 +199,7 @@ impl GraphClient {
                 }
                 // Capped like the computed backoff, and for the same reason: this
                 // is a number the server chose. Honoring an hour of it would
-                // hold the cycle well past its deadline, and the deadline check
+                // hold the read well past its deadline, and the deadline check
                 // above only runs between sleeps.
                 Outcome::Throttled(Some(secs)) => {
                     tokio::time::sleep(Duration::from_secs(secs.min(BACKOFF_CAP_SECS))).await;
