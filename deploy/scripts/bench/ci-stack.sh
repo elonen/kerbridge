@@ -161,8 +161,13 @@ if [ -z "${KB_CI_TREE:-}" ]; then
   # see a file until it was committed would be the wrong way round. What it does
   # not see is anything gitignored -- .env, secrets/, target/, dist/,
   # .local-tmp/ -- which is exactly what makes the copy a fresh clone.
+  # --ignore-missing-args: a tracked file that the working tree has deleted is
+  # still in the index, and the copy must follow the tree. If this listing goes
+  # wrong again, `rg --files --hidden` reads the disk instead, so what is copied
+  # stops depending on version-control status -- at the cost of an install in CI,
+  # and of .ignore and .rgignore, which git does not obey.
   git ls-files -z --cached --others --exclude-standard |
-    rsync -0a --files-from=- ./ "$TREE"/
+    rsync -0a --ignore-missing-args --files-from=- ./ "$TREE"/
   # Derived here and not in the tree: the copy has no .git, and the `debs`
   # service's image build cannot derive a version either. This is the only
   # place in the run that can still see the tags.
