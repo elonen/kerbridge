@@ -170,7 +170,7 @@ struct Raw {
     admission_group: Option<String>,
     #[cfg_attr(feature = "schema", schemars(example = &"77778888-bbbb-9999-cccc-0000dddd1111"))]
     admission_group_id: Option<String>,
-    #[cfg_attr(feature = "schema", schemars(example = &"KerBridge Device Grant Users"))]
+    #[cfg_attr(feature = "schema", schemars(example = &"KerBridge Device-Grant Grantees"))]
     device_grant_group: Option<String>,
     #[cfg_attr(feature = "schema", schemars(example = &"88889999-cccc-0000-dddd-1111eeee2222"))]
     device_grant_group_id: Option<String>,
