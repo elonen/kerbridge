@@ -16,6 +16,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 #                 only. scripts/bench/ci-stack.sh reads a share file through it
 #                 with the TGT the broker issued, and an operator uses it to
 #                 tell a broken share from a broken client.
+# curl:           the *other* client half. ci-stack.sh runs the real `kerbridge`
+#                 in this container, and its browser sign-in is completed by
+#                 testbench/mock-idp/approve.sh -- a `$BROWSER` that is a curl
+#                 following one redirect. Nothing else in this image can speak
+#                 HTTP: perl is the only interpreter here, and there is no
+#                 wget, python3 or busybox to fall back to.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       samba \
@@ -24,6 +30,7 @@ RUN apt-get update \
       acl \
       procps \
       smbclient \
+      curl \
  && rm -rf /var/lib/apt/lists/*
 
 COPY deploy/member/entrypoint.sh /usr/local/bin/

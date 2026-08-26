@@ -33,6 +33,7 @@
 
 #[cfg_attr(windows, path = "windows/srv.rs")]
 #[cfg_attr(target_os = "macos", path = "macos/srv.rs")]
+#[cfg_attr(target_os = "linux", path = "linux/srv.rs")]
 mod imp;
 
 /// The record we look for, under each of this machine's DNS domains.

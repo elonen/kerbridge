@@ -10,6 +10,7 @@
 
 #[cfg_attr(windows, path = "windows/repair.rs")]
 #[cfg_attr(target_os = "macos", path = "macos/repair.rs")]
+#[cfg_attr(target_os = "linux", path = "linux/repair.rs")]
 mod imp;
 
 /// Stop and restart the Workstation service, taking its running dependents with

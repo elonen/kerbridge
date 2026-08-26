@@ -218,7 +218,7 @@ Inside the core, the parts group by subject:
 | `discovery.rs`, `oidc.rs`, `broker.rs`, `http.rs`, `tls.rs` | The network legs: `/config`, the browser sign-in, `/ticket`, and the one outbound HTTP agent. |
 | `krbcred.rs`, `tickets.rs`, `session.rs` | The ticket: the wire format, the injection and the purge, and the one "token in, TGT out" path that both binaries call. |
 | `srv.rs`, `config.rs`, `log.rs`, `time.rs`, `sys.rs` | How the agent finds the broker, what it stores, and the small calls into the OS. |
-| `enroll.rs`, `device.rs`, `repair.rs`, `elevate.rs` | Realm registration, the device-grant key, the NTLM-fallback repair, and elevation. Each is a Windows subject that macOS answers with a refusal. |
+| `enroll.rs`, `device.rs`, `repair.rs`, `elevate.rs` | Realm registration, the device-grant key, the NTLM-fallback repair, and elevation. Each is a Windows subject that macOS and Linux answer with a refusal. |
 | `agent/` | The state machine, the schedule, the workers and the notifications. The seam inside it is the UI thread: `commands` is what the host calls, `status` is what it reads, `worker` is what blocks, and `failure` names what went wrong. |
 | `describe.rs`, `present.rs`, `icon.rs`, `strings/` | What the state means, the words it means it in, and what the state icon is made of. `strings/` holds every user-visible string in eleven languages. |
 | `main.rs`, `cli/` | The CLI. |
@@ -228,12 +228,31 @@ Inside the core, the parts group by subject:
 does not repeat them, and a file list here would go stale.
 
 **A platform seam is one file per subject, not one `platform.rs`.** The file
-holds the subject and everything both platforms agree on, then names its two arms
-with a single `#[cfg_attr(path)]`. The reason a thing differs is written next to
-the thing. The arms live in `src/windows/` and `src/macos/`, one file per
-subject, so a reader who asks what the client does on one platform has one place
-to look. Neither folder is a Rust module: each file is reached by `#[path]` from
-the subject that owns it, so the grouping costs the module tree nothing.
+holds the subject and everything the platforms agree on, then names its arms with
+a single `#[cfg_attr(path)]` each. The reason a thing differs is written next to
+the thing. The arms live in `src/windows/`, `src/macos/` and `src/linux/`, one
+file per subject, so a reader who asks what the client does on one platform has
+one place to look. None of the folders is a Rust module: each file is reached by
+`#[path]` from the subject that owns it, so the grouping costs the module tree
+nothing.
+
+**`src/linux/` is a test arm, not a Linux client.** It exists so that CI can run
+the real client rather than a re-implementation of it. Everything above the seams
+is the same code on every platform, and it is the great bulk of what the client
+does — `/config` parsing, authorization-code + PKCE, the loopback redirect and
+its state check, the token and broker exchanges, `krbcred`, the re-injection
+schedule, error classification, configuration precedence and the CLI's
+orchestration — so an arm that lets Linux compile is what puts all of it under
+test. The drift it catches has happened: a documented `/config` field the broker
+published, this document described, three green test tiers covered, and the
+client parsed nowhere.
+
+What a green Linux run does **not** say anything about is LSA ticket submission,
+Heimdal's `API:` cache, WAM, CNG device keys, and realm registration. Those are
+measured on the Windows and macOS benches and nowhere else. There is no Linux
+tray, no packaging, no login item and no notification surface, and the arms
+refuse those subjects one at a time with the reason written in. `src/linux/os.rs`
+says all of this again where someone editing the folder will read it.
 
 **An agent crate owns its platform's windows and nothing else.** It supplies the
 methods of `agent::Host` — wake the UI thread, notify, report an outcome,

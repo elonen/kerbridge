@@ -31,14 +31,22 @@
 //! thing: `repair.rs` holds the subject and what both platforms agree on, and
 //! names its two arms with one `#[cfg_attr(path)]`.
 //!
-//! Those arms live in `windows/` and `macos/`, one file per subject, so a reader
-//! asking "what does this do on Windows" has one place to look instead of nine.
-//! Neither folder is a module -- there is no `windows/mod.rs` and no `platform::`
-//! path -- because each file is reached by `#[path]` from the subject that owns
-//! it. The grouping is for the reader; the module tree is unchanged.
+//! Those arms live in `windows/`, `macos/` and `linux/`, one file per subject, so
+//! a reader asking "what does this do on Windows" has one place to look instead
+//! of nine. None of the folders is a module -- there is no `windows/mod.rs` and no
+//! `platform::` path -- because each file is reached by `#[path]` from the subject
+//! that owns it. The grouping is for the reader; the module tree is unchanged.
 //!
-//! `reg` and `cf` are not seams: they are one platform's toolbox, used only by
-//! that platform's arms, and they sit in the same folders for the same reason.
+//! `reg`, `cf` and `os` are not seams: they are one platform's toolbox, used only
+//! by that platform's arms, and they sit in the same folders for the same reason.
+//!
+//! **The Linux arm is not a Linux client.** It exists so that CI can run this
+//! crate -- the platform-neutral majority above the seams is the great bulk of
+//! what a client does, and until the arm existed none of it ran anywhere
+//! automated. A green Linux run says nothing about LSA submission, Heimdal, WAM,
+//! device keys or realm registration, all of which are measured on the Windows
+//! and macOS benches. `linux/os.rs` is where that is written out at length, and
+//! `client/DESIGN.md` says it once more for a reader who never opens the folder.
 
 pub mod agent;
 pub mod broker;
@@ -56,6 +64,9 @@ pub mod icon;
 pub mod krbcred;
 pub mod log;
 pub mod oidc;
+#[cfg(target_os = "linux")]
+#[path = "linux/os.rs"]
+pub mod os;
 pub mod present;
 #[cfg(windows)]
 #[path = "windows/reg.rs"]

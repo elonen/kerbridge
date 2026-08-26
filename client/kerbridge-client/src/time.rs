@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg_attr(windows, path = "windows/time.rs")]
 #[cfg_attr(target_os = "macos", path = "macos/time.rs")]
+#[cfg_attr(target_os = "linux", path = "linux/time.rs")]
 mod imp;
 
 pub fn now() -> i64 {

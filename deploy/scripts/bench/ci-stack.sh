@@ -22,10 +22,17 @@
 #      do the same.
 #   6. That TGT reads a file from nas1's Kerberos-only share. No
 #      password is used anywhere in steps 4 to 6.
+#   7. The real `kerbridge` client does the whole of that last leg by itself,
+#      against a stand-in authority, with no human and no browser: sign in with
+#      authorization-code + PKCE, exchange the token, write the ticket cache --
+#      and the stock `smbclient` then reads the share from what it wrote. Steps
+#      4 to 6 prove the server with curl; this proves the client.
 #
 # Not covered, and not coverable here: Entra itself (Graph, delta, real token
-# issuance), the acme TLS strategies, and everything the Windows client does with
-# the ticket.
+# issuance), the acme TLS strategies, and the client's platform arms -- LSA
+# ticket submission, Heimdal's `API:` cache, WAM, CNG device keys and realm
+# registration, which are Windows and macOS bench subjects.
+# `client/kerbridge-client/src/linux/os.rs` says the same from the other side.
 #
 # ---- isolation -------------------------------------------------------------
 #
@@ -49,7 +56,15 @@ PROJECT=kerbridge-ci
 REALM=KBCI.TEST
 DOMAIN=kbci.test
 NETBIOS=KBCI
-FQDN=kerbridge.$DOMAIN
+# The DC, the broker and the authority need distinct names. compose.yaml aliases
+# `AD_DC_HOSTNAME` onto the DC and compose.ci.yaml aliases `BROKER_FQDN` onto the
+# broker: equal strings give one name two A records, and a client asking for the
+# broker then reaches the KDC at random, which reports as a TLS or Kerberos fault.
+DC_FQDN=kerbridge.$DOMAIN
+FQDN=broker.$DOMAIN
+# The client dials the authority by name and validates it. One more SAN on the
+# broker's leaf: mock-idp answers on that certificate, and there is one CA here.
+IDP_FQDN=idp.$DOMAIN
 # The same derivation check-env.sh asserts .env agrees with. Written out rather
 # than restated, so changing DOMAIN above cannot leave the three DNs behind.
 BASE_DN=DC=${DOMAIN//./,DC=}
@@ -160,7 +175,10 @@ fi
 cd "$KB_CI_TREE"
 ROOT=$PWD
 export COMPOSE_PROJECT_NAME=$PROJECT
-export COMPOSE_FILE=compose.yaml:compose.nas.yaml:compose.ci.yaml
+# compose.mockidp.yaml before compose.ci.yaml, which narrows it: the overlay is
+# written for a bench and publishes :8443, and this run's client reaches the
+# authority from inside the network instead.
+export COMPOSE_FILE=compose.yaml:compose.nas.yaml:compose.mockidp.yaml:compose.ci.yaml
 # Commas, unlike COMPOSE_FILE. bench.env is tracked so the disposable tree gets
 # it; the .env written below is listed last and wins, which is how this realm's
 # throwaway values beat the committed fixtures.
@@ -174,6 +192,10 @@ export COMPOSE_ENV_FILES=bench.env,.env
 # ---------------------------------------------------------------------------
 say "generating a token corpus"
 FIXDIR=$ROOT/.local-tmp/ci-fixtures
+# Named here, not where they are filled: .env is written before either step and
+# carries both paths.
+CLIENTDIR=$ROOT/.local-tmp/ci-client
+CA=$ROOT/.local-tmp/ci-ca
 rm -rf "$FIXDIR"; mkdir -p "$FIXDIR"
 cp "$ROOT/$FIXTURES/make_fixtures.py" "$FIXDIR/"
 # In the source tree's .local-tmp, not this one's: the disposable tree is deleted
@@ -211,6 +233,22 @@ BROKER_FQDN=$FQDN
 TLS_STRATEGY=external
 CI_FIXTURE_DIR=$FIXDIR
 CI_HTTPS_PORT=$PORT
+# The client's three host-side files, mounted into nas1 by compose.ci.yaml: the
+# binary it runs, the "browser" that completes the sign-in, and the CA that
+# makes the bench's certificates verifiable rather than waved through.
+CI_CLIENT_BIN=$CLIENTDIR/kerbridge
+CI_APPROVE_SH=$ROOT/testbench/mock-idp/approve.sh
+CI_CA_CRT=$CA/ca.crt
+
+# The stand-in authority. OIDC_AUTHORITY is what compose.mockidp.yaml serves as
+# its own address; configs/idp_entra.toml's `authority` below is what /config
+# tells clients, and the two have to be the same string. The tenant id is the
+# other half of the handoff -- the `iss` the broker accepts is built from it,
+# not from the address -- and it is the corpus's, so the token this issues
+# verifies against the same jwks.json the broker already mounts.
+OIDC_AUTHORITY=https://$IDP_FQDN:8443
+MOCK_IDP_TENANT_ID=$TENANT
+MOCK_IDP_USER=$USER_NAME
 
 SEED_USER_OID=$OID
 SEED_USER_NAME=$USER_NAME
@@ -254,7 +292,7 @@ url_file = "/etc/kerbridge.secrets/notify_url"
 EOF
 cat > configs/realm.toml <<EOF
 realm = "$REALM"
-ldap_url = "ldaps://$FQDN:636"
+ldap_url = "ldaps://$DC_FQDN:636"
 ldap_ca_file = "/run/kerbridge/realm-ca.pem"
 EOF
 # Every value a default, uid and gid included; empty on purpose, so the run
@@ -280,7 +318,12 @@ bind_password_file = "/etc/kerbridge.secrets/generated/idp/$SOURCE/bind_password
 tenant_id = "$TENANT"
 broker_api_client_id = "11112222-bbbb-3333-cccc-4444dddd5555"
 public_client_id = "22223333-cccc-4444-dddd-5555eeee6666"
-jwks_file = "/etc/jwks/entra.json"
+jwks_file = "/etc/kerbridge-ci-jwks/entra.json"
+# Where a client is sent to sign in. Without this the client is told to go to
+# login.microsoftonline.com, which this run has no tenant on -- and it is only
+# the *address*: the issuer the broker accepts is still derived from tenant_id
+# above, so pointing clients at the mock cannot loosen verification.
+authority = "https://$IDP_FQDN:8443"
 sync_client_id = ""
 sync_credential_file = ""
 # Sync's, and unreachable from the broker -- which finds the group by its
@@ -296,9 +339,8 @@ EOF
 # the chain rather than pass -k. The acme strategies are not testable here; they
 # need a real zone.
 # ---------------------------------------------------------------------------
-say "creating a CA and a certificate for $FQDN"
+say "creating a CA and a certificate for $FQDN (+ $IDP_FQDN)"
 mkdir -p secrets/tls
-CA=$ROOT/.local-tmp/ci-ca
 rm -rf "$CA"; mkdir -p "$CA"
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=kerbridge-ci-ca" \
   -keyout "$CA/ca.key" -out "$CA/ca.crt" 2>/dev/null
@@ -309,9 +351,15 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=kerbridge-ci-ca" \
 KBMANAGE_RUN_ARGS=(-v "$CA/ca.crt:/ca.crt:ro")
 openssl req -newkey rsa:2048 -nodes -subj "/CN=$FQDN" \
   -keyout secrets/tls/broker.key -out "$CA/leaf.csr" 2>/dev/null
+# Two names on the one leaf. mock-idp serves this same certificate (see
+# compose.mockidp.yaml) because it answers on the same bench and there is one CA
+# here -- and the client validates whichever name it dialled, so the authority's
+# has to be in the SAN or the sign-in fails on the certificate rather than on
+# anything the test is about.
 openssl x509 -req -in "$CA/leaf.csr" -CA "$CA/ca.crt" -CAkey "$CA/ca.key" \
   -CAcreateserial -days 2 -out secrets/tls/broker.crt \
-  -extfile <(printf 'subjectAltName=DNS:%s\nbasicConstraints=CA:FALSE\n' "$FQDN") 2>/dev/null
+  -extfile <(printf 'subjectAltName=DNS:%s,DNS:%s\nbasicConstraints=CA:FALSE\n' \
+               "$FQDN" "$IDP_FQDN") 2>/dev/null
 chmod 0600 secrets/tls/broker.key
 
 # ---------------------------------------------------------------------------
@@ -390,6 +438,20 @@ make kbconfig-image
 # probe through -- the same image `make ready` uses on a real deployment.
 say "building the kbmanage image"
 make kbmanage-image
+# The client, as a binary the bench containers can run. Static musl, so the one
+# file works in nas1 (trixie) though it was built on alpine -- which is what lets
+# the SMB leg below run the real client *where the ticket has to land* instead of
+# carrying a ccache to it. client/kerbridge-client/Dockerfile says the rest.
+say "building the kerbridge client"
+rm -rf "$CLIENTDIR"; mkdir -p "$CLIENTDIR"
+docker build -f "$ROOT/client/kerbridge-client/Dockerfile" --target dist \
+  --output "type=local,dest=$CLIENTDIR" "$ROOT"
+[ -f "$CLIENTDIR/kerbridge" ] || die "the client build produced no binary"
+# World-readable and executable, because nas1 runs as root with cap_drop: ALL --
+# root without CAP_DAC_OVERRIDE is just another user, and a bind-mounted file it
+# does not own is readable only through the `other` bits. The ccache the client
+# writes *inside* the container is a different matter and stays 0600.
+chmod 0755 "$CLIENTDIR/kerbridge"
 
 say "make up -- provision, bootstrap the directory, start the stack"
 # Not `make up`: that also writes ~/.config/kerbridge/configs (a link) and
@@ -661,40 +723,80 @@ code=$(api POST /$SOURCE/ticket /dev/null -H "Authorization: DeviceGrant $assert
 [ "$code" = 401 ] || die "a revoked delegated device answered $code, wanted 401"
 echo "a delegated grant is revocable remotely, and bites at the next exchange"
 
-# Back to the token-obtained ticket for the SMB leg: $resp now holds a
-# device-grant one, which is the same ticket by any measure, but the claim under
-# test below is the original path's.
-code=$(api POST /$SOURCE/ticket "$resp" -H "$(tok positive_delegated)")
-[ "$code" = 200 ] || die "POST /ticket answered $code on the re-fetch, wanted 200"
-principal=$(jget "$resp" principal)
+# ---------------------------------------------------------------------------
+# The last leg, driven by the real client.
+#
+# Everything above proves the *server* with curl: a fixture token in, a ccache
+# out. This proves the client -- it signs in, obtains a ticket, and the stock SMB
+# client uses what it wrote. A script that assembles a ccache itself tests the
+# script: a documented /config field the broker published and the client parsed
+# nowhere passed three green tiers that way.
+#
+# The client runs *inside nas1* rather than on this host so the ticket lands in
+# the cache the SMB client reads by construction rather than by a copy. It is the
+# same `kerbridge` binary an operator runs; only the environment differs.
+# ---------------------------------------------------------------------------
+say "the real client, signing in with no human and no browser"
+
+# What the sign-in needs, and nothing more:
+#
+#   BROWSER          `oidc::login` opens the system browser, and on Linux
+#                    `webbrowser` tries $BROWSER first. Here that is a script
+#                    that follows mock-idp's approval redirect back to the
+#                    loopback port the client itself chose. The bench replaces
+#                    the browser, not the client: oidc.rs has no test-only branch
+#                    and reads no environment variable.
+#   SSL_CERT_FILE    the client links native-tls, which is OpenSSL here, and
+#                    OpenSSL takes its trust store from this. The certificate is
+#                    verified, not waved through: `require_https` and the
+#                    validated chain are half of what /config is trusted for.
+#   KRB5CCNAME       the cache both halves use. Named rather than left to the
+#                    default so that what the client wrote and what smbclient
+#                    reads cannot be two files -- the client logs which one it
+#                    chose either way.
+CI_CA_IN_NAS=/etc/kerbridge-ci-ca.crt
+CI_CCACHE_IN_NAS=/tmp/kb.ccache
+client() {
+  docker compose exec -T \
+    -e "BROWSER=/usr/local/bin/kb-approve" \
+    -e "KB_APPROVE_CA=$CI_CA_IN_NAS" \
+    -e "KB_APPROVE_LOG=/tmp/kb-approve.log" \
+    -e "SSL_CERT_FILE=$CI_CA_IN_NAS" \
+    -e "KRB5CCNAME=FILE:$CI_CCACHE_IN_NAS" \
+    nas1 "$@"
+}
+
+# A cache that is not there yet, so nothing below can pass on a leftover.
+docker compose exec -T nas1 rm -f "$CI_CCACHE_IN_NAS"
+
+out=$ROOT/.local-tmp/ci-client-signin.log
+if ! client kerbridge --broker "https://$FQDN" > "$out" 2>&1; then
+  cat "$out"
+  client cat /tmp/kb-approve.log 2>/dev/null || true
+  die "the client could not sign in and obtain a ticket"
+fi
+cat "$out"
+# The principal the client landed, read out of the cache it wrote by the client
+# itself -- `klist` is not installed in nas1 and this is the ticket that matters.
+grep -qi "$USER_NAME@$REALM" "$out" ||
+  die "the client reported no ticket for $USER_NAME@$REALM"
+echo "$USER_NAME signed in through mock-idp and the client wrote $CI_CCACHE_IN_NAS"
+
+# Written by the client inside the container, so it is already this reader's own
+# and already 0600. A ccache carried in from the host is neither.
+mode=$(client stat -c '%a %U' "$CI_CCACHE_IN_NAS")
+[ "$mode" = "600 root" ] || die "the client wrote the cache as \"$mode\", wanted \"600 root\""
 
 say "reading a file over SMB with that ticket and no password"
-ccache=$ROOT/.local-tmp/ci-ccache
-python3 -c 'import base64,json,sys; sys.stdout.buffer.write(base64.b64decode(json.load(open(sys.argv[1]))["ccache_b64"]))' \
-  "$resp" > "$ccache"
-# 0600, because smbclient here is Heimdal-backed and silently ignores a ccache
-# any other user could read.
-chmod 600 "$ccache"
-docker compose cp "$ccache" nas1:/tmp/kb.ccache
-# `docker cp` carries the host file's *ownership* in as well as its mode, so this
-# arrives owned by the host uid that wrote it and mode 0600 -- unreadable by the
-# root that smbclient runs as, because nas1 is cap_drop: ALL and root without
-# CAP_DAC_OVERRIDE is just another user. smbclient then reports no ccache at all:
-# it falls back to asking for a password, and says "No password for user
-# principal[root@REALM]", which reads like a Kerberos or principal problem and is
-# a file permission one. CHOWN is in nas1's cap_add (CAP_FOWNER is not, so chown
-# works here and chmod would not).
-docker compose exec -T nas1 chown 0:0 /tmp/kb.ccache
 # The invocation the joined-nas-authorization spike proved on the bench, kept
 # byte for byte: --use-kerberos=required, and neither -U nor -N. The ccache's own
 # principal is what authenticates; naming a user makes smbclient look for that
 # one instead.
-got=$(docker compose exec -T nas1 sh -c \
-  "KRB5CCNAME=FILE:/tmp/kb.ccache smbclient '//nas1.$DOMAIN/share' \
+got=$(client sh -c "smbclient '//nas1.$DOMAIN/share' \
      --use-kerberos=required -c 'get README.txt -'" 2>&1) || true
 case "$got" in
-  *KerBridge*) echo "read README.txt from //nas1.$DOMAIN/share as $principal" ;;
+  *KerBridge*) echo "read README.txt from //nas1.$DOMAIN/share as $USER_NAME@$REALM" ;;
   *) die "SMB read returned: ${got:-<nothing>}" ;;
 esac
 
-say "PASS -- provisioned, bootstrapped, issued, and read over SMB"
+say "PASS -- provisioned, bootstrapped, issued, signed in, and read over SMB"

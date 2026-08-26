@@ -3,6 +3,7 @@
 
 #[cfg_attr(windows, path = "windows/elevate.rs")]
 #[cfg_attr(target_os = "macos", path = "macos/elevate.rs")]
+#[cfg_attr(target_os = "linux", path = "linux/elevate.rs")]
 mod imp;
 
 /// What a relaunch came to.

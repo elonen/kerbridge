@@ -73,6 +73,44 @@ pub fn ccache_to_tgt(ccache_bytes: &[u8]) -> Result<Tgt> {
     })
 }
 
+/// One credential as a ccache holds it, for a caller that wants to *look at* a
+/// cache rather than repackage one.
+///
+/// The Linux arm of [`crate::tickets`] is that caller: it writes the broker's
+/// bytes to a `FILE:` cache and reads one back to answer "what is in there".
+/// It goes through this module so the tree holds one ccache reader -- a second
+/// one goes stale against the layout described above.
+pub struct CachedCred {
+    /// `user@REALM`.
+    pub client: String,
+    /// `krbtgt/REALM@REALM`, `cifs/nas1.example.site@REALM`, and so on.
+    pub server: String,
+    /// Unix seconds, with the same `authtime` fallback [`ccache_to_tgt`] applies.
+    pub start: i64,
+    pub end: i64,
+    /// 0 when the ticket is not renewable.
+    pub renew_till: i64,
+    /// True for this cache's own ticket-granting ticket. See
+    /// [`Credential::is_tgt`] for why the two-component form is required and
+    /// what it keeps out.
+    pub is_tgt: bool,
+}
+
+/// Every credential in `ccache_bytes`, in file order.
+pub fn read_cache(ccache_bytes: &[u8]) -> Result<Vec<CachedCred>> {
+    Ok(credentials(ccache_bytes)?
+        .into_iter()
+        .map(|c| CachedCred {
+            client: c.client.to_string(),
+            server: c.server.to_string(),
+            start: if c.starttime != 0 { c.starttime as i64 } else { c.authtime as i64 },
+            end: c.endtime as i64,
+            renew_till: c.renew_till as i64,
+            is_tgt: c.is_tgt(),
+        })
+        .collect())
+}
+
 // ---------------------------------------------------------------- ccache read
 
 const VERSION_V4: u16 = 0x0504;
@@ -81,6 +119,20 @@ struct Principal {
     name_type: u32,
     realm: String,
     components: Vec<String>,
+}
+
+impl std::fmt::Display for Principal {
+    /// The conventional `comp/comp@REALM` spelling, which is what `klist` prints
+    /// and what every caller here compares against.
+    ///
+    /// No escaping: MIT escapes a literal `/`, `@` or NUL inside a component,
+    /// and none of the principals this client meets has one -- they are a login
+    /// name, `krbtgt`, and a service host name. A name that did carry one would
+    /// render ambiguously rather than wrongly, and the comparisons above are
+    /// equality against names built the same way.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}@{}", self.components.join("/"), self.realm)
+    }
 }
 
 struct Credential {

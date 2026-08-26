@@ -19,6 +19,7 @@ use anyhow::Result;
 
 #[cfg_attr(windows, path = "windows/device.rs")]
 #[cfg_attr(target_os = "macos", path = "macos/device.rs")]
+#[cfg_attr(target_os = "linux", path = "linux/device.rs")]
 mod imp;
 
 pub use imp::{AVAILABLE, DeviceKey, create, default_label, delete, open};

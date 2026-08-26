@@ -26,6 +26,7 @@ use crate::discovery::KerberosConfig;
 
 #[cfg_attr(windows, path = "windows/enroll.rs")]
 #[cfg_attr(target_os = "macos", path = "macos/enroll.rs")]
+#[cfg_attr(target_os = "linux", path = "linux/enroll.rs")]
 mod imp;
 
 /// The OS's view of the realm, compared against the broker's.

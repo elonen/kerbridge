@@ -37,6 +37,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg_attr(windows, path = "windows/config.rs")]
 #[cfg_attr(target_os = "macos", path = "macos/config.rs")]
+#[cfg_attr(target_os = "linux", path = "linux/config.rs")]
 mod imp;
 
 /// Folder name for this user's state. The product name, not a component name,

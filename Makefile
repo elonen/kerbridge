@@ -276,14 +276,18 @@ test-fast:
 	cd website && cargo fmt --all --check
 	cargo test --workspace
 	cargo clippy --workspace --all-targets -- -D warnings
-	@# The client core, for whatever host this is. On macOS that is the real
-	@# thing: tickets/, srv/, time and config all have a macOS arm, so these
-	@# tests link Kerberos.framework and libresolv rather than stubs. Linux has
-	@# no arm and the crate does not build there, so it is skipped out loud
-	@# rather than silently. `make test-win` owns everything Windows-observable
-	@# either way.
+	@# The client core, for whatever host this is. Darwin and Linux both have an
+	@# arm at every #[cfg] seam, so these tests link Kerberos.framework on a Mac
+	@# and write a real FILE: ccache on Linux. The Linux arm proves the
+	@# platform-neutral majority; client/kerbridge-client/src/linux/os.rs says
+	@# what a green run there does *not* prove. `make test-win` owns everything
+	@# Windows-observable either way.
+	@#
+	@# A host with no arm -- FreeBSD, Windows -- is skipped out loud: a tier that
+	@# cannot run says so rather than passing quietly.
 	@case "$$(uname -s)" in \
-		Darwin) cd client/kerbridge-client && cargo test ;; \
+		Darwin|Linux) cd client/kerbridge-client && cargo test \
+		              && cargo clippy --all-targets -- -D warnings ;; \
 		*) echo "skipped: the client core has no arm for $$(uname -s)" ;; \
 	esac
 	@# The crypto provider is a property of the build, not of the source, and

@@ -16,6 +16,7 @@
 
 #[cfg_attr(windows, path = "windows/sys.rs")]
 #[cfg_attr(target_os = "macos", path = "macos/sys.rs")]
+#[cfg_attr(target_os = "linux", path = "linux/sys.rs")]
 mod imp;
 
 /// The operating system's UI language as a BCP-47 tag ("fi-FI", "zh-Hans-CN"),

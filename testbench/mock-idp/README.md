@@ -1,13 +1,19 @@
 # mock-idp — a stand-in OIDC authority for bench runs
 
 `ci-stack.sh` proves the broker with pre-issued fixture JWTs posted straight at
-it with `curl`. That leaves one thing untested by anything: **the client's own
-sign-in**. `kerbridge-client` does authorization-code + PKCE against whatever
-`/config` advertises, and no test drives it.
+it with `curl`, which says nothing about **the client's own sign-in**:
+`kerbridge-client` does authorization-code + PKCE against whatever `/config`
+advertises.
 
 This serves the endpoints that flow needs, and issues tokens the broker's
-verifier accepts unmodified. It exists so a Windows or macOS client can be taken
-through a real sign-in without a tenant.
+verifier accepts unmodified. Two things call it:
+
+- **`ci-stack.sh`, with nobody watching.** The stack test drives the real
+  `kerbridge` binary through a whole sign-in on every run — see *An unattended
+  sign-in* below. A test depends on this, so it has to keep working.
+- **A Windows or macOS client, by hand.** A real desktop client taken through a
+  real sign-in without a tenant, which is the only way to exercise the halves
+  the Linux arm does not have: WAM, the LSA, Heimdal.
 
 It is **not** an authorization server. `/authorize` approves everyone who asks,
 immediately, with no credential of any kind. Bench networks only.
@@ -101,6 +107,32 @@ curl -X POST "https://<idp>/select?user=bob"   # sticky, for the next sign-in
 or pass `login_hint=bob` on the authorization request, which wins for that one
 exchange. `GET /whoami` says who is selected. `IDP_DEFAULT_USER` sets it at
 startup, and `IDP_EXTRA_USERS=name=oid,...` adds more.
+
+## An unattended sign-in
+
+`ci-stack.sh` signs in with no human and no browser, and it does it **without a
+test-only branch in the client** — no `cfg(test)`, no environment variable
+`oidc.rs` reads, no second code path. The client opens a browser exactly as it
+ships; the bench replaces the browser.
+
+`webbrowser::open` on Linux tries `$BROWSER` before anything else and appends
+the URL as an argument (`webbrowser-1.2.x`, `src/unix.rs`), so the whole
+mechanism is one environment variable pointing at
+[`approve.sh`](approve.sh) — a `curl` that follows this authority's approval
+redirect. `/authorize` here approves whoever is selected immediately, so
+following redirects once is the entire sign-in.
+
+Two things it relies on, both worth knowing before pointing it at a different
+authority:
+
+- **The URL comes from the client.** `oidc::login` binds `127.0.0.1:0`, so the
+  redirect carries an ephemeral port that changes every run and only the client
+  knows. A script that assumes a port is testing itself.
+  `testbench/authentik/authcode.sh` can pin `http://127.0.0.1:8765/callback`
+  because it *is* the client in that script; here it is not.
+- **An authority that matches redirect URIs exactly has to admit the loopback
+  range.** This one does not match them at all, which is one of the ways it is
+  not an authorization server.
 
 ## What it does not do
 
