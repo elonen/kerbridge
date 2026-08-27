@@ -1831,6 +1831,61 @@ mod tests {
         assert!(wanted.contains(&default), "Default: {default} is not one of {wanted:?}");
     }
 
+    /// The secrets tree the `postinst` writes into the set, held to the one the
+    /// schema names.
+    ///
+    /// `GENERATED` is retyped in `debian/kerbridge-config.postinst` because a
+    /// required option is a line to complete: the throwaway set that script
+    /// writes states no `bind_password_file`, so it does not load, and
+    /// `kbconfig get` cannot be asked for the path the way it is asked for
+    /// `realm.base_dn`.
+    ///
+    /// Nothing else catches a disagreement. `kbsetup directory` follows the
+    /// config set -- `beside` in `crates/kerbridge-setup/src/directory.rs` --
+    /// and `secrets::ensure_directory` creates whatever tree it is pointed at,
+    /// so a stale `GENERATED` gives a deployment that works with its secrets
+    /// outside the tree the package owns and purges.
+    ///
+    /// `kbmanage.toml` is deliberately not held: its example is the workstation
+    /// path under `/home/you`, and the `postinst` overrides it because this
+    /// host keeps that password beside the broker's.
+    #[test]
+    fn the_postinst_writes_the_secrets_tree_the_schema_names() {
+        let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../debian/kerbridge-config.postinst");
+        // Absent is not a failure, as in the choices test above: a source tree
+        // without the packaging reaches here.
+        let Ok(text) = std::fs::read_to_string(&file) else { return };
+        let generated = text
+            .lines()
+            .find_map(|line| line.strip_prefix("GENERATED="))
+            .expect("the postinst names the generated secrets directory")
+            .trim();
+
+        let example = |schema: &serde_json::Value| -> String {
+            schema["properties"]["bind_password_file"]["examples"][0]
+                .as_str()
+                .expect("bind_password_file shows an example")
+                .to_owned()
+        };
+        let broker = example(&schema_of("broker.toml"));
+        assert_eq!(
+            Path::new(&broker).parent().and_then(Path::to_str),
+            Some(generated),
+            "the postinst writes {generated} and broker.toml's example names {broker}"
+        );
+        // The same constant, one level down: the postinst writes each source's
+        // password to $GENERATED/idp/<name>/.
+        for provider in Provider::ALL {
+            let source = example(&provider.source_schema().expect("the source schema composes"));
+            assert!(
+                source.starts_with(&format!("{generated}/idp/")),
+                "{}: the example names {source}, which is not under {generated}/idp/",
+                provider.name()
+            );
+        }
+    }
+
     /// The `--set` grammar, wrong in the two ways a shell gets it wrong.
     #[test]
     fn an_answer_that_is_not_file_option_value_says_so() {

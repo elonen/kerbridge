@@ -26,29 +26,21 @@ names the tag, and it stops if that section is absent or empty.
 
 ## Unreleased
 
-- Every option a config file must set is now written as a line to complete:
-  commented out, under its example and a `# REQUIRED.` note. A set copied
-  from the templates no longer starts on the example realm and the
-  placeholder tenant; complete the lines, and `kbconfig check` names every
-  one of them at once.
-- The install now asks three questions instead of seven. It asks which
-  cloud IdP adapter to write a file for, and no longer asks for the tenant
-  id or the three application ids or the admission group; those are lines
-  to complete in `/etc/kerbridge/idp_<name>.toml`. Preseeds of
-  `kerbridge-config/tenant_id`, `/broker_api_client_id`,
-  `/public_client_id`, `/sync_client_id` and `/admission_group_id` are gone;
-  use `kbconfig init --set` for an unattended deployment.
-- New `kbconfig init --source <name>[=<provider>]` writes one source file
-  and lists it in `main.sources`. Without it the set names no source.
-- `kbsetup status` now survives a config set that does not load: step one
-  alone, with the lines still to complete and the editor to run.
-- Entra role groups are now configured by Object Id. Replace
-  `admission_group` and `device_grant_group` manually before upgrading.
-- Retired sync read timeout options. Run `kbconfig upgrade`.
-- Moved `sam_source` into each identity-provider file. Run `kbconfig upgrade`.
+- Every option a config file must set is now a commented line to complete,
+  under its example. `kbconfig check` names them all at once.
+- The install asks three questions instead of seven; the rest are lines to
+  complete. An unattended install uses `kbconfig init --set`, because the
+  `kerbridge-config/*` preseed keys are gone.
+- New `kbconfig init --source <name>[=<provider>]` writes one source file.
+- `kbsetup status` now runs before the config set loads.
+- Entra role groups are set by Object Id, not by display name. Replace
+  `admission_group` and `device_grant_group` by hand before you upgrade.
+- Retired the sync read timeout options, and moved `sam_source` into each
+  identity-provider file. Run `kbconfig upgrade`.
 - Sync keeps the configured admission group when its display name changes.
-- Sync credential notifications have new names. Update monitoring rules and
-  delete problem files with the old `graph-credential-*` names.
+-  delete problem files with the old `graph-credential-*` names.
+- Sync credential notifications have new names. Update monitoring rules,
+  and delete problem files named `graph-credential-*`.
 
 ## 0.9.2
 

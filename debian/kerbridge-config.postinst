@@ -22,11 +22,17 @@ set -e
 CONFIG_DIR=/etc/kerbridge
 KBCONFIG=/usr/bin/kbconfig
 PREPARE_STATE=/usr/libexec/kerbridge/prepare-state
-# Where `kbsetup directory` writes what it generates. Retyped from prepare-state,
-# which creates exactly these directories in its `native` tree, because the
-# config set decides where the files go and the config set is what this writes.
-# A disagreement stops at `kbsetup directory`, which creates no directory of its
-# own.
+# Where `kbsetup directory` writes what it generates. Retyped, and not asked of
+# the parser the way base_dn below is: a required option is a line to complete,
+# so the throwaway set states no bind_password_file, does not load, and cannot
+# be asked for one.
+#
+# Nothing catches a disagreement at runtime. `kbsetup directory` follows the
+# config set, and `secrets::ensure_directory` creates whatever tree it is
+# pointed at -- so a stale value here deploys a working host whose secrets sit
+# outside the tree this package owns and purges. The ratchet is
+# `the_postinst_writes_the_secrets_tree_the_schema_names` in
+# crates/kerbridge-config, which holds this line to the schema's own example.
 GENERATED=/etc/kerbridge.secrets/generated
 
 # Every answer, by question name. Empty is the answer debconf gives for a
