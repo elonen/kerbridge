@@ -24,7 +24,7 @@ version of the build, so a note left in it is shown a second time.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
-## Unreleased
+## 0.9.3
 
 - Every option a config file must set is now a commented line to complete,
   under its example. `kbconfig check` names them all at once.
@@ -38,7 +38,6 @@ names the tag, and it stops if that section is absent or empty.
 - Retired the sync read timeout options, and moved `sam_source` into each
   identity-provider file. Run `kbconfig upgrade`.
 - Sync keeps the configured admission group when its display name changes.
--  delete problem files with the old `graph-credential-*` names.
 - Sync credential notifications have new names. Update monitoring rules,
   and delete problem files named `graph-credential-*`.
 

@@ -935,7 +935,7 @@ dependencies = [
 
 [[package]]
 name = "kerbridge-broker"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -954,7 +954,7 @@ dependencies = [
 
 [[package]]
 name = "kerbridge-config"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -969,7 +969,7 @@ dependencies = [
 
 [[package]]
 name = "kerbridge-core"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "base64",
@@ -985,7 +985,7 @@ dependencies = [
 
 [[package]]
 name = "kerbridge-idp"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1008,7 +1008,7 @@ dependencies = [
 
 [[package]]
 name = "kerbridge-issuerd"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "base64",
@@ -1020,7 +1020,7 @@ dependencies = [
 
 [[package]]
 name = "kerbridge-manage"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -1037,7 +1037,7 @@ dependencies = [
 
 [[package]]
 name = "kerbridge-notify"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -1051,7 +1051,7 @@ dependencies = [
 
 [[package]]
 name = "kerbridge-setup"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "base64",
@@ -1065,7 +1065,7 @@ dependencies = [
 
 [[package]]
 name = "kerbridge-sync"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "kerbridge-core",

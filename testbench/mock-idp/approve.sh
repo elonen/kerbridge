@@ -15,8 +15,7 @@
 # What it relies on, and nothing else: mock-idp's `/authorize` approves whoever
 # is selected immediately and answers with a 302 to `redirect_uri`, so following
 # redirects once is the entire "sign-in". A real authority with a credential
-# prompt needs a different script; `testbench/authentik/authcode.sh` is what that
-# looks like.
+# prompt needs a different script, one that drives the prompt itself.
 #
 # The URL is *taken from the client*, never assumed. `oidc::login` binds
 # 127.0.0.1:0, so the redirect carries an ephemeral port that changes every run

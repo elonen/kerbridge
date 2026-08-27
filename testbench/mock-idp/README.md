@@ -127,9 +127,9 @@ authority:
 
 - **The URL comes from the client.** `oidc::login` binds `127.0.0.1:0`, so the
   redirect carries an ephemeral port that changes every run and only the client
-  knows. A script that assumes a port is testing itself.
-  `testbench/authentik/authcode.sh` can pin `http://127.0.0.1:8765/callback`
-  because it *is* the client in that script; here it is not.
+  knows. A script that assumes a port is testing itself: a driver that *is*
+  the client can pin `http://127.0.0.1:8765/callback`, but this one is not the
+  client.
 - **An authority that matches redirect URIs exactly has to admit the loopback
   range.** This one does not match them at all, which is one of the ways it is
   not an authorization server.
