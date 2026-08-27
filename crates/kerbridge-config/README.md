@@ -8,9 +8,9 @@ kbconfig get <path>           one value, by dotted path
 kbconfig sources              the active source names, one per line
 kbconfig decisions            every option the set states, against its default
 kbconfig upgrade [--dry-run]  carry the set to this version's shape
-kbconfig init <dir> [--set <path>=<value>]...
+kbconfig init <dir> [--source <name>[=<provider>]]... [--set <path>=<value>]...
                               write a config set from this version's templates,
-                              with those answers already in it
+                              with those sources and answers already in it
 kbconfig schema <dir>         write the config schema into <dir>/schema/, one
                               document per file, plus the .taplo.toml mapping them
 ```
@@ -18,11 +18,13 @@ kbconfig schema <dir>         write the config schema into <dir>/schema/, one
 `--config <path>` names `main.toml`; the rest of the set is found beside it.
 Without it the compiled-in `/etc/kerbridge/main.toml` is used.
 
-## `init`, and the two rules a maintainer script does not retype
+## `init`, and the three rules a maintainer script does not retype
 
 `init` is what a Debian `postinst` calls with the debconf answers. It refuses to
-overwrite a file that is already there unless `--force`, and if a *required*
-answer arrives empty it writes nothing at all — not that file, not the rest of
+overwrite a file that is already there unless `--force`; `--source` is the only
+thing that writes which sources exist, and a `--set` naming one of those three
+values is refused rather than silently overruled; and if a *required* answer
+arrives empty it writes nothing at all — not that file, not the rest of
 the set — says which answer it was, and exits 0. An empty answer cannot be told
 from a question nobody answered, so an unattended install with no preseed ends
 with no config set rather than one naming a realm nobody chose, and the install
@@ -39,21 +41,43 @@ name (`sources.entra.issuer`), while `--set` addresses the file it is written
 into (`idp_entra.provider_config.tenant_id`).
 
 ```sh
-kbconfig init /etc/kerbridge \
+kbconfig init /etc/kerbridge --source entra \
   --set realm.realm=EXAMPLE.SITE \
   --set realm.ldap_url=ldaps://kerbridge.example.site:636 \
-  --set main.sources='["entra"]' \
   --set idp_entra.provider_config.tenant_id="$tenant_id"
 ```
 
+`--source <name>[=<provider>]` is repeatable, and is the only thing that writes
+`main.sources` and a source file's `name` and `provider` — so the list and the
+files beside it cannot disagree. With no `--source` the set names none, which is
+a realm mid-bootstrap and is what an administrator's own machine wants.
+
 With no `--set` the files are this version's templates unchanged, which is what
-`deploy/configs/*.toml.example` holds under the reference names.
+`deploy/configs/*.toml.example` holds under the reference names. That set does
+not load: every option the parser requires is a *line to complete*, commented
+out under its example and a `# REQUIRED.` note, and `kbconfig check` names every
+one still waiting before serde is asked -- serde reports one missing field per
+file and stops.
 
 A value is taken as the type the option holds, which the template names: a
 string option takes its answer as written, so a `group_suffix` of `42` is the
 text `42`. Every other type parses its answer as TOML, which is what makes
 `main.sources=["entra"]` a list, and text that will not parse is refused rather
 than written for the parser to reject later.
+
+## What `check` says before the parser does
+
+Every option the parser requires is a *line to complete*. `check` walks each
+file as a **document** first -- through `config::decisions`, which exists
+because the set that most needs reading is the one the parser refuses -- and
+names every line the set has not completed, in one report, before serde is
+asked. Serde reports one missing field per file and stops, so completing a
+fresh `idp_<name>.toml` any other way is nine runs.
+
+The report covers the source files `main.sources` lists. On a set whose
+`main.toml` has not completed `sources` at all -- every freshly copied template
+set -- it reads whatever `idp_*.toml` is beside it instead, so one report is
+still the whole answer.
 
 ## Why it is not a `kbmanage` subcommand
 

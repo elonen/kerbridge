@@ -67,6 +67,14 @@ pub struct Read {
     /// someone is trying to understand -- and the value is what a rename would
     /// have to carry to the key's new name.
     pub unknown: Vec<(String, toml::Value)>,
+    /// Required options the file does not state, dotted, in the order the
+    /// schema names them. Each is a line the operator still has to complete,
+    /// and a file holding one does not load.
+    ///
+    /// The whole list, read before the parser: serde reports one missing field
+    /// per file and stops, which turns completing a fresh source file into a
+    /// sequence of edit-and-recheck cycles.
+    pub incomplete: Vec<String>,
 }
 
 /// Read one file's decisions.
@@ -91,6 +99,12 @@ fn walk(
     found: &mut Read,
 ) -> Result<(), String> {
     let empty = toml::Table::new();
+    // First, and in declaration order rather than the alphabetical order the
+    // properties come back in: an operator reads this list as the lines still
+    // to complete, and edits them in the file's own order.
+    for key in table.required.iter().filter(|key| !document.contains_key(*key)) {
+        found.incomplete.push(format!("{prefix}{key}"));
+    }
     for (key, property) in &table.properties {
         let path = format!("{prefix}{key}");
         let stated = document.get(key);
@@ -144,11 +158,14 @@ fn instead(table: &Table, key: &str, property: &Json) -> Instead {
 /// Write decisions into a freshly rendered template.
 ///
 /// Every option in a template holds its key exactly once, on one line, in one
-/// of three forms -- `key = <example>`, `#key = <default>`, or a bare `#key =`.
-/// A test in `config/template.rs` holds that, and it is what makes this a line
-/// rewrite: the prose, the section banners and the commented defaults around
-/// the line survive untouched, so an upgraded file reads as this version's
-/// template with the operator's answers in it.
+/// of two forms -- `#key = <default>`, or a bare `#key =`. A test in
+/// `config/template.rs` holds that, and it is what makes this a line rewrite:
+/// the prose, the section banners, the commented defaults and the
+/// `# REQUIRED.` note around the line all survive untouched, so an upgraded
+/// file reads as this version's template with the operator's answers in it.
+///
+/// A commented line is rewritten as a stated one, which is what places an
+/// answer onto a line to complete.
 ///
 /// The second return is the decisions it could not place, being options this
 /// version's template does not name. The caller reports them: dropping a line
@@ -191,6 +208,40 @@ pub fn apply(template: &str, decisions: &[(String, toml::Value)]) -> (String, Ve
     (out, missed)
 }
 
+/// A template with every line to complete filled in from its own example.
+///
+/// What an operator does by hand to a fresh set, done mechanically: each
+/// required option's `# Example:` value is placed onto the bare line below it,
+/// through [`apply`]. Nothing else moves -- an option with a default stays
+/// commented out, and so does one the parser derives.
+///
+/// **It is the example realm and the placeholder identifiers.** So it makes a
+/// set that *loads*, never a set that is configured. The callers are fixtures
+/// that need a whole set to exercise something else.
+pub fn completed(document: &str, schema: &Json) -> Result<String, String> {
+    // An empty document reports everything the schema requires, so the list
+    // comes from `read` rather than a second walker that could disagree.
+    let required = read(&toml::Table::new(), schema)?.incomplete;
+    let answers: Vec<(String, toml::Value)> = lines(document)
+        .into_iter()
+        .filter(|line| required.contains(&line.path))
+        .filter_map(|line| line.shown.map(|value| (line.path, value)))
+        .collect();
+    let (body, missed) = apply(document, &answers);
+    let absent: Vec<&String> = required
+        .iter()
+        .filter(|path| !answers.iter().any(|(placed, _)| placed == *path))
+        .chain(missed.iter())
+        .collect();
+    if !absent.is_empty() {
+        return Err(format!(
+            "the document shows no example for {absent:?}, so there is nothing to complete \
+             those lines with"
+        ));
+    }
+    Ok(body)
+}
+
 /// Every option a document names, dotted, in the order the lines come.
 ///
 /// It reads commented lines as well as set ones, because in a template and in a
@@ -208,17 +259,17 @@ pub struct Line {
     pub path: String,
     /// Whether the line states the option rather than commenting it out.
     ///
-    /// In a *template* that is exactly "the parser requires this one":
-    /// [`super::template::render`] states a required option and comments out
-    /// every option that has a default, and a test in `config/template.rs`
-    /// holds it. In a live file it means the operator set it.
+    /// In a *template* this is always false: [`super::template::render`]
+    /// comments out every option it names, and a test in `config/template.rs`
+    /// holds it. Required-ness is the schema's answer, not the line's -- ask
+    /// [`read`], whose [`Read::incomplete`] is what a document leaves out. In a
+    /// live file this means the operator set it.
     pub stated: bool,
     /// The value the option is shown with, which in a template is always one of
-    /// three: the example a required option is written with, the default a
-    /// commented one names, or -- where the line itself shows nothing, the bare
-    /// `#key =` an option with neither has -- the `# Example:` line directly
-    /// above it, which [`super::template::render`] writes for exactly that
-    /// case.
+    /// two: the default a commented line names, or -- where the line itself
+    /// shows nothing, the bare `#key =` a required option and a derived one both
+    /// have -- the `# Example:` line directly above it, which
+    /// [`super::template::render`] writes for exactly that case.
     ///
     /// So every option a *template* names shows a value of its own type, and
     /// that is what a caller placing an answer into one has to read the type
@@ -229,9 +280,9 @@ pub struct Line {
 /// Every option a document names, with the shape of the line that names it.
 ///
 /// The one walk behind [`options`] and behind anything that needs to know what
-/// an option *is* rather than only that it exists -- whether the template
-/// requires it, and what type it holds. Both answers come off the line itself
-/// rather than out of the schema, because the line is what [`apply`] rewrites.
+/// an option *is* rather than only that it exists -- what type it holds, and
+/// whether the operator set it. Both answers come off the line itself rather
+/// than out of the schema, because the line is what [`apply`] rewrites.
 pub fn lines(document: &str) -> Vec<Line> {
     let mut found = Vec::new();
     let mut prefix = String::new();
@@ -358,18 +409,21 @@ mod tests {
         assert_eq!(found.decisions[0].path, "dry_run");
     }
 
-    /// The three forms a template writes an option in, read back. What this
-    /// says is that a template names the type of every option it holds --
-    /// which is what lets `kbconfig init` put an answer in as the type the
-    /// option has rather than as the type the text reads as.
+    /// The two forms a template writes an option in, plus the line an operator
+    /// wrote. What this says is that a template names the type of every option
+    /// it holds, which is what lets `kbconfig init` put an answer in as the type
+    /// the option has rather than as the type the text reads as.
     #[test]
     fn every_form_a_template_writes_names_its_type() {
         let found = lines(
             r#"# prose
-realm = "EXAMPLE.SITE"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "EXAMPLE.SITE"
+#realm =
 #ticket_lifetime_seconds = 36000
 # Example: "DC=example,DC=site"
 #base_dn =
+ldap_ca_file = "/run/kerbridge/realm-ca.pem"
 
 [provision]
 #dns_forwarder = "1.1.1.1"
@@ -384,14 +438,69 @@ realm = "EXAMPLE.SITE"
         assert_eq!(
             seen,
             [
-                // Stated, so required, and its example says it is a string.
-                ("realm", true, Some("string")),
+                // A line to complete: commented like every other, and its own
+                // line shows nothing, so the `# Example:` above it names the
+                // type. The note above that is prose and is not an option.
+                ("realm", false, Some("string")),
                 ("ticket_lifetime_seconds", false, Some("integer")),
-                // Its own line shows nothing; the `# Example:` above it does.
                 ("base_dn", false, Some("string")),
+                // The one stated line, which in a live file means the operator
+                // set it and in a template never happens.
+                ("ldap_ca_file", true, Some("string")),
                 ("provision.dns_forwarder", false, Some("string")),
             ]
         );
         assert_eq!(found[0].shown, Some(toml::Value::String("EXAMPLE.SITE".to_owned())));
+    }
+
+    /// The list `kbconfig check` reports and `kbsetup status` shows: every
+    /// required option the document does not answer, in the order the file
+    /// names them, and a nested table's dotted the way the file nests it.
+    #[test]
+    fn every_required_option_a_document_leaves_out_is_named() {
+        let found = read_file("realm.toml", "realm = \"EXAMPLE.SITE\"\n");
+        assert_eq!(found.incomplete, ["ldap_url", "ldap_ca_file"]);
+
+        let whole = read_file(
+            "realm.toml",
+            "realm = \"EXAMPLE.SITE\"\n\
+             ldap_url = \"ldaps://kerbridge.example.site:636\"\n\
+             ldap_ca_file = \"/run/kerbridge/realm-ca.pem\"\n",
+        );
+        assert!(whole.incomplete.is_empty(), "{:?}", whole.incomplete);
+
+        // An empty document against the same schema is the whole required set,
+        // which is what `completed` reads it for.
+        let nothing = read_file("realm.toml", "");
+        assert_eq!(nothing.incomplete, ["realm", "ldap_url", "ldap_ca_file"]);
+    }
+
+    /// What a fixture does to a template to get a set that loads, and what an
+    /// operator does by hand: the lines to complete take their own examples,
+    /// and nothing else moves.
+    #[test]
+    fn completing_a_template_places_the_examples_and_leaves_the_rest() {
+        let schema = schema_for("realm.toml");
+        let template = crate::config::templates()
+            .expect("the sources render")
+            .into_iter()
+            .find(|(name, _)| *name == "realm.toml")
+            .map(|(_, body)| body)
+            .expect("realm.toml is one of the six");
+
+        let body = completed(&template, &schema).expect("every line to complete has an example");
+        assert!(body.contains("\nrealm = \"EXAMPLE.SITE\"\n"), "{body}");
+        // Still commented: a default is not a line to complete, and neither is
+        // a value the parser derives.
+        assert!(body.contains("\n#ticket_lifetime_seconds = 36000\n"), "{body}");
+        assert!(body.contains("\n#base_dn =\n"), "{body}");
+        // And the note stays above the line it is about, as the `# Example:`
+        // does, because an upgrade renders both again either way.
+        assert!(
+            body.contains(&format!("{}\n# Example: \"EXAMPLE.SITE\"", super::super::REQUIRED_NOTE))
+        );
+
+        let read = read(&toml::from_str(&body).expect("it is TOML"), &schema).unwrap();
+        assert!(read.incomplete.is_empty(), "{:?}", read.incomplete);
     }
 }

@@ -6,7 +6,9 @@
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # SET ONCE, BEFORE THE FIRST PROVISIONING. Baked into the Samba database, and
 # startup fails if this later disagrees with it.
@@ -15,7 +17,9 @@
 # a lower-case realm here derives a DNS domain identical to itself and looks
 # self-consistent everywhere -- samba-tool would provision it, and nothing after
 # that can correct the name.
-realm = "EXAMPLE.SITE"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "EXAMPLE.SITE"
+#realm =
 
 # Derived from `realm` -- the domain root the same way AD derives it, and the
 # UPN suffix as the realm lowercased. State either only if this realm was
@@ -61,12 +65,16 @@ realm = "EXAMPLE.SITE"
 # ldaps:// only. Plain ldap:// is refused where it is read, and StartTLS is not
 # negotiated either: the bind password, and every password sync writes, would
 # otherwise cross the network in the clear.
-ldap_url = "ldaps://kerbridge.example.site:636"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "ldaps://kerbridge.example.site:636"
+#ldap_url =
 
 # The realm's own CA, and only it -- there is no fallback to the OS trust store.
 # Samba's certificate has no SAN, so provisioning creates one from a CA that
 # exists only in the realm container and publishes it at this path.
-ldap_ca_file = "/run/kerbridge/realm-ca.pem"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "/run/kerbridge/realm-ca.pem"
+#ldap_ca_file =
 
 # What enrollment publishes to a client. Empty is the normal answer for both:
 # the realm is located through its _kerberos._udp SRV record, so enrollment pins

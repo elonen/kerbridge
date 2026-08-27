@@ -11,7 +11,9 @@
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # !! FROZEN AT FIRST PROVISIONING !!
 #
@@ -27,10 +29,14 @@
 # retires every account and creates a replacement rather than confusing two
 # people -- but every SID is still new. A new IdP gets a new name and its own
 # file. Detail: docs/setup/names-and-decisions.md.
-name = "entra"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "entra"
+#name =
 
 # Which adapter verifies this source's tokens and reads its directory.
-provider = "entra"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "entra"
+#provider =
 
 # What this source's group login names end with, which is what keeps them out of
 # every other source's. A sAMAccountName is unique across the whole realm, so
@@ -47,7 +53,9 @@ provider = "entra"
 #
 # Choose it before a second source exists. Chosen afterwards it renames groups
 # that are already in use, and a share ACL refers to the old name.
-group_suffix = "-entra"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "-entra"
+#group_suffix =
 
 # This source's own directory account, and the file holding its password. One
 # account per source, never a shared one: AD enforces the write delegation
@@ -59,8 +67,12 @@ group_suffix = "-entra"
 # to compose.yaml. The host side is deploy/secrets/generated/idp/entra/, and
 # `kbsetup directory` writes this one with the account. The credential you paste
 # in yourself sits apart, under idp/: the two have different writers.
-bind_dn = "CN=svc-kerbridge-sync-entra,CN=Users,DC=example,DC=site"
-bind_password_file = "/etc/kerbridge.secrets/generated/idp/entra/bind_password"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "CN=svc-kerbridge-sync-entra,CN=Users,DC=example,DC=site"
+#bind_dn =
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "/etc/kerbridge.secrets/generated/idp/entra/bind_password"
+#bind_password_file =
 
 # The IdP-specific OU this source owns, derived from `name` and
 # realm.idp_parent_ou. State it only for a directory whose existing layout
@@ -87,9 +99,15 @@ bind_password_file = "/etc/kerbridge.secrets/generated/idp/entra/bind_password"
 #
 # A typing error in any of them denies every login, and none of them looks wrong
 # afterwards.
-tenant_id = "aaaabbbb-0000-cccc-1111-dddd2222eeee"
-broker_api_client_id = "11112222-bbbb-3333-cccc-4444dddd5555"
-public_client_id = "22223333-cccc-4444-dddd-5555eeee6666"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "aaaabbbb-0000-cccc-1111-dddd2222eeee"
+#tenant_id =
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "11112222-bbbb-3333-cccc-4444dddd5555"
+#broker_api_client_id =
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "22223333-cccc-4444-dddd-5555eeee6666"
+#public_client_id =
 
 # The delegated scope the Broker API exposes. Change it only if you exposed the
 # API under another name. State the bare name: the agent asks for
@@ -132,7 +150,9 @@ public_client_id = "22223333-cccc-4444-dddd-5555eeee6666"
 # The directory sync app: app-only, read-only Graph, and the only one of the
 # three holding a credential. Without admin consent on its permissions its token
 # carries no roles and every read is a 403.
-sync_client_id = "66667777-aaaa-8888-bbbb-9999cccc0000"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "66667777-aaaa-8888-bbbb-9999cccc0000"
+#sync_client_id =
 
 # The file holding that credential's *Value*, never the value itself. Copy the
 # Value and not the Secret ID beside it: the Secret ID is a GUID, it stays
@@ -145,7 +165,9 @@ sync_client_id = "66667777-aaaa-8888-bbbb-9999cccc0000"
 # deploy/secrets/idp/entra/credential on the host. Empty means the app
 # registration does not exist yet: that source is skipped with a warning, and
 # every other source still mirrors.
-sync_credential_file = "/etc/kerbridge.secrets/idp/entra/credential"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "/etc/kerbridge.secrets/idp/entra/credential"
+#sync_credential_file =
 
 # What the portal shows in that credential's Expires field, YYYY-MM-DD. An
 # assertion rather than a measurement: rotate the secret without editing this
@@ -162,7 +184,9 @@ sync_credential_file = "/etc/kerbridge.secrets/idp/entra/credential"
 # The id, and not the display name: a group that is renamed or recreated keeps
 # its id, and a name can come to answer for a group you did not choose.
 # Repointing at a different group retires every user the new one does not admit.
-admission_group_id = "77778888-bbbb-9999-cccc-0000dddd1111"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "77778888-bbbb-9999-cccc-0000dddd1111"
+#admission_group_id =
 
 # Object ids of further groups to mirror, beyond those reachable from the
 # admission group.

@@ -209,16 +209,29 @@ that reads it. So the comments, the defaults, and the example values in your fil
 what this version has.
 
 ```sh
-kbconfig init configs       # write the config set itself
-kbconfig schema configs     # write a config schema, for your editor (optional)
+kbconfig init configs --source entra   # write the config set itself
+kbconfig schema configs                # a config schema, for your editor (optional)
 ```
 
 `kbconfig init` writes a file only if it is not there: if any file in the set
 already exists it writes nothing and names it. Pass `--force` only when you mean
 to throw away what you edited.
 
+`--source <name>[=<provider>]` is repeatable, and the provider defaults to the
+name. It writes one `idp_<name>.toml` and lists that name in `main.sources`, and
+it is the only thing that writes either — so the list and the files beside it
+cannot disagree, and a `--set` naming `main.sources` or a source file's `name`
+or `provider` is refused. With no `--source` the set names none, which is a
+realm mid-bootstrap and is what an administrator's own machine wants.
+
+Every option the parser requires arrives as a
+line to complete<sup>[?](../../crates/kerbridge-config/GLOSSARY.md#line-to-complete)</sup>:
+commented out, under its example and a `# REQUIRED.` note. The set does not load
+until you complete them, and `kbconfig check` names every one still waiting, all
+at once.
+
 `init` also takes the answers, one option at a time, so that a set does not have
-to be written and then edited:
+to be written and then completed by hand:
 
 ```sh
 kbconfig init configs --set realm.realm=EXAMPLE.SITE \

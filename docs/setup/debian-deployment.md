@@ -154,15 +154,20 @@ you already have.
 |---|---|
 | Kerberos realm for this deployment | Upper case, for example `EXAMPLE.SITE`. Further values are derived from it. |
 | LDAPS URL of the domain controller | `ldaps://` only. Proposed as `ldaps://kerbridge.<realm lowercased>:636`. The DC's short name is this URL's first label. |
-| Cloud IdP tenant id | The Entra tenant, as a UUID. **Leave it empty** for a host that runs no sync and serves no sign-ins. The questions below are then not asked. |
-| UUID of the broker's Entra app, usually named "KerBridge broker API" | From [step 2](../../SETUP.md#2-register-three-applications-in-entra). |
-| UUID of the client's Entra app, usually named "KerBridge public client" | From step 2. |
-| UUID of the sync Entra app, usually named "KerBridge sync" | From step 2. |
-| Object Id of the cloud group whose members are admitted | Create the group in the tenant and read the Object Id off its Overview page. Nothing works without it. |
+| Cloud identity provider for this deployment | `entra`, or `none` for a host that runs no sync and serves no sign-ins. It decides which `idp_<name>.toml` is written, and nothing else. |
+
+Three questions, and no fourth. The identifiers that name your Entra tenant and
+its applications are **not** asked for here: each is a line to complete in
+`/etc/kerbridge/idp_entra.toml`, and the postinst ends by running
+`kbconfig check`, which lists every one of them at once. Complete them from
+[step 2](../../SETUP.md#2-register-three-applications-in-entra), then run
+`kbconfig check` again. Until they are done no daemon starts — which is the
+point: an install that filled them in with the documented example would leave
+you a set nobody completed that looked finished.
 
 Nothing secret passes through debconf. That is structural rather than careful:
 every secret in the config set is a *path*, never a value, and these answers
-are a realm, a URL, public OIDC identifiers and a group's object id.
+are a realm, a URL and the name of an adapter.
 
 <details>
 <summary>If you want to skip the questions</summary>
@@ -171,15 +176,26 @@ Three outcomes of debhelper questions are all valid:
 
 - **Realm left empty** — nothing is written, and the postinst says so. Unattended installs
   could need this.
-- **Realm set, tenant left empty** — a realm-only set, `sources = []`. This could be
-  an administrator machine that has `kbmanage` but and no daemons.
-- **Both are set** — the complete set, in `/etc/kerbridge`. Usual case.
+- **Realm set, provider `none`** — a realm-only set, `sources = []`, and it checks
+  out as it stands. This could be an administrator machine that has `kbmanage`
+  and no daemons.
+- **Realm set, provider `entra`** — the set, in `/etc/kerbridge`, with the tenant's
+  own identifiers left for you to complete. Usual case.
+
+An unattended install with a preseeded realm and no provider answer takes the
+default, `entra`, and so ends on that third outcome: a set that fails
+`kbconfig check` and starts no daemon. Preseed `kerbridge-config/provider` as
+`none` if that is not what you want. A deployment that wants the whole set
+written unattended uses `kbconfig init --set`, which can express two sources
+and every option; the questions here cannot.
 
 With **no config set written**, the units are skipped rather than started. Each
 carries `ConditionPathExists=/etc/kerbridge/main.toml`, so `systemctl status`
 shows them inactive with the unmet condition named, and nothing appears in
-`systemctl --failed`. Write the set with `kbconfig init /etc/kerbridge` or
-`dpkg-reconfigure kerbridge-config`, then start them:
+`systemctl --failed`. Write the set with
+`kbconfig init /etc/kerbridge --source entra` or
+`dpkg-reconfigure kerbridge-config`, complete the lines `kbconfig check` names,
+then start them:
 
 ```sh
 sudo systemctl start kerbridge-issuerd kerbridge-broker kerbridge-sync

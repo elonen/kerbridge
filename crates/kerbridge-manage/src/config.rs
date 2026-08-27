@@ -152,14 +152,18 @@ impl Config {
 mod tests {
     use std::os::unix::fs::PermissionsExt;
 
-    use kerbridge_core::config::{source_envelope, templates};
+    use kerbridge_core::config::{decisions, schemas, source_envelope, source_schema, templates};
 
     use super::*;
 
-    /// A config set on disk, from the emitted templates, plus the two things a
-    /// template cannot supply: a readable password file, and a `kbmanage.toml`
-    /// naming it. Every test names it with `--config`, so nothing here depends
-    /// on what the host running the tests has installed.
+    /// A config set on disk, from the emitted templates with every line to
+    /// complete filled in from its own example, plus the two things a template
+    /// cannot supply: a readable password file, and a `kbmanage.toml` naming
+    /// it. Every test names it with `--config`, so nothing here depends on what
+    /// the host running the tests has installed.
+    ///
+    /// Completed rather than copied: a template does not load, and that rule is
+    /// `kbconfig`'s to hold, not this crate's.
     struct Dir(PathBuf);
 
     impl Dir {
@@ -168,11 +172,18 @@ mod tests {
                 .join(format!("kbmanage-config-{}-{label}", std::process::id()));
             let _ = std::fs::remove_dir_all(&path);
             std::fs::create_dir_all(&path).unwrap();
-            for (name, body) in templates().expect("the sources render") {
+            for ((name, body), (described, schema)) in
+                templates().expect("the sources render").into_iter().zip(schemas().unwrap())
+            {
+                assert_eq!(name, described, "a template and a schema fell out of order");
+                let body = decisions::completed(&body, &schema).expect("it completes");
                 std::fs::write(path.join(name), body).unwrap();
             }
             let dir = Self(path);
-            dir.write("idp_entra.toml", &source_envelope("entra", "entra").expect("it renders"));
+            let envelope = source_envelope("entra", "entra").expect("it renders");
+            let envelope = decisions::completed(&envelope, &source_schema().unwrap())
+                .expect("the envelope completes");
+            dir.write("idp_entra.toml", &envelope);
             dir.write("password", "s3cret\n");
             std::fs::set_permissions(dir.0.join("password"), PermissionsExt::from_mode(0o600))
                 .unwrap();

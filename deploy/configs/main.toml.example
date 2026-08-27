@@ -11,16 +11,21 @@
 #
 # HOW TO READ THESE FILES
 #
-# Each configuration option is one line: its key, `=`, and its value. A line
-# that starts with `#` is commented out and sets nothing. Two forms:
+# Each configuration option is one line: its key, `=`, and its value. Every line
+# in this set arrives commented out with a `#`, and a commented line sets
+# nothing. Three forms:
 #
 #   #some_option = 8    KerBridge uses 8. That is the default.
 #   #some_option =      This option has no default. KerBridge derives the value
 #                       from another option, or leaves it unset. The comment
 #                       above the line says which, and shows an example.
+#   #some_option =      ...with `# REQUIRED.` above it: a line to complete.
+#                       KerBridge has no value for this one and does not start
+#                       until you supply yours. `kbconfig check` lists every
+#                       line in the set that is still waiting for you.
 #
-# To set an option, remove the `#` and write the value. For the second form you
-# must also supply a value: `some_option =` alone is not valid TOML.
+# To set an option, remove the `#` and write the value. For the last two forms
+# you must also supply a value: `some_option =` alone is not valid TOML.
 #
 # Leave every other line commented out. A default can change when you install a
 # new version, and an option you left alone then uses the new value. An option
@@ -41,7 +46,9 @@
 # every object it owns -- SIDs, memberships, file ownership -- with nothing
 # reporting it. A listed name with no file refuses to start; a file no name
 # lists is ignored, with a line in the log saying so.
-sources = ["entra"]
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: ["entra"]
+#sources =
 
 
 # --- Device grants: let a machine skip the browser sign-in ---

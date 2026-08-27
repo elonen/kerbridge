@@ -7,16 +7,21 @@
 //! template that documents a number the code does not use fails the build
 //! rather than misleading an operator.
 //!
-//! **A template states the required options and comments out every other one.**
-//! A live file then holds the operator's configuration decisions and nothing
-//! else, which is what lets a later version change a default and reach a
+//! **A template states nothing at all.** An option the parser requires is a
+//! *line to complete* -- its example moved into the comment above it and the
+//! line itself left bare -- and every other option is commented out at its
+//! default. A live file then holds the operator's configuration decisions and
+//! nothing else, which is what lets a later version change a default and reach a
 //! deployment that never decided anything about that option. A stated default
 //! could not be told apart from a configuration decision, so it would pin every
 //! deployment to the value shipped on the day it was installed. The terms:
 //! `crates/kerbridge-config/GLOSSARY.md`.
 //!
+//! A template therefore does not load. `kbconfig check` and every daemon's
+//! `ExecStartPre` refuse a set nobody completed, so it cannot look finished.
+//!
 //! The realm is the documented one throughout (`EXAMPLE.SITE`), and every
-//! identifier is a placeholder. An operator copies these and edits them; a
+//! identifier is a placeholder. An operator copies these and completes them; a
 //! reader on GitHub gets the whole settings surface without cloning.
 
 use super::{BROKER_FILE, ISSUERD_FILE, KBMANAGE_FILE, MAIN_FILE, REALM_FILE, SYNC_FILE};
@@ -117,12 +122,28 @@ pub fn source_envelope(name: &str, provider: &str) -> Result<String, String> {
 #[cfg(feature = "schema")]
 const SOURCE_FILE_LABEL: &str = "idp_<name>.toml";
 
+/// The line above a required option's `# Example:`, and the only thing in a
+/// template that tells a reader which commented-out lines they must complete.
+///
+/// A bare `#key =` means derived, unset, or still to complete. The comment
+/// above the line tells the three apart -- see
+/// `crates/kerbridge-config/GLOSSARY.md` @ example value. This is the third
+/// case.
+///
+/// It stays above the line after an answer is placed on it, as the `# Example:`
+/// does: the option is still one the file must state, and `kbconfig upgrade`
+/// renders the note again either way.
+#[cfg(feature = "schema")]
+pub const REQUIRED_NOTE: &str =
+    "# REQUIRED. KerBridge does not start until this line is completed.";
+
 /// Render a template source into the document an operator reads.
 ///
 /// A `{{key}}` line becomes that key's line, in the form the schema decides:
-/// stated for a required key, `#key = <default>` where there is a default, and
-/// a bare `#key =` under an `# Example:` line where there is neither. The value
-/// is therefore never typed twice, so it cannot drift from the parser.
+/// `#key = <default>` where there is a default, and a bare `#key =` under an
+/// `# Example:` line where there is not. A required key takes the second form
+/// too, with [`REQUIRED_NOTE`] above the example -- the line to complete. The
+/// value is therefore never typed twice, so it cannot drift from the parser.
 ///
 /// Prose comes from one of two places and never both. A comment block directly
 /// above the placeholder is the template's, and is used as written -- that is
@@ -187,7 +208,10 @@ pub fn render(file: &str, source: &str, schema: &serde_json::Value) -> Result<St
         let example = property.get("examples").and_then(|e| e.get(0));
         let default = property.get("default").filter(|d| !d.is_null());
         match (table.required.iter().any(|r| r == key), default, example) {
-            (true, _, Some(value)) => out.push_str(&format!("{key} = {}\n", toml_value(value)?)),
+            (true, _, Some(value)) => out.push_str(&format!(
+                "{REQUIRED_NOTE}\n# Example: {}\n#{key} =\n",
+                toml_value(value)?
+            )),
             (true, _, None) => {
                 return Err(format!("{key} is required, so it needs a schemars(example = ...)"));
             }
@@ -317,7 +341,9 @@ const SOURCE_ENVELOPE_SRC: &str = r#"# One cloud IdP, as this realm stores it.
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # !! FROZEN AT FIRST PROVISIONING !!
 #
@@ -389,16 +415,21 @@ const MAIN_SRC: &str = r#"# KerBridge, entry point.
 #
 # HOW TO READ THESE FILES
 #
-# Each configuration option is one line: its key, `=`, and its value. A line
-# that starts with `#` is commented out and sets nothing. Two forms:
+# Each configuration option is one line: its key, `=`, and its value. Every line
+# in this set arrives commented out with a `#`, and a commented line sets
+# nothing. Three forms:
 #
 #   #some_option = 8    KerBridge uses 8. That is the default.
 #   #some_option =      This option has no default. KerBridge derives the value
 #                       from another option, or leaves it unset. The comment
 #                       above the line says which, and shows an example.
+#   #some_option =      ...with `# REQUIRED.` above it: a line to complete.
+#                       KerBridge has no value for this one and does not start
+#                       until you supply yours. `kbconfig check` lists every
+#                       line in the set that is still waiting for you.
 #
-# To set an option, remove the `#` and write the value. For the second form you
-# must also supply a value: `some_option =` alone is not valid TOML.
+# To set an option, remove the `#` and write the value. For the last two forms
+# you must also supply a value: `some_option =` alone is not valid TOML.
 #
 # Leave every other line commented out. A default can change when you install a
 # new version, and an option you left alone then uses the new value. An option
@@ -532,7 +563,9 @@ const REALM_SRC: &str = r#"# The realm, as anything fronting it would see it. No
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # SET ONCE, BEFORE THE FIRST PROVISIONING. Baked into the Samba database, and
 # startup fails if this later disagrees with it.
@@ -632,7 +665,9 @@ const ISSUERD_SRC: &str = r#"# issuerd: the only process holding KDC authority. 
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # Which unix group owns the socket and which unix user may speak on it, not a
 # preference either way. The socket directory is 0710 root:<group> and the
@@ -677,7 +712,9 @@ const BROKER_SRC: &str = r#"# The broker: the internet-facing half, and the only
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # Loopback, and a non-loopback address is refused. This process speaks plain
 # HTTP and Caddy terminates TLS in the network namespace they share, so binding
@@ -725,7 +762,9 @@ const KBMANAGE_SRC: &str = r#"# kbmanage: the operator CLI, and the only compone
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # Its own directory identity, created by `kbsetup directory`. Not the
 # broker's and not a source's sync account: this one may write in the resource
@@ -760,7 +799,9 @@ const SYNC_SRC: &str = r#"# Sync: what the mirror does, and how it names what it
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # interval_seconds is the pause between cycles, not the rate of them. One cycle
 # reads every source in turn, so the time between two reads of one source is
@@ -823,15 +864,17 @@ mod tests {
         Broker, Issuerd, Kbmanage, Main, Notify, Provision, Realm, SourceFile, Sync,
     };
 
-    /// The convention every template follows, held key by key: an option the
-    /// parser requires is stated, every other one is commented out. The module
-    /// doc says why; `crates/kerbridge-config/GLOSSARY.md` @ configuration
-    /// decision names the terms.
+    /// The convention every template follows, held key by key: nothing is
+    /// stated, an option the parser requires is a bare line to complete under
+    /// its example and the note that says so, and every option with a default
+    /// shows it commented out. The module doc says why;
+    /// `crates/kerbridge-config/GLOSSARY.md` @ configuration decision names the
+    /// terms.
     ///
     /// Exactly once, too. The upgrade path rewrites a template line in place,
     /// and a key appearing twice would leave one of the two behind.
     #[test]
-    fn a_template_states_what_is_required_and_comments_out_the_rest() {
+    fn a_template_comments_out_every_option_and_marks_the_ones_to_complete() {
         fn check<T: schemars::JsonSchema>(template: &str, file: &str) {
             let lines: Vec<&str> = template.lines().collect();
             let required = required::<T>();
@@ -856,41 +899,45 @@ mod tests {
                 if header == 1 {
                     continue;
                 }
-                if required.iter().any(|r| r == &key) {
-                    assert_eq!(
-                        stated, 1,
-                        "{file}: {key} is required, so the template must state it rather than \
-                         comment it out."
-                    );
-                    continue;
-                }
                 assert_eq!(
                     stated, 0,
-                    "{file}: {key} is not required, so the template must comment it out. A stated \
-                     value cannot be told apart from a configuration decision, and an upgrade \
-                     would keep it forever."
+                    "{file}: {key} is stated, and a template states nothing. A stated value \
+                     cannot be told apart from a configuration decision, and a stated *required* \
+                     value is how a set nobody completed comes to look finished."
                 );
+                let must_complete = required.iter().any(|r| r == &key);
                 match property.get("default").filter(|d| !d.is_null()) {
                     // A default to show: `#key = value`, and the value is
                     // checked against the parser by the next test.
-                    Some(_) => assert_eq!(
+                    Some(_) if !must_complete => assert_eq!(
                         shown, 1,
                         "{file}: {key} has a default, so its line must show it as `#{key} = ...`."
                     ),
-                    // Nothing to show. The line stays bare so that no reader
-                    // mistakes an example for the value in use, and the example
-                    // moves into the comment above it.
-                    None => {
+                    // Nothing to show, either because the parser derives the
+                    // value or because it requires the operator to supply one.
+                    // The line stays bare so that no reader mistakes an example
+                    // for the value in use, and the example moves into the
+                    // comment above it.
+                    _ => {
                         assert_eq!(
                             bare.len(),
                             1,
-                            "{file}: {key} has no default, so its line must be bare -- `#{key} =` \
-                             with the example value moved into the comment above it."
+                            "{file}: {key} shows no value of its own, so its line must be bare -- \
+                             `#{key} =` with the example value moved into the comment above it."
                         );
                         assert!(
                             example_above(&lines, bare[0]),
                             "{file}: {key} is bare, so the comment above it must carry an \
                              `# Example: <value>` line. Nothing else shows the operator a shape."
+                        );
+                        // The one thing that tells a line to complete apart
+                        // from a line the parser answers for itself.
+                        assert_eq!(
+                            note_above(&lines, bare[0]),
+                            must_complete,
+                            "{file}: {key} is {}required, and the `{REQUIRED_NOTE}` line above it \
+                             says otherwise.",
+                            if must_complete { "" } else { "not " }
                         );
                     }
                 }
@@ -916,6 +963,10 @@ mod tests {
     /// Every value shown against a commented key must *be* the default the
     /// parser holds, so uncommenting them all changes nothing. A template
     /// documenting a number the code does not use fails the build.
+    ///
+    /// The lines to complete are filled in first, from their own examples: a
+    /// template alone answers nothing the parser requires, so it parses as no
+    /// struct at all.
     #[test]
     fn every_shown_default_is_the_one_the_parser_holds() {
         fn same<T>(template: &str, required_only: &str, defaulted: &[String])
@@ -931,12 +982,12 @@ mod tests {
         // `main.toml` carries two structs, so it carries both key sets.
         let mut main_keys = defaulted::<Main>();
         main_keys.extend(defaulted::<Notify>());
-        same::<Main>(&rendered("main.toml"), r#"sources = ["entra"]"#, &main_keys);
+        same::<Main>(&completed("main.toml"), r#"sources = ["entra"]"#, &main_keys);
         // `realm.toml` carries two as well, `[provision]` being the second.
         let mut realm_keys = defaulted::<Realm>();
         realm_keys.extend(defaulted::<Provision>());
         same::<Realm>(
-            &rendered("realm.toml"),
+            &completed("realm.toml"),
             r#"
             realm = "EXAMPLE.SITE"
             ldap_url = "ldaps://kerbridge.example.site:636"
@@ -944,18 +995,18 @@ mod tests {
             "#,
             &realm_keys,
         );
-        same::<Issuerd>(&rendered("issuerd.toml"), "", &defaulted::<Issuerd>());
+        same::<Issuerd>(&completed("issuerd.toml"), "", &defaulted::<Issuerd>());
         same::<Broker>(
-            &rendered("broker.toml"),
+            &completed("broker.toml"),
             r#"
             bind_dn = "CN=svc-kerbridge-broker,CN=Users,DC=example,DC=site"
             bind_password_file = "/etc/kerbridge.secrets/generated/svc_kerbridge_broker_password"
             "#,
             &defaulted::<Broker>(),
         );
-        same::<Sync>(&rendered("sync.toml"), "", &defaulted::<Sync>());
+        same::<Sync>(&completed("sync.toml"), "", &defaulted::<Sync>());
         same::<Kbmanage>(
-            &rendered("kbmanage.toml"),
+            &completed("kbmanage.toml"),
             r#"
             bind_dn = "CN=svc-kerbridge-manage,CN=Users,DC=example,DC=site"
             bind_password_file = "/home/you/.config/kerbridge/svc_kerbridge_manage_password"
@@ -963,7 +1014,7 @@ mod tests {
             &defaulted::<Kbmanage>(),
         );
         same::<SourceFile>(
-            &envelope("entra", "entra"),
+            &completed_envelope(),
             r#"
             name = "entra"
             provider = "entra"
@@ -1005,6 +1056,29 @@ mod tests {
                  `KB_WRITE_CONFIG_TEMPLATES=1 cargo test -p kerbridge-core`."
             );
         }
+    }
+
+    /// One rendered file with every line to complete filled in from its own
+    /// example: the document a deployment holds, and the one the parser is
+    /// judged against.
+    fn completed(file: &str) -> String {
+        let schema = schemas()
+            .expect("the schemas render")
+            .into_iter()
+            .find(|(name, _)| *name == file)
+            .map(|(_, schema)| schema)
+            .unwrap_or_else(|| panic!("no schema named {file}"));
+        crate::config::decisions::completed(&rendered(file), &schema)
+            .expect("the template completes")
+    }
+
+    /// The same for the source envelope, whose schema is not one of the six.
+    fn completed_envelope() -> String {
+        crate::config::decisions::completed(
+            &envelope("entra", "entra"),
+            &source_schema().expect("the envelope schema renders"),
+        )
+        .expect("the envelope completes")
     }
 
     /// One rendered file, by name. The convention tests judge the document an
@@ -1066,11 +1140,17 @@ mod tests {
     /// Whether the run of comment lines above `i` carries an example. The walk
     /// stops at the previous key, so a key cannot borrow its neighbour's.
     fn example_above(lines: &[&str], i: usize) -> bool {
-        lines[..i]
-            .iter()
-            .rev()
-            .take_while(|l| l.starts_with('#') && !is_assignment(l))
-            .any(|l| l.starts_with("# Example: "))
+        above(lines, i).any(|l| l.starts_with("# Example: "))
+    }
+
+    /// The same walk, for the note that marks a line to complete. A key cannot
+    /// borrow its neighbour's: the note says *this* line is the operator's.
+    fn note_above(lines: &[&str], i: usize) -> bool {
+        above(lines, i).any(|l| *l == REQUIRED_NOTE)
+    }
+
+    fn above<'a>(lines: &'a [&'a str], i: usize) -> impl Iterator<Item = &'a &'a str> {
+        lines[..i].iter().rev().take_while(|l| l.starts_with('#') && !is_assignment(l))
     }
 
     fn is_assignment(line: &str) -> bool {

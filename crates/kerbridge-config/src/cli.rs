@@ -64,12 +64,22 @@ pub enum Command {
     /// Write the config set into a directory, with your answers already in it.
     Init {
         dir: PathBuf,
+        /// One cloud IdP source, as `<name>[=<provider>]` -- `entra`, or
+        /// `staff=entra` for a second source of the same provider under a name
+        /// of its own. Repeatable. The provider defaults to the name.
+        ///
+        /// Each writes an idp_<name>.toml and adds <name> to main.sources.
+        /// With none, the set names no source: a realm mid-bootstrap, not a
+        /// broken one. Only this flag writes those three values, so --set may
+        /// not name them.
+        #[arg(long = "source", value_name = "NAME[=PROVIDER]")]
+        sources: Vec<String>,
         /// One answer, as `<file>.<option>=<value>` --
-        /// `realm.realm=EXAMPLE.SITE`, `main.sources=["entra"]`,
+        /// `realm.realm=EXAMPLE.SITE`,
         /// `idp_entra.provider_config.tenant_id=<uuid>`. Repeatable, and the
         /// paths are the ones `kbconfig decisions` prints under each file.
         ///
-        /// An empty answer for an option the template requires stops the whole
+        /// An empty answer for an option the parser requires stops the whole
         /// write; an empty answer for any other option is left at its default.
         #[arg(long = "set", value_name = "PATH=VALUE")]
         set: Vec<String>,

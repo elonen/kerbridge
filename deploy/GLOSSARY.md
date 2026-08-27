@@ -82,7 +82,9 @@ own copies in `deploy/configs/`, which the containers mount at the compiled-in
 `*.toml.example` set is rendered from a
 [template source](../crates/kerbridge-config/GLOSSARY.md#template-source) and the
 [config schema](../crates/kerbridge-config/GLOSSARY.md#config-schema), so it
-cannot disagree with the parser.
+cannot disagree with the parser. A copy of it does not load until its
+[lines to complete](../crates/kerbridge-config/GLOSSARY.md#line-to-complete) are
+completed; `kbconfig check` names every one of them.
 <!-- refs: `kerbridge_core::config`, `deploy/configs/`, `DEFAULT_CONFIG_DIR` -->
 <!-- avoid: the toml config, configs/, `kbmanage.env` -->
 <!-- user-facing: the config files, the config directory -->

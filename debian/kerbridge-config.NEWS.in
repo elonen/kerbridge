@@ -1,5 +1,20 @@
 kerbridge (@VERSION@) unstable; urgency=@URGENCY@
 
+  Every option a config file must set is now a line to complete: commented
+  out, under its example and a `# REQUIRED.` note. `kbconfig upgrade` writes
+  each file in this shape and carries your own values across, so a set that
+  was complete stays complete. A set left on a template's example value --
+  the realm EXAMPLE.SITE, the tenant aaaabbbb-0000-cccc-..., a bind DN under
+  DC=example,DC=site -- keeps that value, because it is a line you set.
+  `kbconfig decisions` lists what your set states.
+
+  The install questions are down to three: the realm, the LDAPS URL, and
+  which cloud IdP adapter to write a source file for. The five
+  kerbridge-config/* preseed keys naming the tenant, the three applications
+  and the admission group are gone. A preseeding deployment writes the set
+  with `kbconfig init --set` instead, which can express two sources and
+  every option; the questions never could.
+
   Run `kbconfig upgrade` before you restart the daemon. It removes the
   retired sync.toml options cycle_deadline_seconds and read_deadline_seconds;
   the daemon refuses a file that still names either one.

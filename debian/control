@@ -62,8 +62,12 @@ Architecture: any
 # samba-ad-dc only *recommends* it: an install made with --no-install-recommends
 # has every binary and none of the input, and `kbsetup realm` dies partway
 # through the provision. A Depends, therefore, on every supported release.
+# sensible-utils for `sensible-editor`, which `kbsetup status` prints as the
+# next command when the config set holds lines nobody has completed yet. That
+# report says nothing else, so a host without the command gets no instruction.
 Depends: ${misc:Depends},
          kerbridge-config (= ${binary:Version}),
+         sensible-utils,
          samba-ad-dc (>= 2:4.19),
          samba-ad-provision,
          samba-common-bin,

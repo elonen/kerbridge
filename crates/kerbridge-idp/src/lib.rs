@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn every_assembled_source_file_parses_as_both_halves() {
         for provider in Provider::ALL {
-            let text = provider.source_template().expect("the source template renders");
+            let text = completed(provider);
             let envelope: kerbridge_core::config::SourceFile =
                 toml::from_str(&text).expect("the assembled file parses as a source file");
             assert_eq!(envelope.provider, provider.name(), "the envelope names another adapter");
@@ -312,6 +312,16 @@ mod tests {
     /// The block this provider's own template carries, parsed.
     fn template_settings(provider: Provider, block: toml::Table) -> IdpSettings {
         IdpSettings::parse(provider, &block).expect("the block the envelope carried")
+    }
+
+    /// One provider's whole source file with its lines to complete filled in
+    /// from their own examples -- the document a deployment holds. A template
+    /// answers nothing the parser requires, so nothing here parses one.
+    fn completed(provider: Provider) -> String {
+        let body = provider.source_template().expect("the source template renders");
+        let schema = provider.source_schema().expect("the source schema composes");
+        kerbridge_core::config::decisions::completed(&body, &schema)
+            .expect("the template completes")
     }
 
     /// What holds the hand-written half to the adapter: every key the block
@@ -329,11 +339,9 @@ mod tests {
                 .keys()
                 .collect();
 
-            let block = toml::from_str::<kerbridge_core::config::SourceFile>(
-                &provider.source_template().expect("the source template renders"),
-            )
-            .expect("the assembled file parses")
-            .provider_config;
+            let block = toml::from_str::<kerbridge_core::config::SourceFile>(&completed(provider))
+                .expect("the assembled file parses")
+                .provider_config;
             let answered = template_settings(provider, block).paths();
 
             let missed: Vec<&&String> =

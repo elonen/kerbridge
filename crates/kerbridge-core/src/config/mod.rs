@@ -49,7 +49,7 @@ mod template;
 pub use paths::field_paths;
 pub use template::TEMPLATE_SOURCES;
 #[cfg(feature = "schema")]
-pub use template::{render, schemas, source_envelope, source_schema, templates};
+pub use template::{REQUIRED_NOTE, render, schemas, source_envelope, source_schema, templates};
 
 /// Where the binaries look when nothing says otherwise. One compiled-in path,
 /// so a container bind-mounting its `deploy/configs/` here and a package
@@ -919,15 +919,20 @@ const UPGRADE_NOTE: &str = "\n\n== How to fix this?\n\n\
      change.";
 
 /// Non-empty, and nothing that would have to be escaped in a URL path, a
-/// filename or an LDAP filter. Checked here because this is where a name enters
-/// the deployment; every later consumer takes it as already safe.
-fn is_source_name(name: &str) -> bool {
+/// filename or an LDAP filter. A name enters the deployment in two places --
+/// loading a set, and `kbconfig init --source` writing one -- and both check
+/// here, so `..` never reaches a filename. Every later consumer takes a name as
+/// already safe.
+pub fn is_source_name(name: &str) -> bool {
     // Leading alphanumeric so no name is a relative path segment.
     name.starts_with(|c: char| c.is_ascii_alphanumeric())
         && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
-fn source_file(name: &str) -> String {
+/// `idp_<name>.toml`, spelled in the one place, because the filename is also
+/// the source name's second home: `Config::load` refuses a file whose `name`
+/// disagrees with its stem.
+pub fn source_file(name: &str) -> String {
     format!("idp_{name}.toml")
 }
 
@@ -1031,15 +1036,22 @@ fn default_broker_timeout() -> u32 {
 mod tests {
     use super::*;
 
-    /// The rendered envelope. A failure here is a source that disagrees with
-    /// the parser, which `the_committed_source_templates_are_current` reports
-    /// properly; these tests only need the document.
+    /// The rendered envelope with its lines to complete filled in -- a source
+    /// file as a deployment holds one. A failure here is a source that
+    /// disagrees with the parser, which
+    /// `the_committed_source_templates_are_current` reports properly; these
+    /// tests only need the document.
     fn envelope(name: &str, provider: &str) -> String {
-        source_envelope(name, provider).expect("the envelope renders")
+        let body = source_envelope(name, provider).expect("the envelope renders");
+        decisions::completed(&body, &source_schema().expect("the envelope schema renders"))
+            .expect("the envelope completes")
     }
 
-    /// A directory holding the emitted templates, with the source file's
-    /// provider block left off -- core neither writes nor reads one.
+    /// A directory holding the emitted templates with every line to complete
+    /// filled in by `decisions::completed`, and the source file's provider
+    /// block left off -- core neither writes nor reads one. Completed rather
+    /// than copied: a template on its own does not load, so these tests would
+    /// otherwise exercise nothing but that rule.
     struct Dir(PathBuf);
 
     impl Dir {
@@ -1048,7 +1060,13 @@ mod tests {
                 .join(format!("kerbridge-config-{}-{label}", std::process::id()));
             let _ = std::fs::remove_dir_all(&path);
             std::fs::create_dir_all(&path).unwrap();
-            for (name, body) in template::templates().expect("the sources render") {
+            for ((name, body), (described, schema)) in template::templates()
+                .expect("the sources render")
+                .into_iter()
+                .zip(schemas().unwrap())
+            {
+                assert_eq!(name, described, "a template and a schema fell out of order");
+                let body = decisions::completed(&body, &schema).expect("the template completes");
                 std::fs::write(path.join(name), body).unwrap();
             }
             let dir = Self(path);

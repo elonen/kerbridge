@@ -15,7 +15,9 @@
 //! *how far through the procedure is this host*, which none of the three does.
 //!
 //! **Nothing here writes, prompts, or opens a socket.** So it is safe on a
-//! half-finished host, which is the only kind that runs it.
+//! half-finished host, which is the only kind that runs it. A set that will not
+//! load is reported rather than raised -- an install ends here -- with the
+//! detail from `kbconfig check`.
 
 use std::io::IsTerminal;
 use std::path::Path;
@@ -109,10 +111,64 @@ impl Palette {
 }
 
 pub fn run(dir: &Path) -> Result<u8> {
-    let config = crate::load(dir)?;
+    // A set that does not load is the state this verb most has to survive: the
+    // `kerbridge-issuerd` postinst runs it as the last thing an install prints.
+    // Step 1 alone, then -- every later step reads the parsed config and cannot
+    // be computed at all.
+    let config = match crate::load(dir) {
+        Ok(config) => config,
+        Err(e) => {
+            let steps = [unloadable_step(dir, &e)];
+            say(&dir.display().to_string(), &steps);
+            return Ok(MISMATCH);
+        }
+    };
     let steps = walk(dir, &config)?;
-    say(&config, &steps);
+    say(&config.realm.realm, &steps);
     Ok(if steps.iter().any(|step| matches!(step.state, State::Todo)) { MISMATCH } else { MATCHES })
+}
+
+/// Step 1, on a set no daemon would start on either.
+///
+/// The detail is `kbconfig check`'s own report, not a second opinion assembled
+/// here: that command owns the question, and it holds the config schema this
+/// crate must not. It ships in `kerbridge-config`, which every package depends
+/// on and every image installs, so it is beside this one wherever this one
+/// runs.
+///
+/// The next step is an editor rather than a command of ours, because what is
+/// outstanding is text in a file. `sensible-editor` is Debian's own indirection
+/// to whatever the operator chose.
+fn unloadable_step(dir: &Path, refusal: &anyhow::Error) -> Step {
+    let said = run::attempt(&["kbconfig", "--config", &dir.display().to_string(), "check"], None)
+        .map(|done| format!("{}{}", done.stdout, done.stderr))
+        .unwrap_or_default();
+    let said = said.trim();
+    // Whatever `kbconfig` said, or -- on a host where it could not be run at
+    // all -- this process's own refusal. Neither is a reason for this verb to
+    // fail.
+    let detail = match said.is_empty() {
+        true => format!("{refusal:#}"),
+        false => said.to_owned(),
+    };
+    Step {
+        title: "configuration set",
+        state: State::Todo,
+        // Indented to the detail column, the way `credentials_step` indents
+        // its own second line -- but a blank line stays blank, so the report
+        // does not arrive with a column of trailing spaces down it.
+        detail: detail
+            .lines()
+            .map(|line| match line.is_empty() {
+                true => String::new(),
+                false => format!("{:GUTTER$}{line}", ""),
+            })
+            .collect::<Vec<String>>()
+            .join("\n")
+            .trim_start()
+            .to_owned(),
+        next: Some(format!("sensible-editor {}", dir.display())),
+    }
 }
 
 /// The procedure, in the order `SETUP.md` runs it.
@@ -308,10 +364,13 @@ fn units_step() -> Option<Step> {
     })
 }
 
-fn say(config: &Config, steps: &[Step]) {
+/// `heading` is the realm, which is what an operator recognises the host by --
+/// or, on a set that will not load and therefore names no realm yet, the
+/// directory the set is in.
+fn say(heading: &str, steps: &[Step]) {
     let ink = Palette::of(&std::io::stdout());
     println!();
-    println!("  {}{} -- setup status{}", ink.strong, config.realm.realm, ink.reset);
+    println!("  {}{heading} -- setup status{}", ink.strong, ink.reset);
     println!();
     for (n, step) in steps.iter().enumerate() {
         println!("  {} {}. {:<20} {}", step.mark(&ink), n + 1, step.title, step.detail);
@@ -388,6 +447,26 @@ mod tests {
         assert_eq!(step(State::Done).mark(&ink), "[x]");
         assert_eq!(step(State::Todo).mark(&ink), "[ ]");
         assert_eq!(step(State::Unknown).mark(&ink), "[?]");
+    }
+
+    /// A set that will not load is where an install most often ends, and this
+    /// verb has to answer rather than fail: the `kerbridge-issuerd` postinst
+    /// runs it as the last thing an installation prints. Step 1 alone and
+    /// outstanding, with an editor as the next command.
+    ///
+    /// The detail is `kbconfig check`'s report where that command can be run,
+    /// and this host's own refusal where it cannot; the test host is the second
+    /// kind, `run::attempt` looking only in the system directories.
+    #[test]
+    fn a_set_that_will_not_load_is_step_one_alone_and_not_an_error() {
+        let set = set_with(&[("realm.toml", "")]);
+        assert_eq!(run(set.dir()).unwrap(), MISMATCH, "outstanding, and not an error");
+
+        let refusal = crate::load(set.dir()).unwrap_err();
+        let step = unloadable_step(set.dir(), &refusal);
+        assert!(matches!(step.state, State::Todo));
+        assert_eq!(step.next, Some(format!("sensible-editor {}", set.dir().display())));
+        assert!(step.detail.contains("realm.toml"), "{}", step.detail);
     }
 
     /// The terminator can never be answered from this host, so it must never

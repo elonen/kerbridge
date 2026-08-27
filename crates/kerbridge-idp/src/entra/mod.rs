@@ -671,12 +671,21 @@ pub mod tests {
         block(REQUIRED_ONLY)
     }
 
-    /// Every value the template states must *be* the default, or the file
-    /// documents a number the code does not use. Parsing the template and the
-    /// required-fields-only document must therefore give the same settings.
+    /// Every value the template shows against a commented key must *be* the
+    /// default, or the file documents a number the code does not use. Parsing
+    /// the template and the required-fields-only document must therefore give
+    /// the same settings.
+    ///
+    /// The whole source file rather than the block alone: the lines to
+    /// complete are filled in first, and the schema that says which lines those
+    /// are is the assembled one. `REQUIRED_ONLY` below is what filling them in
+    /// comes to.
     #[test]
     fn the_template_states_the_defaults_it_claims() {
-        let rendered = crate::Provider::Entra.template().expect("the source renders");
+        let rendered = crate::Provider::Entra.source_template().expect("the source renders");
+        let schema = crate::Provider::Entra.source_schema().expect("the schema composes");
+        let rendered = kerbridge_core::config::decisions::completed(&rendered, &schema)
+            .expect("the template completes");
         let shown = block(&rendered);
         let stated = Settings::parse(&shown).expect("the template parses");
         let defaults = Settings::parse(&required()).expect("the minimal document parses");

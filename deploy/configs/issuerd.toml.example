@@ -5,7 +5,9 @@
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # Which unix group owns the socket and which unix user may speak on it, not a
 # preference either way. The socket directory is 0710 root:<group> and the

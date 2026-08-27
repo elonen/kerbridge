@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: elonen@iki.fi\n"
-"POT-Creation-Date: 2026-08-25 08:23+0000\n"
+"POT-Creation-Date: 2026-08-27 23:25+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -108,78 +108,37 @@ msgid ""
 " An address in that form fails later."
 msgstr ""
 
-#. Type: string
+#. Type: select
 #. Description
 #: ../kerbridge-config.templates:6001
-msgid "Cloud IdP tenant id:"
+msgid "Cloud identity provider for this deployment:"
 msgstr ""
 
-#. Type: string
+#. Type: select
 #. Description
 #: ../kerbridge-config.templates:6001
 msgid ""
-" The Microsoft Entra ID tenant whose users this deployment admits.\n"
-" Give the tenant id as a UUID."
+" KerBridge admits the users of one cloud IdP per source.\n"
+" This writes the source file for the one you choose."
 msgstr ""
 
-#. Type: string
+#. Type: select
 #. Description
 #: ../kerbridge-config.templates:6001
 msgid ""
-" Leave this empty only for a host that does no synchronization\n"
+" Choose none for a host that does no synchronization\n"
 " and serves no sign-ins, for example an administrator machine\n"
 " with kerbridge-manage.\n"
 " KerBridge then writes the config files\n"
 " with no identity provider in them."
 msgstr ""
 
-#. Type: string
+#. Type: select
 #. Description
 #: ../kerbridge-config.templates:6001
-msgid " This is not a secret."
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:7001
-msgid "UUID of the broker's Entra app, usually named \"KerBridge broker API\":"
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:8001
 msgid ""
-"UUID of the client's Entra app, usually named \"KerBridge public client\":"
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:9001
-msgid "UUID of the sync Entra app, usually named \"KerBridge sync\":"
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:10001
-msgid "Name of the cloud group whose members are admitted:"
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:10001
-msgid ""
-" Membership of this group admits an identity.\n"
-" KerBridge does not mirror the other users into the directory,\n"
-" and refuses each sign-in for them.\n"
-" Nothing works until a group with this name exists in the Entra tenant."
-msgstr ""
-
-#. Type: string
-#. Description
-#: ../kerbridge-config.templates:10001
-msgid ""
-" Any group is possible; this name is only a suggestion.\n"
-" When the realm is live, replace the name with the object id\n"
-" of the group in /etc/kerbridge/idp_entra.toml,\n"
-" so that a rename cannot point it elsewhere."
+" Nothing else about the provider is asked here.\n"
+" The identifiers that name your tenant and its applications\n"
+" are lines to complete in /etc/kerbridge/idp_<name>.toml,\n"
+" and `kbconfig check` lists every one of them at once."
 msgstr ""

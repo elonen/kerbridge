@@ -47,8 +47,10 @@ The files
 
   /etc/kerbridge/            The configuration set. Every option is one line,
                              and a line that starts with # sets nothing and
-                             takes the default. The comments in each file say
-                             what the option does.
+                             takes the default -- unless a # REQUIRED. note
+                             sits above it, which means the value is yours to
+                             supply and nothing starts until you do. The
+                             comments in each file say what the option does.
 
   /etc/kerbridge.secrets/    Credentials, as files. generated/ holds what
                              kbsetup wrote; the rest is what you supply.
@@ -71,9 +73,14 @@ deployment, edit the files.
 
 No secret is ever asked for through debconf. A value that passes through debconf
 is written to /var/cache/debconf/config.dat and again to the world-readable
-config.dat-old, so the install questions ask only for a realm, a URL, public
-application identifiers and a group's object id. `kbsetup secrets` collects the
-rest.
+config.dat-old, so the install questions ask only for a realm, a URL and the
+name of a cloud IdP adapter. `kbsetup secrets` collects the credentials.
+
+The identifiers naming your tenant and its applications are not asked for at
+all. They are lines to complete in /etc/kerbridge/idp_<name>.toml: a commented
+#key = under a # REQUIRED. note, with an example above it. Remove the # and
+write your own value. `kbconfig check` lists every line still waiting for you,
+all of them at once, and the install ends by running it.
 
 Two states that are normal, and are not faults
 ----------------------------------------------

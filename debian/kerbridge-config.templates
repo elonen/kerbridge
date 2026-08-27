@@ -50,39 +50,29 @@ _Description: Invalid LDAPS URL
   KerBridge refuses plain ldap:// and StartTLS.
   An address in that form fails later.
 
-Template: kerbridge-config/tenant_id
-Type: string
-_Description: Cloud IdP tenant id:
-  The Microsoft Entra ID tenant whose users this deployment admits.
-  Give the tenant id as a UUID.
+# NOT __Choices below. po-debconf extracts a __Choices list for translation, and
+# a translated choice is a value the config script would then have to match on.
+# These choices are adapter names -- `entra` is what a source file spells and
+# what `kbconfig init --source` takes -- so they must read the same in every
+# language. A second adapter touches the _Description and no choice list.
+# The list is retyped here because the config script cannot ask the binary; the
+# test the_provider_choices_are_every_adapter_this_build_carries in
+# crates/kerbridge-config holds it to Provider::ALL.
+Template: kerbridge-config/provider
+Type: select
+Choices: none, entra
+Default: entra
+_Description: Cloud identity provider for this deployment:
+  KerBridge admits the users of one cloud IdP per source.
+  This writes the source file for the one you choose.
  .
-  Leave this empty only for a host that does no synchronization
+  Choose none for a host that does no synchronization
   and serves no sign-ins, for example an administrator machine
   with kerbridge-manage.
   KerBridge then writes the config files
   with no identity provider in them.
  .
-  This is not a secret.
-
-Template: kerbridge-config/broker_api_client_id
-Type: string
-_Description: UUID of the broker's Entra app, usually named "KerBridge broker API":
-
-Template: kerbridge-config/public_client_id
-Type: string
-_Description: UUID of the client's Entra app, usually named "KerBridge public client":
-
-Template: kerbridge-config/sync_client_id
-Type: string
-_Description: UUID of the sync Entra app, usually named "KerBridge sync":
-
-Template: kerbridge-config/admission_group_id
-Type: string
-_Description: Object Id of the cloud group whose members are admitted:
-  Membership of this group admits an identity.
-  KerBridge does not mirror the other users into the directory,
-  and refuses each sign-in for them.
- .
-  Any group is possible. Create one in the Entra tenant, and read
-  the Object Id off its Overview page. The Id, and not the name:
-  a rename cannot point an Id at a different group.
+  Nothing else about the provider is asked here.
+  The identifiers that name your tenant and its applications
+  are lines to complete in /etc/kerbridge/idp_<name>.toml,
+  and `kbconfig check` lists every one of them at once.

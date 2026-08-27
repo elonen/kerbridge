@@ -42,7 +42,9 @@ cd "$(dirname "$0")/../.."
 [ -f configs/main.toml ] || {
   echo "deploy/configs/main.toml is missing. Copy the template set and edit it:"
   echo "  for f in configs/*.toml.example; do cp \"\$f\" \"\${f%.example}\"; done"
+  echo "Every required option arrives as a commented line to complete."
   echo "Then check it with: dist/kbconfig --config deploy/configs check"
+  echo "which lists every line still waiting for you, all at once."
   exit 1
 }
 

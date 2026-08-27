@@ -10,17 +10,23 @@
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # Its own directory identity, created by `kbsetup directory`. Not the
 # broker's and not a source's sync account: this one may write in the resource
 # OU, which neither of those may, and may not write inside an IdP-specific OU,
 # which a sync account must.
-bind_dn = "CN=svc-kerbridge-manage,CN=Users,DC=example,DC=site"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "CN=svc-kerbridge-manage,CN=Users,DC=example,DC=site"
+#bind_dn =
 
 # A host path, unlike every other password file in the set: no container mounts
 # this one. `kbsetup directory` generates it under deploy/secrets/generated/.
-bind_password_file = "/home/you/.config/kerbridge/svc_kerbridge_manage_password"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "/home/you/.config/kerbridge/svc_kerbridge_manage_password"
+#bind_password_file =
 
 # Both default to realm.toml's, and both are stated here when this host reaches
 # the DC differently from the way the containers do.

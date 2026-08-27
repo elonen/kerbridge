@@ -3,7 +3,9 @@
 # A commented-out line sets nothing. `#some_option = 8` means that KerBridge
 # uses 8, the default for that option. `#some_option =`, with no value, means
 # that the option has no default: the comment above the line says what
-# KerBridge does instead, and shows an example. main.toml gives the full rule.
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
 
 # Loopback, and a non-loopback address is refused. This process speaks plain
 # HTTP and Caddy terminates TLS in the network namespace they share, so binding
@@ -25,8 +27,12 @@
 # There is no search base setting. Each source's OU is derived from
 # realm.idp_parent_ou and the source name, so the broker searches the OU
 # belonging to whichever source the request arrived for.
-bind_dn = "CN=svc-kerbridge-broker,CN=Users,DC=example,DC=site"
-bind_password_file = "/etc/kerbridge.secrets/generated/svc_kerbridge_broker_password"
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "CN=svc-kerbridge-broker,CN=Users,DC=example,DC=site"
+#bind_dn =
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "/etc/kerbridge.secrets/generated/svc_kerbridge_broker_password"
+#bind_password_file =
 
 #issuer_socket = "/run/kerbridge/issuer.sock"
 

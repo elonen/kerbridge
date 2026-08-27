@@ -48,8 +48,10 @@ echo "" >&2
 echo "Paste the block above into the [provider_config] table of" >&2
 echo "configs/idp_<source>.toml, replacing tenant_id, broker_api_client_id," >&2
 echo "public_client_id, scope, sync_client_id and admission_group_id there." >&2
-echo "Some of those lines are commented out in that file. Paste over each one," >&2
-echo "or delete it: a line you leave commented out sets nothing." >&2
+echo "Every one of those lines is commented out in that file, under a" >&2
+echo "# REQUIRED. note: they are lines to complete. Paste over each one, or" >&2
+echo "delete it -- a line you leave commented out sets nothing, and kbconfig" >&2
+echo "check names every required line still waiting for you." >&2
 echo "Delete any admission_group (name) line already in that file -- that key" >&2
 echo "no longer exists, and a file that states it is refused at startup." >&2
 echo "" >&2

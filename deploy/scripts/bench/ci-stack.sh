@@ -96,13 +96,18 @@ KEEP=0
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die() { echo "ci-stack: $*" >&2; exit 1; }
 
-# Every request below wants the same three flags and the status code rather than
-# the exit status, because the codes are what is under test. $CA, $FQDN and $PORT
-# are resolved at call time; nothing here runs before they are set.
+# Every request below wants the same flags and the status code rather than the
+# exit status, because the codes are what is under test. $CA, $FQDN and $PORT are
+# resolved at call time; nothing here runs before they are set.
+#
+# --noproxy is among them, here and on every standalone curl below: --resolve
+# pins the request to 127.0.0.1, but curl picks its proxy from the URL's
+# *hostname*, which no --resolve touches. An http_proxy in the environment then
+# takes the bench's own loopback traffic and answers 502.
 api() {
   local method=$1 path=$2 out=$3
   shift 3
-  curl -sS -o "$out" -w '%{http_code}' -X "$method" \
+  curl -sS -o "$out" -w '%{http_code}' -X "$method" --noproxy '*' \
     --cacert "$CA/ca.crt" --resolve "$FQDN:$PORT:127.0.0.1" \
     "$@" "https://$FQDN:$PORT$path"
 }
@@ -501,14 +506,15 @@ done
 say "$msg"
 
 say "GET /$SOURCE/config"
-curl -fsS --cacert "$CA/ca.crt" --resolve "$FQDN:$PORT:127.0.0.1" "https://$FQDN:$PORT/$SOURCE/config"
+curl -fsS --noproxy '*' --cacert "$CA/ca.crt" --resolve "$FQDN:$PORT:127.0.0.1" \
+  "https://$FQDN:$PORT/$SOURCE/config"
 echo
 
 # Both halves of the segment at once: caddy's allowlist proxies any source name,
 # and the broker is what decides which ones exist. A caddy pattern narrowed to
 # one literal source would answer this 404 from the edge and look identical.
 say "a source this deployment does not serve"
-code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$CA/ca.crt" \
+code=$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' --cacert "$CA/ca.crt" \
   --resolve "$FQDN:$PORT:127.0.0.1" "https://$FQDN:$PORT/nosuch/config")
 [ "$code" = 404 ] || die "GET /nosuch/config answered $code, wanted 404"
 
@@ -516,7 +522,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$CA/ca.crt" \
 # and a port and has nowhere to put a source segment. One source is configured
 # here, so the answer names it.
 say "the address an SRV record can express"
-base=$(curl -fsS --cacert "$CA/ca.crt" --resolve "$FQDN:$PORT:127.0.0.1" \
+base=$(curl -fsS --noproxy '*' --cacert "$CA/ca.crt" --resolve "$FQDN:$PORT:127.0.0.1" \
   "https://$FQDN:$PORT/config" | python3 -c 'import json,sys; print(json.load(sys.stdin)["base_url"])')
 [ "$base" = "/$SOURCE" ] || die "GET /config said base_url=$base, wanted /$SOURCE"
 
@@ -567,7 +573,7 @@ echo "authorized device $GRANT_ID"
 # differently-nonced one -- and because the delegated device is a different key
 # claiming a different identity.
 sign_assertion() {  # key, point, identity
-  nonce=$(curl -fsS --cacert "$CA/ca.crt" --resolve "$FQDN:$PORT:127.0.0.1" \
+  nonce=$(curl -fsS --noproxy '*' --cacert "$CA/ca.crt" --resolve "$FQDN:$PORT:127.0.0.1" \
     "https://$FQDN:$PORT/$SOURCE/nonce" |
     python3 -c 'import json,sys; print(json.load(sys.stdin)["nonce"])')
   KB_KEY=$1 KB_POINT=$2 KB_IDENTITY=$3 KB_NONCE=$nonce KB_REALM=$REALM \

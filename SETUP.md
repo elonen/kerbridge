@@ -227,8 +227,14 @@ cd kerbridge/deploy
 cp .env.example .env
 for f in configs/*.toml.example; do cp "$f" "${f%.example}"; done
 $EDITOR .env configs/*.toml   # both files have many comments; read them as you go
+make check-config             # lists every line still to complete, all at once
 make up
 ```
+
+Every copied file arrives with each required option written as a **line to
+complete**: a commented `#key =` under a `# REQUIRED.` note and an example.
+Remove the `#` and write your own value. Nothing starts until all of them are
+done, and `make check-config` names the ones that are left.
 
 You edit two files, because they answer different questions. `.env` is the
 shape of the deployment, and Compose and the scripts read it. `configs/*.toml`

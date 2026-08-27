@@ -21,6 +21,11 @@
 //! It reads the config set **in process**, through `kerbridge-core` -- not
 //! through `kbconfig get`, which the shell it replaces needs only because shell
 //! cannot parse TOML, at a subprocess per value.
+//!
+//! The one exception is `status` on a set that will not load, which runs
+//! `kbconfig check` once for the report. That is a *question this binary cannot
+//! answer*: only `kbconfig` carries the config schema, `make test-fast`
+//! refusing schemars in this crate's tree.
 
 #![forbid(unsafe_code)]
 

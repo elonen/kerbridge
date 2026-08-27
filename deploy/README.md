@@ -528,7 +528,12 @@ from one:
   fine under Docker Desktop and fails on Linux with `Permission denied (os error
   13)`, taking caddy down with it (`network_mode: service:broker` cannot attach to
   a restarting container). `make check-secrets` enforces the modes on both, but
-  only Linux can prove them.
+  only Linux can prove them — and not every Linux host. Where the checkout is a
+  virtiofs or FUSE mount of a host directory, which is what a development VM or a
+  sandbox gives you, `chgrp` exits 0 and changes nothing and the mount remaps
+  ownership into the container exactly as Docker Desktop does. `check-secrets.sh`
+  probes the tree for that rather than trusting `uname`, and says so on a run
+  where the probe makes it skip the group rule.
 
 ### The bench's own fixtures are tracked, in `bench.env`
 

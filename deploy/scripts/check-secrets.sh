@@ -23,9 +23,12 @@
 #   2. The secrets an unprivileged container reads must go further and *be*
 #      group-readable by BROKER_GID: the broker and sync both run as unprivileged
 #      uids and reach their own secret through that group, exactly as they reach
-#      the issuer socket. Linux only -- Docker Desktop remaps ownership into the
-#      container, so the macOS bench neither needs the group nor can set it (an
-#      unprivileged operator cannot chgrp to a group they are not in).
+#      the issuer socket. Judged only where the secrets tree carries ownership
+#      -- see carries_ownership() below. A bind source that remaps ownership
+#      into the container neither needs the group nor can be given it. Off Linux
+#      the rule is skipped outright: the remap happens at the VM boundary, where
+#      a host-side probe cannot see it, and an unprivileged operator cannot chgrp
+#      to a group they are not in.
 #
 #      A source's credential is judged only once it has content: it arrives from
 #      the portal after the deployment is running, and sync skips that source
@@ -114,9 +117,52 @@ for f in secrets/generated/idp/*/bind_password secrets/idp/*/credential; do
 $f:sync (uid ${SYNC_UID:-10003})"
 done
 
+# Does this filesystem remember the group a chgrp sets on it? A virtiofs or
+# FUSE-backed bind source -- what a Linux VM mounting a host directory gives you
+# -- takes the call with exit 0 and leaves the group alone, then remaps ownership
+# again on the way into the container, so every accessor sees the file as owned
+# by itself and reads it whatever the host-side group says. Measured both ways:
+# `chgrp 10002` from the host and from a container each reported success and
+# changed nothing, and a container running as 10001:10002 read the 0640 file
+# regardless. Rule 2 is then unsatisfiable *and* unnecessary. `kbsetup directory`
+# and prepare-state already warn rather than fail on this, and a gate that
+# refused what they permit would make the deployment they describe unstartable.
+#
+# Three outcomes, and only the middle one relaxes anything:
+#   exit 0 and the group changed -- ownership is real; judge it.
+#   exit 0 and it did not        -- the source is remapping; skip rule 2.
+#   non-zero                     -- the kernel refused a chgrp, which only a
+#                                   filesystem that stores ownership does; judge it.
+# Anything else, a secrets/ this cannot write a probe into included, judges as
+# before: refusing a deployment that would have worked is recoverable, starting
+# one whose daemons cannot read their credentials is not. The probe is a dotfile,
+# so the globs above -- which have already run -- would not match it either way.
+carries_ownership() {
+  probe=$(mktemp secrets/.owner-probe.XXXXXX 2>/dev/null) || return 0
+  chgrp "$GID" "$probe" 2>/dev/null || { rm -f "$probe"; return 0; }
+  got=$(ls -lnd "$probe" | awk '{print $4}')
+  rm -f "$probe"
+  [ "$got" = "$GID" ]
+}
+
+# Decided once, and said out loud when it comes out false. A gate that stops
+# checking half of what it checks and still prints nothing is the quietest way to
+# lose it: a clean run and a half-run have to look different, or the next
+# operator reads silence as "the groups were checked and were right".
+judge_group=1
+if [ "$(uname -s)" != "Linux" ]; then
+  judge_group=0
+elif ! carries_ownership; then
+  judge_group=0
+  echo "  Note: secrets/ is on a bind source that does not record the group a chgrp"
+  echo "    sets (FUSE, virtiofs, Docker Desktop). Such a source remaps ownership into"
+  echo "    the container, so every daemon reads its own secret whatever the group here"
+  echo "    says -- the group half of this check was skipped. The modes above still hold."
+fi
+
 while IFS= read -r pair; do
   f=${pair%%:*}
-  [ "$(uname -s)" = "Linux" ] || continue
+  [ "$judge_group" = 1 ] || continue
   # -s, not -f: a source's credential exists empty on a fresh deployment, and its
   # reader skips that source until it has content. notify_url's readers do not --
   # see rule 2.

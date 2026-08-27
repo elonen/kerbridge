@@ -93,21 +93,55 @@ The option's own line stays bare, with nothing after the `=`:
 
 The bare line is what keeps the two forms apart. `#key = value` always means
 that the value shown is the one KerBridge uses. `#key =` always means that there
-is no fixed value to show: KerBridge either derives the value from another
-option or leaves it unset, and the comment above says which. A file that showed
-an example on the option's own line would read as though the example were in
-use. To set such an option the operator must remove the `#` *and* supply a
-value — `base_dn =` alone is not valid TOML.
+is no fixed value to show, and the comment above says which of the three cases
+it is: KerBridge derives the value from another option, or leaves it unset, or
+requires the operator to supply one — a [line to complete](#line-to-complete).
+A file that showed an example on the option's own line would read as though the
+example were in use. To set such an option the operator must remove the `#`
+*and* supply a value — `base_dn =` alone is not valid TOML.
 <!-- refs: `Realm::base_dn`, `Notify::url_file`, `SourceFile::ou` -->
 <!-- avoid: sample, placeholder, illustration -->
 <!-- different than: default (a value the code really uses) -->
+
+### line to complete
+
+A [configuration option](#configuration-option) the parser requires, as a
+[template](#template-config) writes it: commented out like every other line,
+under its [example value](#example-value) and one note saying the operator has
+to answer it.
+
+```toml
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "EXAMPLE.SITE"
+#realm =
+```
+
+A required option **used to be stated with its example**, and that is the hole
+this closes. A config set written by `kbconfig init` with no answers, or copied
+from `deploy/configs/*.toml.example`, then named `EXAMPLE.SITE` as its realm and
+`aaaabbbb-0000-cccc-1111-dddd2222eeee` as its tenant — and *passed*
+`kbconfig check`. A set nobody completed looked finished. As a line to complete
+it fails instead, at `kbconfig check` and at every daemon's `ExecStartPre`.
+
+`kbconfig check` names every one of them in the set before the parser runs,
+because serde reports one missing field per file and stops: completing a fresh
+`idp_<name>.toml` one refusal at a time is otherwise nine runs.
+
+The three values a deployment cannot be asked to complete are written by
+`kbconfig init --source <name>[=<provider>]`: `main.sources`, and each source
+file's `name` and `provider`. Nothing else may write them, so the list and the
+files beside it cannot disagree.
+<!-- refs: `REQUIRED_NOTE` in `config/template.rs`, `Read::incomplete`, `kbconfig check`, `kbconfig init --source` -->
+<!-- avoid: placeholder, blank, unset option, TODO line -->
+<!-- different than: example value (the shape shown above such a line) -->
 
 ### template (config)
 
 The commented document that `kbconfig init <dir>` writes for one file of the
 [config set](../../deploy/GLOSSARY.md#config-set). It holds the prose that
 documents each [configuration option](#configuration-option), the required
-options as lines to complete, and every other option commented out.
+options as [lines to complete](#line-to-complete), and every other option
+commented out at its [default](#default). It states nothing at all.
 
 A template is documentation as much as a starting point. Nobody writes one: it
 is rendered from a [template source](#template-source), and the committed
@@ -115,10 +149,9 @@ is rendered from a [template source](#template-source), and the committed
 
 A template is also where an answer is *placed*: `init --set` and `upgrade` both
 rewrite the one line that names the option and leave every other line alone. So
-a template names each option exactly once, in one of these forms, and each form
-shows a value of the option's own type — the example a required option is
-written with, the default a commented one names, or the `# Example:` above a
-line that shows neither.
+a template names each option exactly once, in one of two forms, and each form
+shows a value of the option's own type — the default a commented line names, or
+the `# Example:` above a line that shows none.
 <!-- refs: `templates()`, `render`, `decisions::lines`, `deploy/configs/*.toml.example` -->
 <!-- avoid: sample config, skeleton, boilerplate, the example files -->
 
@@ -130,11 +163,12 @@ layout, but with a `{{key}}` line in place of each
 template.
 
 The point is that no value is written twice. A `{{key}}` line becomes
-`key = <example>` for a required option, `#key = <default>` where the parser has
-a [default](#default), and a bare `#key =` under an `# Example:` line where it
-has neither — all read from the [config schema](#config-schema). A source
-therefore cannot show a value the code does not use, name a key the parser
-dropped, or miss a key the parser gained.
+`#key = <default>` where the parser has a [default](#default), and a bare
+`#key =` under an `# Example:` line where it has none — with the required note
+above that example where the parser requires the option, which is a
+[line to complete](#line-to-complete). All of it read from the
+[config schema](#config-schema). A source therefore cannot show a value the code
+does not use, name a key the parser dropped, or miss a key the parser gained.
 
 Prose has two homes, and the source decides which. A comment block above the
 line is the template's own, and is used as written: this is what carries the
@@ -155,9 +189,10 @@ parser requires it, its [default](#default) and its
 
 It is generated and never written by hand, so it cannot disagree with the
 parser. `render` reads it to make a [template](#template-config), the tests read
-it to prove that a template states every required option and comments out every
-other one, and `kbconfig schema <dir>` writes it out as one document per file
-for an editor to validate a live file against.
+it to prove that a template comments out every option and marks the required
+ones as [lines to complete](#line-to-complete), `kbconfig check` reads it to
+name the lines a set has not completed, and `kbconfig schema <dir>` writes it
+out as one document per file for an editor to validate a live file against.
 
 A source file's document is the only one that is assembled. `kerbridge-core`
 leaves `provider_config` out of the envelope's schema, so `kerbridge-idp` puts
