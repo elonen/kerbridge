@@ -503,11 +503,6 @@ pub struct Sync {
     /// source in turn, so the time between two reads of one source is that
     /// cycle plus this pause.
     pub interval_seconds: u32,
-    /// Bounds each attempt of the read from the cloud IdP: a read that overruns
-    /// it is discarded rather than planned from. A cycle that meets an expired
-    /// or corrupt delta cursor reads a second time, and the second attempt gets
-    /// this allowance again.
-    pub read_deadline_seconds: u32,
     pub sam_source: String,
     pub automatic_sam_renames: bool,
     pub dry_run: bool,
@@ -528,7 +523,6 @@ impl Default for Sync {
     fn default() -> Self {
         Self {
             interval_seconds: 300,
-            read_deadline_seconds: 240,
             sam_source: "displayname".to_owned(),
             automatic_sam_renames: true,
             dry_run: false,

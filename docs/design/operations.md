@@ -322,7 +322,7 @@ v1 events, and their repeat policy:
 | `grant-group-misconfigured` — the configured device-grant group and the marker disagree, in either direction: grants still working after the operator turned the feature off, or no machine able to authorize at all. Invisible to the broker, which sees one marked group and nothing wrong | sync | persisting |
 | `device-grants-expiring` — one aggregate, not one problem per device: a laptop fleet would make the per-device form unusable, and the per-user channel already exists in the tray. Off unless `sync.toml`'s `device_grant_notify` names a threshold | sync | persisting |
 | `sync-cursor-corrupt` — a stored delta cursor was rejected (400) and the cycle fell back to a full read. The one **incident**: never an open problem | sync | persisting |
-| `sync-cycle-failing`, after three consecutive discarded cycles — a cycle counts as discarded whether it was abandoned in-band (an incomplete read) or abandoned by a transport failure against Graph or LDAP | sync | persisting |
+| `sync-cycle-failing`, after three consecutive discarded cycles — a cycle counts as discarded whether it was abandoned in-band (a stalled read) or abandoned by a transport failure against Graph or LDAP | sync | persisting |
 | `sync-name-collision` — a `sAMAccountName` collision blocked the whole cycle | sync | persisting |
 | `sync-apply-failing` — the directory rejected writes the plan expected to succeed, usually a delegation ACE that was never granted. The cycle returns `Ok`, so nothing else counts it | sync | persisting |
 | `idp-trust-failure` — outbound TLS to Entra could not be validated, distinct from Entra being merely unreachable | broker | persisting |

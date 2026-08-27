@@ -1,9 +1,11 @@
 kerbridge (@VERSION@) unstable; urgency=@URGENCY@
 
-  sync.toml: the option cycle_deadline_seconds is now read_deadline_seconds.
-  The daemon refuses a file that still names the old option, so rename it
-  before you restart. `kbconfig upgrade --dry-run` shows the change, and
-  `kbconfig upgrade` makes it. A file that never set the option needs no
-  work.
+  sync.toml: the options cycle_deadline_seconds and read_deadline_seconds are
+  removed. A read from the cloud IdP runs until the directory has been read
+  out, so there is no allowance to set; a read that stops making progress is
+  abandoned on its own and the cycle is discarded. The daemon refuses a file
+  that still names either option, so remove it before you restart.
+  `kbconfig upgrade --dry-run` shows the change, and `kbconfig upgrade` makes
+  it. A file that never set an option needs no work.
 
  -- @MAINTAINER@  @DATE@

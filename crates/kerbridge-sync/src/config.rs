@@ -26,10 +26,6 @@ use crate::planner::SamSource;
 pub struct Config {
     /// The pause between cycles, not the rate of them.
     pub interval: Duration,
-    /// What one attempt of one source's Graph read is allowed. Not a bound on
-    /// the cycle: the LDAP read and the apply run outside it, and a cycle that
-    /// resyncs reads a second time under a fresh one.
-    pub read_deadline: Duration,
     /// Compute and log the plan but apply nothing. A safe way to watch a new
     /// deployment before letting it write.
     pub dry_run: bool,
@@ -118,7 +114,6 @@ impl Config {
 
         let config = Self {
             interval: interval(sync.interval_seconds)?,
-            read_deadline: Duration::from_secs(sync.read_deadline_seconds.into()),
             dry_run: sync.dry_run,
             sam_source: sam_source(&sync.sam_source)?,
             automatic_sam_renames: sync.automatic_sam_renames,
@@ -242,6 +237,27 @@ impl SourceConfig {
     pub fn credential_days_remaining(&self, now: u64) -> Option<i64> {
         let expiry = days_from_ymd(self.credential_expires.as_deref()?)?;
         Some(expiry - (now / 86_400) as i64)
+    }
+
+    /// One source with nothing behind it, for a test driving a cycle without a
+    /// config set. Lives here because `provider` is this module's own.
+    #[cfg(test)]
+    pub fn for_test() -> Self {
+        Self {
+            source: Source::new("entra").expect("a source name"),
+            provider: Provider::Entra,
+            idp_ou: "OU=Entra,OU=CloudIdP,DC=example,DC=site".to_owned(),
+            group_suffix: "-kb".to_owned(),
+            bind_dn: "CN=svc-sync,DC=example,DC=site".to_owned(),
+            bind_password: "unused".to_owned(),
+            tenant_id: "00000000-0000-0000-0000-000000000000".to_owned(),
+            graph_client_id: "11111111-1111-1111-1111-111111111111".to_owned(),
+            credential_file: PathBuf::from("/nonexistent/credential"),
+            credential_expires: None,
+            admission_group: GroupBinding::Name("KerBridge Users".to_owned()),
+            grant_group: None,
+            allowlist: Vec::new(),
+        }
     }
 }
 

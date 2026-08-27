@@ -766,12 +766,9 @@ const SYNC_SRC: &str = r#"# Sync: what the mirror does, and how it names what it
 # reads every source in turn, so the time between two reads of one source is
 # that cycle plus this pause.
 #
-# read_deadline_seconds bounds each attempt of the read from the cloud IdP. A
-# read that overruns it is discarded, and nothing is planned from it. A cycle
-# that meets an expired or corrupt delta cursor reads a second time, and the
-# second attempt gets this allowance again.
+# A read from the cloud IdP runs until it is done, however long that takes. A
+# read that stops making progress is abandoned, and the cycle is discarded.
 {{interval_seconds}}
-{{read_deadline_seconds}}
 
 # Which cloud-IdP attribute a *newly created* account's login name
 # (sAMAccountName) is minted from. Existing accounts are never renamed by a

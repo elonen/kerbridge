@@ -133,7 +133,7 @@ touched.
 ### cycle
 
 One read / plan / apply pass, repeated after a pause. A cycle plans
-whole or is discarded — an `incomplete read`, an ambiguous admission marker or a
+whole or is discarded — a `stalled read`, an ambiguous admission marker or a
 `sAMAccountName` collision refuses the entire plan — but once applying has
 started a failed op is recorded and the remaining ops still run.
 <!-- refs: `run_cycle` in `crates/kerbridge-sync/src/main.rs` -->
@@ -248,15 +248,6 @@ files. Only the SID is held: the name is released in the same cycle, and
 a live-form `sAMAccountName`.
 <!-- avoid: retained, in retention, held-age -->
 
-### incomplete read
-
-A Graph stream read cut short by the read deadline,
-having been throttled or paged past it, and therefore no evidence that anything
-is absent. Nothing may be planned from one: the
-`cycle` is discarded and counted toward the consecutive-failure alert.
-<!-- refs: `StreamResult::Incomplete` -->
-<!-- avoid: partial read, partial-read refusal, incomplete -->
-
 ### op
 
 One reconciliation action targeting exactly one DN inside the IdP-specific OU:
@@ -370,6 +361,16 @@ Graph's restorable removal, reported as `@removed.reason:
 "changed"`; the object waits in the `recycle bin`. For a group, sync treats both
 removal reasons the same way — quarantine now.
 <!-- avoid: softdeleted, reason changed -->
+
+### stalled read
+
+A Graph stream read abandoned because no page arrived for long enough to call
+it dead, and therefore no evidence that anything is absent. Nothing may be
+planned from one: the `cycle` is discarded and counted toward the consecutive-
+failure alert. It says Graph is unreachable or refusing, never that the
+directory is large — how long a whole read takes is not bounded.
+<!-- refs: `StreamResult::Stalled` -->
+<!-- avoid: incomplete read, partial read, partial-read refusal, incomplete, timeout, read deadline -->
 
 ### throttle
 

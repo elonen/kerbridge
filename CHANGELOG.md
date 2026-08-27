@@ -26,8 +26,11 @@ names the tag, and it stops if that section is absent or empty.
 
 ## Unreleased
 
-- Config `sync.toml`: `cycle_deadline_seconds` is now `read_deadline_seconds`.
-  Run `kbconfig upgrade` to rename it, or edit the file.
+- Config `sync.toml`: `cycle_deadline_seconds` and `read_deadline_seconds`
+  are removed. A read from the cloud IdP runs until the directory has been
+  read out, so there is no allowance to set. A read that stops making
+  progress is abandoned on its own. Run `kbconfig upgrade` to remove the
+  option, or edit the file.
 
 ## 0.9.2
 

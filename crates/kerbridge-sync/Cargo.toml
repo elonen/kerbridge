@@ -26,3 +26,8 @@ rustls.workspace = true
 # sync is the only writer of `sAMAccountName`, so it is the only component that
 # needs Unicode normalization
 unicode-normalization.workspace = true
+
+[dev-dependencies]
+# A loopback receiver, so a cycle's incidents are counted off the wire rather
+# than from a private field. Already in the lock via the broker.
+axum.workspace = true

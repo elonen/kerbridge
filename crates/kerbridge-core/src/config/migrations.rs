@@ -66,6 +66,13 @@ pub const MIGRATIONS: &[Migration] = &[
         from: "cycle_deadline_seconds",
         to: "read_deadline_seconds",
     },
+    // Both spellings resolve: the entry above rewrites the old name into this
+    // one, and this entry then removes it.
+    Migration::Retired {
+        file: "sync.toml",
+        key: "read_deadline_seconds",
+        instead: "a read runs until it is done, and a stalled one is abandoned on its own",
+    },
 ];
 
 /// What a source file is called in an entry. A deployment names its own source

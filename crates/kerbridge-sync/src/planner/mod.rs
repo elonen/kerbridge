@@ -3,8 +3,8 @@
 //!
 //! Four safety properties are structural, not incidental:
 //!
-//! - A partial Graph read (`desired.complete == false`) produces no plan at all,
-//!   so an incomplete read can never delete or disable anything.
+//! - A Graph read that does not assert `complete read` (`desired.complete ==
+//!   false`) produces no plan at all, so it can never delete or disable anything.
 //! - Every op targets a DN inside the IdP-specific OU; [`Builder::add`] asserts it, so a
 //!   bug cannot make the applier write outside this source's own OU.
 //! - A `sAMAccountName` collision on any new group refuses the whole cycle rather

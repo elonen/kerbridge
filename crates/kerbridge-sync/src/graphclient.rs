@@ -13,9 +13,10 @@
 //!   a fresh delta, and the caller alerts. Only on a request that *carried* a
 //!   cursor: a `400` on a URL built here from constants is a fault to surface,
 //!   not a cursor to throw away.
-//! - Each read attempt has a deadline; a read that cannot finish returns
-//!   [`StreamResult::Incomplete`] and the caller discards the cycle -- a partial
-//!   read must never reach the planner.
+//! - A read runs until the stream ends. Only a stall stops it early -- no page for
+//!   [`STALL_LIMIT`] -- and that returns [`StreamResult::Stalled`], which the caller
+//!   discards. A whole read has no time bound: a large tenant is not a fault, and a
+//!   read that did not finish must not reach the planner.
 
 use std::time::{Duration, Instant};
 
@@ -39,6 +40,11 @@ const USER_SELECT: &str =
 const GROUP_SELECT: &str = "id,displayName,members";
 /// Exponential-backoff ceiling for header-less throttling and transient errors.
 const BACKOFF_CAP_SECS: u64 = 300;
+/// How long a read may make no progress before it is abandoned. Bounds the gap
+/// between two pages, never the whole read, so it puts no limit on directory
+/// size. Set against the backoff ceiling, so a run of throttling is ridden out
+/// rather than reported as a fault.
+const STALL_LIMIT: Duration = Duration::from_secs(3 * BACKOFF_CAP_SECS);
 
 pub struct GraphClient {
     http: reqwest::Client,
@@ -61,8 +67,9 @@ pub enum StreamResult<T> {
     /// `400`: the stored cursor is corrupt. Discard it, resync from a fresh
     /// delta, and alert -- this is local state corruption, not a Graph outage.
     CursorCorrupt,
-    /// The read deadline passed mid-read. Discard; produce no plan.
-    Incomplete,
+    /// No page arrived for [`STALL_LIMIT`]. Graph is unreachable or is refusing
+    /// every attempt; discard and produce no plan.
+    Stalled,
 }
 
 /// A credential failure the caller must surface to an operator, kept distinct
@@ -98,19 +105,45 @@ enum Outcome<T> {
     Transient,
 }
 
-impl GraphClient {
-    pub fn new(tenant: String, client_id: String, secret: String) -> Result<Self> {
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .context("building the Graph HTTP client")?;
-        Ok(Self { http, tenant, client_id, secret })
-    }
+/// Everything a cycle asks of Graph: a token, the two delta streams, and the
+/// role-group lookup a display-name binding needs. Nothing else in this crate
+/// speaks to the tenant.
+///
+/// [`GraphClient`] is the only implementation a deployment runs. The trait is
+/// earned by testability alone -- the cycle's cursor recovery is otherwise
+/// observable only against a live tenant. It is not a `DirectorySource`: that
+/// boundary produces a desired state, this one produces the bytes one is built
+/// from.
+pub trait GraphReader {
+    async fn acquire_token(&self) -> Result<String, TokenError>;
 
+    /// Read the users stream. `cursor` is a stored `@odata.deltaLink`; `None`
+    /// starts a fresh delta, whose first read returns the full user set.
+    async fn read_users(&self, token: &str, cursor: Option<&str>) -> Result<StreamResult<RawUser>>;
+
+    /// Read the groups stream, `members` included so membership edges arrive
+    /// with the group. Group selection is filtered client-side afterwards.
+    async fn read_groups(
+        &self,
+        token: &str,
+        cursor: Option<&str>,
+    ) -> Result<StreamResult<RawGroup>>;
+
+    /// Bootstrap role-group resolution: a plain `displayName eq` filter that
+    /// must match exactly one group. Used only when no immutable id is
+    /// configured.
+    ///
+    /// `id_setting` is the `.env` key that binds the group by id, so an
+    /// ambiguous name tells the operator which setting resolves it rather than
+    /// which one the last caller happened to be about.
+    async fn resolve_group(&self, token: &str, name: &str, id_setting: &str) -> Result<String>;
+}
+
+impl GraphReader for GraphClient {
     /// Acquire an app-only access token by client credentials. A shared secret is
     /// the degraded option -- a bearer string with an expiry the operator has to
     /// track by hand; the preferred certificate path is not built yet.
-    pub async fn acquire_token(&self) -> Result<String, TokenError> {
+    async fn acquire_token(&self) -> Result<String, TokenError> {
         let url = format!("https://login.microsoftonline.com/{}/oauth2/v2.0/token", self.tenant);
         let params = [
             ("client_id", self.client_id.as_str()),
@@ -146,6 +179,42 @@ impl GraphClient {
         }
     }
 
+    async fn read_users(&self, token: &str, cursor: Option<&str>) -> Result<StreamResult<RawUser>> {
+        let start = cursor
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("{GRAPH}/users/delta?$select={USER_SELECT}"));
+        self.read_stream(token, &start).await
+    }
+
+    async fn read_groups(
+        &self,
+        token: &str,
+        cursor: Option<&str>,
+    ) -> Result<StreamResult<RawGroup>> {
+        let start = cursor
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("{GRAPH}/groups/delta?$select={GROUP_SELECT}"));
+        self.read_stream(token, &start).await
+    }
+
+    async fn resolve_group(&self, token: &str, name: &str, id_setting: &str) -> Result<String> {
+        let url = group_by_name_url(name);
+        match self.get_page::<RawGroup>(token, &url).await? {
+            Outcome::Page(p) => pick_single_group(&p.value, name, id_setting),
+            _ => bail!("group resolution for {name:?} got a non-200 response"),
+        }
+    }
+}
+
+impl GraphClient {
+    pub fn new(tenant: String, client_id: String, secret: String) -> Result<Self> {
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .context("building the Graph HTTP client")?;
+        Ok(Self { http, tenant, client_id, secret })
+    }
+
     async fn get_page<T: DeserializeOwned>(&self, token: &str, url: &str) -> Result<Outcome<T>> {
         assert_graph_url(url)?;
         let resp = self
@@ -174,14 +243,14 @@ impl GraphClient {
         &self,
         token: &str,
         start: &str,
-        deadline: Instant,
     ) -> Result<StreamResult<T>> {
         let mut url = start.to_owned();
         let mut items = Vec::new();
         let mut backoff = 1u64;
+        let mut last_page = Instant::now();
         loop {
-            if Instant::now() >= deadline {
-                return Ok(StreamResult::Incomplete);
+            if last_page.elapsed() >= STALL_LIMIT {
+                return Ok(StreamResult::Stalled);
             }
             match self.get_page::<T>(token, &url).await? {
                 Outcome::Page(p) => {
@@ -190,6 +259,7 @@ impl GraphClient {
                         Some(next) => {
                             url = next;
                             backoff = 1;
+                            last_page = Instant::now();
                         }
                         // Only a deltaLink (or a plain list's end) terminates.
                         None => {
@@ -198,9 +268,9 @@ impl GraphClient {
                     }
                 }
                 // Capped like the computed backoff, and for the same reason: this
-                // is a number the server chose. Honoring an hour of it would
-                // hold the read well past its deadline, and the deadline check
-                // above only runs between sleeps.
+                // is a number the server chose. Honoring an hour of it would sit
+                // unresponsive for an hour, and the stall check above only runs
+                // between sleeps.
                 Outcome::Throttled(Some(secs)) => {
                     tokio::time::sleep(Duration::from_secs(secs.min(BACKOFF_CAP_SECS))).await;
                 }
@@ -211,48 +281,6 @@ impl GraphClient {
                 Outcome::Resync => return Ok(StreamResult::Resync),
                 Outcome::CursorCorrupt => return Ok(StreamResult::CursorCorrupt),
             }
-        }
-    }
-
-    /// Read the users stream. `cursor` is a stored `@odata.deltaLink`; `None`
-    /// starts a fresh delta, whose first read returns the full user set.
-    pub async fn read_users(
-        &self,
-        token: &str,
-        cursor: Option<&str>,
-        deadline: Instant,
-    ) -> Result<StreamResult<RawUser>> {
-        let start = cursor
-            .map(str::to_owned)
-            .unwrap_or_else(|| format!("{GRAPH}/users/delta?$select={USER_SELECT}"));
-        self.read_stream(token, &start, deadline).await
-    }
-
-    /// Read the groups stream, `members` included so membership edges arrive with
-    /// the group. Group selection is filtered client-side afterwards.
-    pub async fn read_groups(
-        &self,
-        token: &str,
-        cursor: Option<&str>,
-        deadline: Instant,
-    ) -> Result<StreamResult<RawGroup>> {
-        let start = cursor
-            .map(str::to_owned)
-            .unwrap_or_else(|| format!("{GRAPH}/groups/delta?$select={GROUP_SELECT}"));
-        self.read_stream(token, &start, deadline).await
-    }
-
-    /// Bootstrap role-group resolution: a plain `displayName eq` filter that must
-    /// match exactly one group. Used only when no immutable id is configured.
-    ///
-    /// `id_setting` is the `.env` key that binds the group by id, so an ambiguous
-    /// name tells the operator which setting resolves it rather than which one
-    /// the last caller happened to be about.
-    pub async fn resolve_group(&self, token: &str, name: &str, id_setting: &str) -> Result<String> {
-        let url = group_by_name_url(name);
-        match self.get_page::<RawGroup>(token, &url).await? {
-            Outcome::Page(p) => pick_single_group(&p.value, name, id_setting),
-            _ => bail!("group resolution for {name:?} got a non-200 response"),
         }
     }
 }

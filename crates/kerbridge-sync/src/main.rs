@@ -13,9 +13,9 @@
 //! cycle per source: acquire an app-only token, read the users and groups delta
 //! streams into a [`graph::Shadow`], turn that into a desired state, diff it
 //! against the current directory with the [`planner`], and apply the plan over
-//! delegated LDAPS as that source's own account. A partial read is discarded
-//! rather than planned from -- no incomplete read can delete or disable
-//! anything.
+//! delegated LDAPS as that source's own account. A read that does not assert
+//! `complete read` is discarded rather than planned from, so it can never
+//! delete or disable anything.
 //!
 //! Sequential rather than concurrent, which is what makes the realm
 //! single-writer: two sources allocating a `sAMAccountName` at once would each
@@ -34,7 +34,7 @@ mod planner;
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use kerbridge_core::audit::AuditLog;
@@ -46,7 +46,7 @@ use kerbridge_notify::{Event, Notifier, Severity};
 use crate::config::{Config, SourceConfig};
 use crate::directory::{Directory, marker_index};
 use crate::graph::{Shadow, build_desired};
-use crate::graphclient::{GraphClient, StreamResult, TokenError};
+use crate::graphclient::{GraphClient, GraphReader, StreamResult, TokenError};
 use crate::planner::{AlertKind, Current, PlanCtx, PlanError, plan_sync};
 
 /// Consecutive discarded cycles before an operator is alerted.
@@ -120,7 +120,7 @@ impl SourceSync {
     /// Which of the two it is comes off the binding rather than off the cache,
     /// so a pinned id is never looked up -- the pin exists precisely to stop a
     /// renamed or recreated group from resolving to a different one.
-    async fn admission_oid(&mut self, graph: &GraphClient, token: &str) -> Result<String> {
+    async fn admission_oid(&mut self, graph: &impl GraphReader, token: &str) -> Result<String> {
         let name = match &self.cfg.admission_group {
             GroupBinding::Id(id) => return Ok(id.clone()),
             GroupBinding::Name(name) => name.clone(),
@@ -140,7 +140,7 @@ impl SourceSync {
     /// Unlike the admission group, a name that resolves to nothing is not fatal:
     /// it stops device grants and leaves everything else synchronizing, where
     /// failing the cycle would make an unrelated typo a full outage.
-    async fn grant_oid(&mut self, graph: &GraphClient, token: &str) -> Option<String> {
+    async fn grant_oid(&mut self, graph: &impl GraphReader, token: &str) -> Option<String> {
         let name = match self.cfg.grant_group.as_ref()? {
             GroupBinding::Id(id) => return Some(id.clone()),
             GroupBinding::Name(name) => name.clone(),
@@ -220,7 +220,7 @@ impl SourceSync {
     async fn run_cycle(
         &mut self,
         shared: &Config,
-        graph: &GraphClient,
+        graph: &impl GraphReader,
         notifier: &Notifier,
     ) -> Result<()> {
         let name = self.cfg.name().to_owned();
@@ -252,14 +252,12 @@ impl SourceSync {
         let mut users_cursor = self.state.users_cursor.clone();
         let mut groups_cursor = self.state.groups_cursor.clone();
         for attempt in 0..2 {
-            let deadline = Instant::now() + shared.read_deadline;
-            let users = outcome(graph.read_users(&token, users_cursor.as_deref(), deadline).await?);
-            let groups =
-                outcome(graph.read_groups(&token, groups_cursor.as_deref(), deadline).await?);
+            let users = outcome(graph.read_users(&token, users_cursor.as_deref()).await?);
+            let groups = outcome(graph.read_groups(&token, groups_cursor.as_deref()).await?);
             use Outcome::*;
             // Read before the match consumes them: the discard arm has to name
-            // which cause it met, and only the deadline has an operator action.
-            let deadline_cut = matches!(users, Incomplete) || matches!(groups, Incomplete);
+            // which cause it met.
+            let stalled = matches!(users, Stalled) || matches!(groups, Stalled);
             match (users, groups) {
                 (Ready(uv, ucur), Ready(gv, gcur)) => {
                     self.state.shadow.apply_users(uv);
@@ -311,9 +309,9 @@ impl SourceSync {
                     groups_cursor = None;
                 }
                 _ => {
-                    let why = if deadline_cut {
-                        "cycle discarded (incomplete read): the read did not finish inside \
-                         read_deadline_seconds"
+                    let why = if stalled {
+                        "cycle discarded (stalled read): no page arrived from the cloud IdP for \
+                         long enough to call the read abandoned"
                     } else {
                         "cycle discarded: a delta cursor was still refused after a full resync"
                     };
@@ -608,9 +606,8 @@ async fn main() -> Result<()> {
     }
 
     eprintln!(
-        "[sync] starting; interval {}s, read deadline {}s, dry_run={}, {}, {trail}",
+        "[sync] starting; interval {}s, dry_run={}, {}, {trail}",
         shared.interval.as_secs(),
-        shared.read_deadline.as_secs(),
         shared.dry_run,
         listed(&sources),
     );
@@ -860,7 +857,7 @@ enum Outcome<T> {
     Ready(Vec<T>, Option<String>),
     Resync,
     Corrupt,
-    Incomplete,
+    Stalled,
 }
 
 fn outcome<T>(r: StreamResult<T>) -> Outcome<T> {
@@ -868,7 +865,7 @@ fn outcome<T>(r: StreamResult<T>) -> Outcome<T> {
         StreamResult::Complete { items, delta_link } => Outcome::Ready(items, delta_link),
         StreamResult::Resync => Outcome::Resync,
         StreamResult::CursorCorrupt => Outcome::Corrupt,
-        StreamResult::Incomplete => Outcome::Incomplete,
+        StreamResult::Stalled => Outcome::Stalled,
     }
 }
 
@@ -880,7 +877,11 @@ fn now_rfc3339() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::{Arc, Mutex};
+
     use super::*;
+    use crate::graph::{RawGroup, RawUser};
 
     /// Whichever reading a cycle concludes, it clears the other two. The state
     /// changes arity -- no marked group becomes two -- so a raise that cleared
@@ -912,5 +913,184 @@ mod tests {
             assert_eq!(cleared.len(), ADMISSION_PROBLEMS.len() - 1, "{open} left a sibling open");
         }
         assert_eq!(admission_siblings(None).count(), ADMISSION_PROBLEMS.len());
+    }
+
+    const STORED_CURSOR: &str = "https://graph.microsoft.com/v1.0/users/delta?$deltatoken=stored";
+    const STALE_USER: &str = "user-from-the-last-cycle";
+    const FRESH_USER: &str = "user-from-the-retry";
+    const USERS_RETRY_CURSOR: &str = "users-cursor-from-the-retry";
+    const GROUPS_RETRY_CURSOR: &str = "groups-cursor-from-the-retry";
+
+    /// A reader that refuses the stored cursor once, then reads cleanly.
+    ///
+    /// It records the cursor each stream was handed, which is the only place the
+    /// discard is observable: a cursor that was not cleared arrives again.
+    #[derive(Default)]
+    struct CorruptThenComplete {
+        users_seen: Mutex<Vec<Option<String>>>,
+        groups_seen: Mutex<Vec<Option<String>>>,
+    }
+
+    impl GraphReader for CorruptThenComplete {
+        async fn acquire_token(&self) -> Result<String, TokenError> {
+            Ok("bearer".to_owned())
+        }
+
+        async fn read_users(
+            &self,
+            _token: &str,
+            cursor: Option<&str>,
+        ) -> Result<StreamResult<RawUser>> {
+            let mut seen = self.users_seen.lock().unwrap();
+            seen.push(cursor.map(str::to_owned));
+            Ok(if seen.len() == 1 {
+                StreamResult::CursorCorrupt
+            } else {
+                StreamResult::Complete {
+                    items: vec![raw(FRESH_USER)],
+                    delta_link: Some(USERS_RETRY_CURSOR.to_owned()),
+                }
+            })
+        }
+
+        /// Never corrupt: the groups cursor has to be discarded because the
+        /// *users* one was, and a stream that failed too could not show that.
+        ///
+        /// A different link per attempt, so the cursor left behind names the
+        /// read it came from.
+        async fn read_groups(
+            &self,
+            _token: &str,
+            cursor: Option<&str>,
+        ) -> Result<StreamResult<RawGroup>> {
+            let mut seen = self.groups_seen.lock().unwrap();
+            seen.push(cursor.map(str::to_owned));
+            let delta_link = match seen.len() {
+                1 => "groups-cursor-from-the-discarded-attempt",
+                _ => GROUPS_RETRY_CURSOR,
+            };
+            Ok(StreamResult::Complete {
+                items: Vec::new(),
+                delta_link: Some(delta_link.to_owned()),
+            })
+        }
+
+        async fn resolve_group(&self, _t: &str, _name: &str, _setting: &str) -> Result<String> {
+            Ok("admission-group-oid".to_owned())
+        }
+    }
+
+    fn raw<T: serde::de::DeserializeOwned>(id: &str) -> T {
+        serde_json::from_value(serde_json::json!({ "id": id, "displayName": id })).unwrap()
+    }
+
+    /// A loopback webhook keeping every body posted to it, so "once" is a count.
+    async fn receiver() -> (String, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
+        let posted: Arc<Mutex<Vec<String>>> = Arc::default();
+        let captured = posted.clone();
+        let app = axum::Router::new().route(
+            "/hook",
+            axum::routing::post(move |body: String| {
+                let captured = captured.clone();
+                async move {
+                    captured.lock().unwrap().push(body);
+                    axum::http::StatusCode::OK
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/hook", listener.local_addr().unwrap());
+        let served = tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (url, posted, served)
+    }
+
+    /// A corrupt cursor on one stream discards both -- including the stream that
+    /// answered normally -- and the shadow they patched.
+    ///
+    /// The `Ready` arm sets all of that before it calls `reconcile`, so the read
+    /// half is observable with no directory behind it. Nothing listens on the
+    /// LDAP port here, which is what confines this to the read half.
+    #[tokio::test]
+    async fn a_corrupt_cursor_empties_the_shadow_resyncs_both_streams_and_reports_once() {
+        let dir = std::env::temp_dir().join(format!("kb-sync-corrupt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (url, posted, _served) = receiver().await;
+        let url_file = dir.join("notify_url");
+        std::fs::write(&url_file, &url).unwrap();
+        std::fs::set_permissions(&url_file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let notifier = Notifier::from_config(
+            "sync",
+            &kerbridge_core::config::Notify {
+                url_file: Some(url_file),
+                insecure_host: Some("127.0.0.1".to_owned()),
+                state_dir: Some(dir.clone()),
+                ..Default::default()
+            },
+            "EXAMPLE.SITE",
+        )
+        .unwrap();
+
+        let shared = Config {
+            interval: Duration::from_secs(300),
+            dry_run: false,
+            sam_source: crate::planner::SamSource::default(),
+            automatic_sam_renames: true,
+            device_grant_days: 30,
+            device_grant_notify_days: None,
+            warn_before_days: 30,
+            realm: "EXAMPLE.SITE".to_owned(),
+            notify: kerbridge_core::config::Notify::default(),
+            ldap_url: "ldaps://127.0.0.1:1".to_owned(),
+            base_dn: "DC=example,DC=site".to_owned(),
+            upn_suffix: "example.site".to_owned(),
+            // Parsed by `Directory::new` and never used: the bind is refused
+            // before any certificate is judged.
+            ldap_ca_file: PathBuf::from(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../kerbridge-core/testdata/test-ca.pem"
+            )),
+            audit_log_file: None,
+            sources: Vec::new(),
+        };
+        let mut sync = SourceSync::new(SourceConfig::for_test(), &shared).unwrap();
+        sync.state.shadow.apply_users(vec![raw(STALE_USER)]);
+        sync.state.shadow.apply_groups(vec![raw("group-from-the-last-cycle")]);
+        sync.state.users_cursor = Some(STORED_CURSOR.to_owned());
+        sync.state.groups_cursor = Some(STORED_CURSOR.to_owned());
+
+        let graph = CorruptThenComplete::default();
+        let stopped_at_ldap = sync.run_cycle(&shared, &graph, &notifier).await;
+        assert!(stopped_at_ldap.is_err(), "the retry did not reach the directory");
+
+        let users: Vec<&str> = sync.state.shadow.users.keys().map(String::as_str).collect();
+        assert_eq!(users, [FRESH_USER], "the shadow kept what the corrupt cursor patched");
+        assert!(sync.state.shadow.groups.is_empty(), "a group survived the reset");
+
+        let stored = || Some(STORED_CURSOR.to_owned());
+        assert_eq!(*graph.users_seen.lock().unwrap(), [stored(), None], "users cursor");
+        assert_eq!(*graph.groups_seen.lock().unwrap(), [stored(), None], "groups cursor");
+        assert_eq!(sync.state.users_cursor.as_deref(), Some(USERS_RETRY_CURSOR));
+        assert_eq!(sync.state.groups_cursor.as_deref(), Some(GROUPS_RETRY_CURSOR));
+
+        let posted = posted.lock().unwrap();
+        let announced = posted.iter().filter(|b| b.contains("sync-cursor-corrupt")).count();
+        assert_eq!(announced, 1, "announced {announced} times: {posted:?}");
+        // Recorded as healed rather than open: an open problem the next cycle
+        // could never clear is one an operator would have to clear by hand.
+        let state: Vec<String> = std::fs::read_dir(dir.join("sync"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        let named = |class: &str| {
+            let prefix = format!("{class}-sync-cursor-corrupt");
+            state.iter().any(|n| n.starts_with(&prefix))
+        };
+        assert!(named("recent"), "the incident was not recorded: {state:?}");
+        assert!(!named("problem"), "the incident was listed as an open problem: {state:?}");
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
