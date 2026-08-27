@@ -44,22 +44,21 @@ verified token, and sync builds one from directory data, in separate processes
 with no channel between them. The value is also the join key of sync's
 reconciliation loop. Thus there is one encoder, reached from both sides.
 
-One thing is deliberately not behind that interface yet: **how sync gets a
-desired state**. `SyncState` holds an Entra `Shadow` and two delta cursors, and
-the poll loop branches on Graph's own failure semantics — a 400 means that a
-stored cursor was refused, a 410 means that it expired, and each resets the
-shadow and resynchronizes from a full read. None of that is meaningful to a
-second adapter: Google's Admin SDK Directory API has no delta query for a user
-list, thus there are no cursors to expire and nothing to resynchronize from.
+**How sync gets a desired state** is behind a second interface,
+`DirectorySource`. It encloses incrementality itself, because Graph's failure
+semantics are meaningless to a second adapter: a 400 means that a stored cursor
+was refused and a 410 means that it expired, each resetting the shadow and
+resynchronizing from a full read, while Google's Admin SDK Directory API has no
+delta query for a user list at all — no cursors to expire, nothing to
+resynchronize from.
 
-A second adapter therefore **inverts that loop, and does not add a branch to
-it**. The seam must enclose incrementality itself: an adapter advances as far as
-its IdP permits in one cycle, and yields a complete `Desired` when it has one.
-The adapter owns its cursors and its own resynchronization rules, and `Shadow`
-stays private to the Entra adapter. One question stays open, and this is why the
-seam is not built yet: whether an adapter is polled at all. authentik can
-deliver events instead, which would change the interface and not only its
-implementation.
+So an adapter **owns its loop rather than adding a branch to a shared one**. It
+advances as far as its IdP permits in one cycle and yields a source snapshot
+when it has a whole enumeration, or says why it could not; the cursors, the
+resynchronization rules and `Shadow` are the Entra adapter's own, and sync holds
+none of them. The adapter is polled: sync calls `advance` once a cycle. Whether
+an IdP that delivers events instead — authentik can — fits that shape or needs a
+second one is open, and belongs to the adapter that first needs it.
 
 - `preferred_username`, `upn`, email, display name and group names are mutable
   attributes. They are never mapping keys.

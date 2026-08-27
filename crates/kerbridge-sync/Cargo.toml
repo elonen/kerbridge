@@ -11,6 +11,7 @@ kerbridge-core = { workspace = true, features = ["tls", "password"] }
 kerbridge-idp.workspace = true
 kerbridge-notify.workspace = true
 anyhow.workspace = true
+async-trait = "0.1"
 serde.workspace = true
 serde_json.workspace = true
 

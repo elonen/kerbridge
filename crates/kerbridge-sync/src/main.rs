@@ -10,12 +10,12 @@
 //! service persists only sync cursors and reconciliation state.
 //!
 //! One process serves every source the config set lists, one after another. A
-//! cycle per source: acquire an app-only token, read the users and groups delta
-//! streams into a [`graph::Shadow`], turn that into a desired state, diff it
-//! against the current directory with the [`planner`], and apply the plan over
-//! delegated LDAPS as that source's own account. A read that does not assert
-//! `complete read` is discarded rather than planned from, so it can never
-//! delete or disable anything.
+//! cycle per source: ask that source's adapter to advance, diff the snapshot it
+//! returns against the current directory with the [`planner`], and apply the
+//! plan over delegated LDAPS as that source's own account. How a tenant is read
+//! is the adapter's own business, behind [`source::DirectorySource`]; a cycle
+//! that produced no whole enumeration is discarded rather than planned from, so
+//! it can never delete or disable anything.
 //!
 //! Sequential rather than concurrent, which is what makes the realm
 //! single-writer: two sources allocating a `sAMAccountName` at once would each
@@ -28,12 +28,14 @@
 
 mod config;
 mod directory;
+mod entra;
 mod graph;
 mod graphclient;
 mod planner;
+mod source;
 
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -44,9 +46,10 @@ use kerbridge_notify::{Event, Notifier, Severity};
 
 use crate::config::{Config, SourceConfig};
 use crate::directory::{Directory, marker_index};
-use crate::graph::{Shadow, build_desired};
-use crate::graphclient::{GraphClient, GraphReader, StreamResult, TokenError};
 use crate::planner::{AlertKind, Current, PlanCtx, PlanError, plan_sync};
+use crate::source::{
+    CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, connect,
+};
 
 /// Consecutive discarded cycles before an operator is alerted.
 const FAIL_THRESHOLD: u32 = 3;
@@ -73,16 +76,8 @@ fn audit(line: &str) {
     }
 }
 
-#[derive(Default)]
-struct SyncState {
-    shadow: Shadow,
-    users_cursor: Option<String>,
-    groups_cursor: Option<String>,
-    consecutive_failures: u32,
-}
-
-/// One source's whole world: the account it binds as, the OU it owns, the tenant
-/// it reads, and the cursors it carries between cycles.
+/// One source's whole world: the account it binds as, the OU it owns, and the
+/// cloud directory it mirrors.
 ///
 /// The directory client is owned here rather than shared. With one process
 /// serving several sources, "apply this source's plan over that source's
@@ -91,11 +86,12 @@ struct SyncState {
 struct SourceSync {
     cfg: SourceConfig,
     dir: Directory,
-    state: SyncState,
+    source: Box<dyn DirectorySource>,
+    consecutive_failures: u32,
 }
 
 impl SourceSync {
-    fn new(cfg: SourceConfig, shared: &Config) -> Result<Self> {
+    fn new(cfg: SourceConfig, shared: &Config, notifier: Arc<Notifier>) -> Result<Self> {
         let dir = Directory::new(
             shared.ldap_url.clone(),
             shared.base_dn.clone(),
@@ -106,188 +102,72 @@ impl SourceSync {
             LDAP_TIMEOUT,
         )
         .with_context(|| format!("configuring the directory client for {}", cfg.name()))?;
-        Ok(Self { cfg, dir, state: SyncState::default() })
+        let source = connect(&cfg.settings, cfg.name(), notifier);
+        Ok(Self { cfg, dir, source, consecutive_failures: 0 })
     }
 
     /// This source's turn. Never returns `Err`: one source's failure is counted
     /// against that source and the next one still runs.
     async fn tick(&mut self, shared: &Config, notifier: &Notifier) {
         let name = self.cfg.name().to_owned();
-        let credential = match self.cfg.credential() {
-            Ok(Some(secret)) => {
-                notifier.resolve_subject("sync-not-configured", &name).await;
-                secret
-            }
-            Ok(None) => {
-                notifier
-                    .send(
-                        Event::new(
-                            "sync-not-configured",
-                            Severity::Warning,
-                            format!(
-                                "no Graph credential in {}: source {name} is idle until one \
-                                 appears",
-                                self.cfg.credential_file.display()
-                            ),
-                        )
-                        .subject(&name),
-                    )
-                    .await;
-                return;
-            }
-            Err(e) => {
-                cycle_failed(self, notifier, format!("credential unreadable: {e:#}")).await;
-                return;
-            }
-        };
-        // Rebuilt every cycle rather than cached, so a rotated secret is picked
-        // up by the next cycle with nothing to restart. The connection pool it
-        // drops matters within a cycle, not across one.
-        let graph = match GraphClient::new(
-            self.cfg.tenant_id.clone(),
-            self.cfg.graph_client_id.clone(),
-            credential,
-        ) {
-            Ok(graph) => graph,
-            Err(e) => {
-                cycle_failed(self, notifier, format!("Graph client: {e:#}")).await;
-                return;
-            }
-        };
-        if let Err(e) = self.run_cycle(shared, &graph, notifier).await {
-            cycle_failed(self, notifier, format!("cycle error: {e:#}")).await;
+        // Before the read and whatever it concludes: a source whose cycles keep
+        // failing is exactly the one whose credential may be why.
+        report_credential(self.source.as_ref(), &name, shared, notifier).await;
+
+        let progress = self.source.advance().await;
+        // Anything that got as far as holding a credential disproves "there is
+        // none yet". A credential that could not be read neither proves nor
+        // disproves it, so that one outcome leaves the record alone.
+        if !matches!(progress, Ok(Progress::Idle(_)) | Err(SourceError::Credential(_))) {
+            notifier.resolve_subject("sync-not-configured", &name).await;
         }
-    }
-
-    /// One read/plan/apply cycle. Returns `Err` only on an infrastructure failure (LDAP or
-    /// Graph transport), which the caller counts through [`cycle_failed`]; policy outcomes
-    /// such as a frozen admission group or a discarded partial read are handled in-band and
-    /// count as a cycle that reached a conclusion.
-    async fn run_cycle(
-        &mut self,
-        shared: &Config,
-        graph: &impl GraphReader,
-        notifier: &Notifier,
-    ) -> Result<()> {
-        let name = self.cfg.name().to_owned();
-        let credential_subject = credential_subject(&self.cfg);
-        let token = match graph.acquire_token().await {
-            Ok(token) => {
-                // A token came back, so the credential the operator was told
-                // about has been rotated or was never the problem.
-                notifier.resolve_subject("graph-credential-expired", &credential_subject).await;
-                token
-            }
-            Err(e @ (TokenError::Expired(_) | TokenError::Invalid(_))) => {
+        match progress {
+            Ok(Progress::Idle(why)) => {
                 notifier
-                    .send(
-                        Event::new("graph-credential-expired", Severity::Error, e.to_string())
-                            .subject(&credential_subject),
-                    )
+                    .send(Event::new("sync-not-configured", Severity::Warning, why).subject(&name))
                     .await;
-                return Ok(());
             }
-            Err(TokenError::Other(e)) => return Err(e.context("acquiring Graph token")),
-        };
-
-        let admission_oid = self.cfg.admission_group_id.clone();
-        let grant_oid = self.cfg.grant_group_id.clone();
-
-        // A resync (410) or corrupt cursor (400) on either stream forces a fresh full
-        // read of both this cycle, from an empty shadow. At most one retry.
-        let mut users_cursor = self.state.users_cursor.clone();
-        let mut groups_cursor = self.state.groups_cursor.clone();
-        for attempt in 0..2 {
-            let users = outcome(graph.read_users(&token, users_cursor.as_deref()).await?);
-            let groups = outcome(graph.read_groups(&token, groups_cursor.as_deref()).await?);
-            use Outcome::*;
-            // Read before the match consumes them: the discard arm has to name
-            // which cause it met.
-            let stalled = matches!(users, Stalled) || matches!(groups, Stalled);
-            match (users, groups) {
-                (Ready(uv, ucur), Ready(gv, gcur)) => {
-                    self.state.shadow.apply_users(uv);
-                    self.state.shadow.apply_groups(gv);
-                    self.state.users_cursor = ucur;
-                    self.state.groups_cursor = gcur;
-                    self.reconcile(shared, &admission_oid, grant_oid.as_deref(), notifier).await?;
-                    // Cleared once the whole cycle has concluded, not on the read
-                    // above. A cycle that reads Entra perfectly and then cannot write
-                    // to the directory has not succeeded, and clearing it there makes
-                    // a standing LDAP outage alternate 1, 0, 1, 0 -- never reaching
-                    // the threshold, however long it lasts.
-                    if self.state.consecutive_failures >= FAIL_THRESHOLD {
-                        audit(&format!(
-                            "[sync/{name}] RESUMED after {} discarded cycles",
-                            self.state.consecutive_failures
-                        ));
+            Ok(Progress::Complete(snapshot)) => {
+                let applied = self.reconcile(shared, snapshot, notifier).await;
+                match applied {
+                    Ok(()) => {
+                        // Cleared once the whole cycle has concluded, not on the read
+                        // above. A cycle that reads the tenant perfectly and then cannot
+                        // write to the directory has not succeeded, and clearing it there
+                        // makes a standing LDAP outage alternate 1, 0, 1, 0 -- never
+                        // reaching the threshold, however long it lasts.
+                        if self.consecutive_failures >= FAIL_THRESHOLD {
+                            audit(&format!(
+                                "[sync/{name}] RESUMED after {} discarded cycles",
+                                self.consecutive_failures
+                            ));
+                        }
+                        self.consecutive_failures = 0;
+                        notifier.resolve_subject("sync-cycle-failing", &name).await;
                     }
-                    self.state.consecutive_failures = 0;
-                    notifier.resolve_subject("sync-cycle-failing", &name).await;
-                    return Ok(());
-                }
-                (Corrupt, _) | (_, Corrupt) if attempt == 0 => {
-                    notifier
-                        .send(
-                            Event::new(
-                                "sync-cursor-corrupt",
-                                Severity::Warning,
-                                format!(
-                                    "a stored delta cursor for source {name} was rejected (400); \
-                                     resyncing from a fresh read"
-                                ),
-                            )
-                            .subject(&name)
-                            // Already healed by the time it is reported -- the resync
-                            // is happening. Listing it as an open problem would leave
-                            // an entry nothing could ever clear.
-                            .incident(),
-                        )
-                        .await;
-                    self.state.shadow = Shadow::default();
-                    users_cursor = None;
-                    groups_cursor = None;
-                }
-                (Resync, _) | (_, Resync) if attempt == 0 => {
-                    eprintln!("[sync/{name}] delta cursor expired (410); full resync");
-                    self.state.shadow = Shadow::default();
-                    users_cursor = None;
-                    groups_cursor = None;
-                }
-                _ => {
-                    let why = if stalled {
-                        "cycle discarded (stalled read): no page arrived from the cloud IdP for \
-                         long enough to call the read abandoned"
-                    } else {
-                        "cycle discarded: a delta cursor was still refused after a full resync"
-                    };
-                    cycle_failed(self, notifier, why.to_owned()).await;
-                    return Ok(());
+                    Err(e) => cycle_failed(self, notifier, format!("cycle error: {e:#}")).await,
                 }
             }
+            Err(e) if e.counts_as_failure() => cycle_failed(self, notifier, e.to_string()).await,
+            // Reported precisely on its own channel already.
+            Err(_) => {}
         }
-        Ok(())
     }
 
-    /// Build desired from the shadow, diff against current, and apply.
+    /// Diff a whole reading of the cloud directory against the current one, and
+    /// apply. Returns `Err` only on an infrastructure failure -- the directory
+    /// out of reach -- which the caller counts. Policy outcomes such as a frozen
+    /// admission group are handled in-band and count as a cycle that reached a
+    /// conclusion.
     async fn reconcile(
         &self,
         shared: &Config,
-        admission_oid: &str,
-        grant_oid: Option<&str>,
+        snapshot: SourceSnapshot,
         notifier: &Notifier,
     ) -> Result<()> {
+        let SourceSnapshot { desired, refused } = snapshot;
         let cfg = &self.cfg;
         let name = cfg.name();
-        // The device-grant group joins the closure roots the way an allowlist entry
-        // does, so it synchronizes whether or not the operator nested it inside the
-        // admission group. The consequence is the allowlist's own, and is documented
-        // with it: someone held only by this group gets a directory object and no
-        // admission, so no ticket -- the two groups are additive, never alternatives.
-        let mut roots = cfg.allowlist.clone();
-        roots.extend(grant_oid.map(str::to_owned));
-        let (mut desired, refused) = build_desired(&self.state.shadow, true, admission_oid, &roots);
-        desired.grant_subject = grant_oid.map(str::to_owned);
         // The syncable rule narrows the admission-group closure, and silence about that is the
         // failure an operator cannot debug: they nominated a group or a person, nothing
         // appeared, and the plan they read is simply smaller than they expected. Logged
@@ -385,7 +265,6 @@ impl SourceSync {
             desired.groups.len(),
         );
 
-        report_credential(cfg, shared, notifier).await;
         report_expiring_grants(cfg, shared, &current, notifier).await;
 
         if shared.dry_run {
@@ -446,18 +325,6 @@ impl SourceSync {
     }
 }
 
-/// Every operator problem this component raises is keyed by the source it
-/// belongs to, because with one process serving several that is the only thing
-/// making two instances of one condition two problems -- and the only key a
-/// later cycle can compute again in order to clear exactly what it disproved.
-///
-/// The credential conditions carry the app registration as well: rotating to a
-/// different one is a new problem rather than the same standing condition
-/// reworded.
-fn credential_subject(cfg: &SourceConfig) -> String {
-    format!("{}/{}", cfg.name(), cfg.graph_client_id)
-}
-
 /// What `--help` prints, and the one place the argument surface is written out.
 ///
 /// A hand-rolled parser has no `--help` unless somebody writes one. The list
@@ -513,8 +380,10 @@ async fn main() -> Result<()> {
     // that has no Graph credential yet, and `--test-notification` must work on
     // exactly that deployment -- proving the channel is a step of installing,
     // not of running.
-    let notifier = Notifier::from_config("sync", &shared.notify, &shared.realm)
-        .context("configuring notification")?;
+    let notifier = Arc::new(
+        Notifier::from_config("sync", &shared.notify, &shared.realm)
+            .context("configuring notification")?,
+    );
     if test_only {
         return notifier.test_notification().await;
     }
@@ -540,7 +409,7 @@ async fn main() -> Result<()> {
     // the deployment-wide half every source is handed.
     let mut sources = Vec::with_capacity(shared.sources.len());
     for cfg in std::mem::take(&mut shared.sources) {
-        sources.push(SourceSync::new(cfg, &shared)?);
+        sources.push(SourceSync::new(cfg, &shared, notifier.clone())?);
     }
 
     eprintln!(
@@ -550,7 +419,7 @@ async fn main() -> Result<()> {
         listed(&sources),
     );
     for s in &sources {
-        if s.cfg.credential_expires.is_none() {
+        if matches!(s.source.credential_state(), CredentialState::Unknown) {
             eprintln!(
                 "[sync/{}] no credential expiry stated: no advance warning is possible; relying \
                  on the tenant's owner email",
@@ -632,16 +501,16 @@ fn reopen_audit_on_sigusr1() -> Result<()> {
 /// is free to vary.
 async fn cycle_failed(source: &mut SourceSync, notifier: &Notifier, why: String) {
     let name = source.cfg.name().to_owned();
-    source.state.consecutive_failures += 1;
-    eprintln!("[sync/{name}] {why}; failures={}", source.state.consecutive_failures);
+    source.consecutive_failures += 1;
+    eprintln!("[sync/{name}] {why}; failures={}", source.consecutive_failures);
     // The crossing itself, once: a discarded cycle changes nothing and is not an
     // audit line, but a run of them long enough to be an outage dates a stretch
     // during which this source stopped mirroring. Paired with `RESUMED` -- a
     // beginning with no end reads as an outage still running.
-    if source.state.consecutive_failures == FAIL_THRESHOLD {
+    if source.consecutive_failures == FAIL_THRESHOLD {
         audit(&format!("[sync/{name}] STALLED after {FAIL_THRESHOLD} discarded cycles: {why}"));
     }
-    if source.state.consecutive_failures >= FAIL_THRESHOLD {
+    if source.consecutive_failures >= FAIL_THRESHOLD {
         notifier
             .send(
                 Event::new(
@@ -649,7 +518,7 @@ async fn cycle_failed(source: &mut SourceSync, notifier: &Notifier, why: String)
                     Severity::Error,
                     format!(
                         "{} cycles discarded in a row for source {name}: {why}",
-                        source.state.consecutive_failures
+                        source.consecutive_failures
                     ),
                 )
                 .subject(&name),
@@ -665,25 +534,33 @@ async fn cycle_failed(source: &mut SourceSync, notifier: &Notifier, why: String)
 /// interval would send an event a day for a month, which is the flood the
 /// rate limit exists to prevent. It is delivered as it crosses 30, 14, 7, 3 and
 /// 1 days remaining, and is silent between those.
-async fn report_credential(cfg: &SourceConfig, shared: &Config, notifier: &Notifier) {
-    let subject = credential_subject(cfg);
+async fn report_credential(
+    source: &dyn DirectorySource,
+    name: &str,
+    shared: &Config,
+    notifier: &Notifier,
+) {
+    let subject = source.credential_subject();
     let expiring = |days: i64, severity| {
         Event::new(
             "graph-credential-expiring",
             severity,
-            format!("Graph credential for source {} expires in {days} days", cfg.name()),
+            format!("Graph credential for source {name} expires in {days} days"),
         )
         .subject(&subject)
         .countdown(days)
     };
-    match cfg.credential_days_remaining(now_unix()) {
-        None => {}
-        Some(days) if days < 7 => notifier.send(expiring(days, Severity::Error)).await,
-        Some(days) if days <= shared.warn_before_days => {
+    let days = match source.credential_state() {
+        CredentialState::Measured { days } | CredentialState::Asserted { days } => days,
+        CredentialState::Unknown => return,
+    };
+    match days {
+        days if days < 7 => notifier.send(expiring(days, Severity::Error)).await,
+        days if days <= shared.warn_before_days => {
             notifier.send(expiring(days, Severity::Warning)).await;
         }
-        Some(days) => {
-            eprintln!("[sync/{}] Graph credential: {days} days remaining", cfg.name());
+        days => {
+            eprintln!("[sync/{name}] Graph credential: {days} days remaining");
             // Rotated: the deadline moved back out of every warning band, so the
             // condition an operator was told about is over. The countdown itself
             // re-arms on its own, but the open problem has to be closed by hand
@@ -763,24 +640,6 @@ fn grant_group_wrong(source: &str, why: &str) -> Event {
 /// and so which group admits is never in doubt.
 const ADMISSION_MISSING: &str = "admission-group-missing";
 
-/// One stream's outcome, flattened so `run_cycle` can match users and groups
-/// together regardless of element type.
-enum Outcome<T> {
-    Ready(Vec<T>, Option<String>),
-    Resync,
-    Corrupt,
-    Stalled,
-}
-
-fn outcome<T>(r: StreamResult<T>) -> Outcome<T> {
-    match r {
-        StreamResult::Complete { items, delta_link } => Outcome::Ready(items, delta_link),
-        StreamResult::Resync => Outcome::Resync,
-        StreamResult::CursorCorrupt => Outcome::Corrupt,
-        StreamResult::Stalled => Outcome::Stalled,
-    }
-}
-
 /// The stamp on retire and quarantine markers, which `kbmanage` and the broker
 /// read back through the same module.
 fn now_rfc3339() -> String {
@@ -789,15 +648,8 @@ fn now_rfc3339() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::PermissionsExt;
-    use std::sync::{Arc, Mutex};
-
     use super::*;
-    use crate::graph::{RawGroup, RawUser};
 
-    /// Whichever reading a cycle concludes, it clears the other two. The state
-    /// changes arity -- no marked group becomes two -- so a raise that cleared
-    /// only itself would leave the earlier reading open forever.
     /// An unrecognized argument is refused rather than ignored.
     #[test]
     fn the_arguments_are_a_config_directory_and_the_test_flag() {
@@ -815,180 +667,5 @@ mod tests {
         for bad in [vec!["--test-notifcation"], vec!["-help"], vec!["--config"]] {
             assert!(usage(&args(&bad)).is_err(), "{bad:?}");
         }
-    }
-
-    const STORED_CURSOR: &str = "https://graph.microsoft.com/v1.0/users/delta?$deltatoken=stored";
-    const STALE_USER: &str = "user-from-the-last-cycle";
-    const FRESH_USER: &str = "user-from-the-retry";
-    const USERS_RETRY_CURSOR: &str = "users-cursor-from-the-retry";
-    const GROUPS_RETRY_CURSOR: &str = "groups-cursor-from-the-retry";
-
-    /// A reader that refuses the stored cursor once, then reads cleanly.
-    ///
-    /// It records the cursor each stream was handed, which is the only place the
-    /// discard is observable: a cursor that was not cleared arrives again.
-    #[derive(Default)]
-    struct CorruptThenComplete {
-        users_seen: Mutex<Vec<Option<String>>>,
-        groups_seen: Mutex<Vec<Option<String>>>,
-    }
-
-    impl GraphReader for CorruptThenComplete {
-        async fn acquire_token(&self) -> Result<String, TokenError> {
-            Ok("bearer".to_owned())
-        }
-
-        async fn read_users(
-            &self,
-            _token: &str,
-            cursor: Option<&str>,
-        ) -> Result<StreamResult<RawUser>> {
-            let mut seen = self.users_seen.lock().unwrap();
-            seen.push(cursor.map(str::to_owned));
-            Ok(if seen.len() == 1 {
-                StreamResult::CursorCorrupt
-            } else {
-                StreamResult::Complete {
-                    items: vec![raw(FRESH_USER)],
-                    delta_link: Some(USERS_RETRY_CURSOR.to_owned()),
-                }
-            })
-        }
-
-        /// Never corrupt: the groups cursor has to be discarded because the
-        /// *users* one was, and a stream that failed too could not show that.
-        ///
-        /// A different link per attempt, so the cursor left behind names the
-        /// read it came from.
-        async fn read_groups(
-            &self,
-            _token: &str,
-            cursor: Option<&str>,
-        ) -> Result<StreamResult<RawGroup>> {
-            let mut seen = self.groups_seen.lock().unwrap();
-            seen.push(cursor.map(str::to_owned));
-            let delta_link = match seen.len() {
-                1 => "groups-cursor-from-the-discarded-attempt",
-                _ => GROUPS_RETRY_CURSOR,
-            };
-            Ok(StreamResult::Complete {
-                items: Vec::new(),
-                delta_link: Some(delta_link.to_owned()),
-            })
-        }
-    }
-
-    fn raw<T: serde::de::DeserializeOwned>(id: &str) -> T {
-        serde_json::from_value(serde_json::json!({ "id": id, "displayName": id })).unwrap()
-    }
-
-    /// A loopback webhook keeping every body posted to it, so "once" is a count.
-    async fn receiver() -> (String, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
-        let posted: Arc<Mutex<Vec<String>>> = Arc::default();
-        let captured = posted.clone();
-        let app = axum::Router::new().route(
-            "/hook",
-            axum::routing::post(move |body: String| {
-                let captured = captured.clone();
-                async move {
-                    captured.lock().unwrap().push(body);
-                    axum::http::StatusCode::OK
-                }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}/hook", listener.local_addr().unwrap());
-        let served = tokio::spawn(async move {
-            let _ = axum::serve(listener, app).await;
-        });
-        (url, posted, served)
-    }
-
-    /// A corrupt cursor on one stream discards both -- including the stream that
-    /// answered normally -- and the shadow they patched.
-    ///
-    /// The `Ready` arm sets all of that before it calls `reconcile`, so the read
-    /// half is observable with no directory behind it. Nothing listens on the
-    /// LDAP port here, which is what confines this to the read half.
-    #[tokio::test]
-    async fn a_corrupt_cursor_empties_the_shadow_resyncs_both_streams_and_reports_once() {
-        let dir = std::env::temp_dir().join(format!("kb-sync-corrupt-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let (url, posted, _served) = receiver().await;
-        let url_file = dir.join("notify_url");
-        std::fs::write(&url_file, &url).unwrap();
-        std::fs::set_permissions(&url_file, std::fs::Permissions::from_mode(0o600)).unwrap();
-        let notifier = Notifier::from_config(
-            "sync",
-            &kerbridge_core::config::Notify {
-                url_file: Some(url_file),
-                insecure_host: Some("127.0.0.1".to_owned()),
-                state_dir: Some(dir.clone()),
-                ..Default::default()
-            },
-            "EXAMPLE.SITE",
-        )
-        .unwrap();
-
-        let shared = Config {
-            interval: Duration::from_secs(300),
-            dry_run: false,
-            sam_source: crate::planner::SamSource::default(),
-            automatic_sam_renames: true,
-            device_grant_days: 30,
-            device_grant_notify_days: None,
-            warn_before_days: 30,
-            realm: "EXAMPLE.SITE".to_owned(),
-            notify: kerbridge_core::config::Notify::default(),
-            ldap_url: "ldaps://127.0.0.1:1".to_owned(),
-            base_dn: "DC=example,DC=site".to_owned(),
-            upn_suffix: "example.site".to_owned(),
-            // Parsed by `Directory::new` and never used: the bind is refused
-            // before any certificate is judged.
-            ldap_ca_file: PathBuf::from(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/../kerbridge-core/testdata/test-ca.pem"
-            )),
-            audit_log_file: None,
-            sources: Vec::new(),
-        };
-        let mut sync = SourceSync::new(SourceConfig::for_test(), &shared).unwrap();
-        sync.state.shadow.apply_users(vec![raw(STALE_USER)]);
-        sync.state.shadow.apply_groups(vec![raw("group-from-the-last-cycle")]);
-        sync.state.users_cursor = Some(STORED_CURSOR.to_owned());
-        sync.state.groups_cursor = Some(STORED_CURSOR.to_owned());
-
-        let graph = CorruptThenComplete::default();
-        let stopped_at_ldap = sync.run_cycle(&shared, &graph, &notifier).await;
-        assert!(stopped_at_ldap.is_err(), "the retry did not reach the directory");
-
-        let users: Vec<&str> = sync.state.shadow.users.keys().map(String::as_str).collect();
-        assert_eq!(users, [FRESH_USER], "the shadow kept what the corrupt cursor patched");
-        assert!(sync.state.shadow.groups.is_empty(), "a group survived the reset");
-
-        let stored = || Some(STORED_CURSOR.to_owned());
-        assert_eq!(*graph.users_seen.lock().unwrap(), [stored(), None], "users cursor");
-        assert_eq!(*graph.groups_seen.lock().unwrap(), [stored(), None], "groups cursor");
-        assert_eq!(sync.state.users_cursor.as_deref(), Some(USERS_RETRY_CURSOR));
-        assert_eq!(sync.state.groups_cursor.as_deref(), Some(GROUPS_RETRY_CURSOR));
-
-        let posted = posted.lock().unwrap();
-        let announced = posted.iter().filter(|b| b.contains("sync-cursor-corrupt")).count();
-        assert_eq!(announced, 1, "announced {announced} times: {posted:?}");
-        // Recorded as healed rather than open: an open problem the next cycle
-        // could never clear is one an operator would have to clear by hand.
-        let state: Vec<String> = std::fs::read_dir(dir.join("sync"))
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        let named = |class: &str| {
-            let prefix = format!("{class}-sync-cursor-corrupt");
-            state.iter().any(|n| n.starts_with(&prefix))
-        };
-        assert!(named("recent"), "the incident was not recorded: {state:?}");
-        assert!(!named("problem"), "the incident was listed as an open problem: {state:?}");
-
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

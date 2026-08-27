@@ -132,10 +132,10 @@ touched.
 ### cycle
 
 One read / plan / apply pass, repeated after a pause. A cycle plans
-whole or is discarded — a `stalled read`, an ambiguous admission marker or a
-`sAMAccountName` collision refuses the entire plan — but once applying has
-started a failed op is recorded and the remaining ops still run.
-<!-- refs: `run_cycle` in `crates/kerbridge-sync/src/main.rs` -->
+whole or is discarded — a `stalled read` or a `sAMAccountName` collision refuses
+the entire plan — but once applying has started a failed op is recorded and the
+remaining ops still run.
+<!-- refs: `SourceSync::tick` in `crates/kerbridge-sync/src/main.rs` -->
 <!-- avoid: run, pass, iteration, tick -->
 
 ### delta cursor
@@ -159,6 +159,15 @@ the syncable rule and the admission-group closure have been applied to the shado
 never the raw Graph read. Carries its own `complete read` assertion.
 <!-- refs: `kerbridge_sync::graph::build_desired`, `planner::Desired` -->
 <!-- avoid: desired, target state, wanted state, cloud state, source state -->
+
+### directory source
+
+One cloud IdP behind the seam, reduced to what the mirror needs of it: it
+advances, and yields a `source snapshot` or says why it could not. How it reads
+— the protocol, the credential, the `delta cursor`s — is its own, and
+reconciliation never enters one.
+<!-- refs: `kerbridge_sync::source::DirectorySource` -->
+<!-- avoid: connector, provider interface, source trait, reader -->
 
 ### disambiguation suffix
 
@@ -359,6 +368,15 @@ Graph's restorable removal, reported as `@removed.reason:
 "changed"`; the object waits in the `recycle bin`. For a group, sync treats both
 removal reasons the same way — quarantine now.
 <!-- avoid: softdeleted, reason changed -->
+
+### source snapshot
+
+One `cycle`'s whole reading of a tenant: the `desired state`, and the refusals
+the `directory source`'s own rules produced. Its existence is the assertion — an
+adapter that cannot enumerate yields none — so a read that did not finish can
+never delete or disable anything.
+<!-- refs: `kerbridge_sync::source::SourceSnapshot` -->
+<!-- avoid: poll result, directory image, desired set -->
 
 ### stalled read
 
