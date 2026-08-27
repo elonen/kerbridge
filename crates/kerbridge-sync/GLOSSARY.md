@@ -220,6 +220,20 @@ files. Only the SID is held: the name is released in the same cycle, and
 a live-form `sAMAccountName`.
 <!-- avoid: retained, in retention, held-age -->
 
+### name candidate
+
+One string a **new** account's `login name` may be minted from, already reduced
+to what AD accepts. The `directory source` offers an ordered list of them, best
+first, and the realm takes the first one nobody holds; it is constructible only
+through the one rule, so no adapter carries a charset of its own. An empty list
+is legal and means the account offered nothing usable — the `fallback name`
+then stands in as its one candidate. A list of one is what the Entra adapter
+offers: a second entry lets a taken name fall to another string instead of to
+the `disambiguation suffix`, which renames a live account and signs that user
+out.
+<!-- refs: `kerbridge_idp::sync::NameCandidate`, `kerbridge_idp::sync::name_candidate` -->
+<!-- avoid: name suggestion, sam candidate, candidate name -->
+
 ### op
 
 One reconciliation action targeting exactly one DN inside the IdP-specific OU:
@@ -285,17 +299,6 @@ naming layer rests on — no name sync writes carries a reserved character — w
 is what lets DN handling split on a plain comma instead of becoming escape-aware.
 <!-- refs: `kerbridge_sync::planner::names::safe_name` -->
 <!-- avoid: sanitized name, escaped name, cleaned name -->
-
-### sam source
-
-Which cloud attribute a **new** account's `login name` is
-derived from: display name, mail local part, or UPN local part. The chosen one
-leads a fixed fallback order through the
-other two, and a source counts as spent only when it *sanitizes* to a name — not
-merely when it is non-blank, or a display name of `...` would consume the turn
-and leave a good mail address unread.
-<!-- refs: `sam_source` in `configs/sync.toml` -->
-<!-- avoid: name source, sam strategy -->
 
 ### source snapshot
 

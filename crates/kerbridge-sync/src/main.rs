@@ -187,7 +187,6 @@ impl SourceSync {
             upn_suffix: &shared.upn_suffix,
             group_suffix: &cfg.group_suffix,
             now: &now,
-            sam_source: shared.sam_source,
             automatic_sam_renames: shared.automatic_sam_renames,
             identity: &identity,
         };

@@ -62,6 +62,25 @@ none of them. The adapter is polled: sync calls `advance` once a cycle. Whether
 an IdP that delivers events instead — authentik can — fits that shape or needs a
 second one is open, and belongs to the adapter that first needs it.
 
+**Login names are split across that seam too.** The adapter offers an ordered
+list of name candidates and nothing else — no mail address, no UPN, no attribute
+of any one IdP reaches the mirror. Which strings are worth trying, and in what
+order, rests on that IdP's own schema, and thus it is the adapter's: `sam_source`
+in `idp_<source>.toml` is Entra's spelling of the choice. Which of them a name
+may actually *be* needs realm-wide state the adapter cannot see — the domain-wide
+name scan, the case folding `samldb` enforces, the disambiguation suffix — and
+thus it stays in the planner. One rule reduces a candidate to what AD accepts, so
+no adapter carries a character set of its own.
+
+How many candidates to offer is itself the adapter's decision, and it is
+consequential. A second candidate says "this account may hold that name
+instead", so a name another object already holds falls to the second string
+rather than to the disambiguation suffix — which renames a live account, and a
+login name is a Kerberos principal, so each such rename signs one user out. The
+Entra adapter therefore offers exactly one: it resolves its own `sam_source`
+fallback order below the seam, where an absent attribute is the only thing that
+moves the answer.
+
 - `preferred_username`, `upn`, email, display name and group names are mutable
   attributes. They are never mapping keys.
 - The synchronized Samba object stores the canonical external identity in

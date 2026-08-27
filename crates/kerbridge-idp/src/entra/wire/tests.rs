@@ -42,8 +42,10 @@ fn built(shadow: &Shadow) -> serde_json::Value {
     serde_json::to_value(narrow(shadow, ADMISSION, &[sub(PROJX)]).0).unwrap()
 }
 
+/// `SamSource::Upn`, because that is the mode the planner fixtures were
+/// recorded in and `corpus.rs` replays them under.
 fn narrow(shadow: &Shadow, admission: &str, allowlist: &[Subject]) -> (Desired, Vec<String>) {
-    build_desired(shadow.enumerate(), &sub(admission), allowlist)
+    build_desired(shadow.enumerate(SamSource::Upn), &sub(admission), allowlist)
 }
 
 fn sub(id: &str) -> Subject {
@@ -98,14 +100,14 @@ fn shadow_holding_gary() -> Shadow {
     held
 }
 
-/// An invited account's UPN reaches the planner exactly as Entra wrote it,
-/// `#EXT#` and all. S13 pins the login name that derives from it.
+/// An invited account's UPN is reduced to a login name here, `#EXT#` and all,
+/// and only the result crosses the seam. S13 pins what that result is.
 #[test]
 fn held_guest_reproduces_the_s13_desired_state() {
     let d = built(&shadow_holding_gary());
     assert_eq!(
-        d["users"][GARY]["upn"], "gary_partner.example#EXT#@contoso.onmicrosoft.com",
-        "the marker survives the adapter verbatim"
+        d["users"][GARY]["name_candidates"][0], "gary_partner.example",
+        "the marker is stripped here and the source domain is not"
     );
     assert_eq!(d, desired_fixture("S13_held_guest_upn_name"));
 }
@@ -336,4 +338,185 @@ fn a_held_but_unsyncable_user_is_reported() {
         !refused.iter().any(|r| r.contains("u-not-in-shadow")),
         "an unread member is not a refusal: {refused:?}"
     );
+}
+
+// ---- login names ----
+
+/// The candidate list, as strings, so a test reads like the file it produces.
+fn names(u: &ShadowUser, sam_source: SamSource) -> Vec<String> {
+    name_candidates(u, sam_source).iter().map(|c| c.as_str().to_owned()).collect()
+}
+
+/// The first candidate: what the account is named unless the realm finds it
+/// taken.
+fn first(u: &ShadowUser, sam_source: SamSource) -> String {
+    names(u, sam_source).first().cloned().unwrap_or_default()
+}
+
+/// A user carrying all three attributes, so each setting has something of its
+/// own to pick.
+fn three_ways() -> ShadowUser {
+    ShadowUser {
+        display_name: Some("Jane Doe".to_owned()),
+        upn: Some("jane.doe.longcontractor@example.onmicrosoft.com".to_owned()),
+        mail: Some("jdoe@example.site".to_owned()),
+        other_mails: None,
+        account_enabled: Some(true),
+        user_type: Some("Member".to_owned()),
+    }
+}
+
+/// Each setting names an account from its own attribute, and offers that one
+/// name alone. The losing attributes are a fallback order, not alternatives the
+/// realm may pick from -- `name_candidates` says what offering them would cost.
+#[test]
+fn each_sam_source_offers_its_own_attribute_and_nothing_else() {
+    let u = three_ways();
+    assert_eq!(names(&u, SamSource::DisplayName), ["jane.doe"]);
+    assert_eq!(names(&u, SamSource::EmailUsername), ["jdoe"]);
+    // Truncated to 20 characters, which is `name_candidate`'s budget.
+    assert_eq!(names(&u, SamSource::Upn), ["jane.doe.longcontrac"]);
+
+    // A one-word display name still yields a usable name.
+    let one = ShadowUser { display_name: Some("Prince".to_owned()), ..three_ways() };
+    assert_eq!(first(&one, SamSource::DisplayName), "prince");
+}
+
+/// The display name keeps *every* token, because first-and-last mangles names
+/// that are not `given family`.
+#[test]
+fn the_display_name_keeps_every_token() {
+    let u = ShadowUser {
+        display_name: Some("Gabriel García Márquez".to_owned()),
+        mail: None,
+        upn: Some("gabo@example.onmicrosoft.com".to_owned()),
+        ..three_ways()
+    };
+    // First-and-last would have given `gabriel.márquez`, keeping the maternal
+    // surname and dropping the paternal one that identifies him.
+    assert_eq!(first(&u, SamSource::DisplayName), "gabriel.garcía.márqu");
+
+    // No ordering is imposed: a family-first display name stays family-first.
+    let jp = ShadowUser { display_name: Some("山田 太郎".to_owned()), ..u.clone() };
+    assert_eq!(first(&jp, SamSource::DisplayName), "山田.太郎");
+}
+
+/// Why `upn` is the last resort: a UPN local part can carry a *domain*, and the
+/// other two attributes cannot.
+///
+/// `alice.anderson_gmail.com#EXT#@tenant.onmicrosoft.com` has its `#EXT#`
+/// stripped but not its domain -- that is not separable from a name, since `.`
+/// and `_` are both legal in a sam -- so the login name concatenates a domain
+/// and is then cut mid-domain by the character budget.
+///
+/// Both kinds of invited account reach sync: a guest is syncable as soon as a
+/// selected group holds them, and a *member* invited from another tenant keeps
+/// the same UPN. `S13_held_guest_upn_name` carries a recorded one from the
+/// Graph read all the way to the login name; this is the three-way comparison
+/// that fixture cannot make.
+#[test]
+fn a_upn_local_part_can_carry_a_domain_where_the_others_cannot() {
+    // No `mail` at all, because the mailbox is not in this tenant; the address
+    // the person uses is in `otherMails`.
+    let guest = ShadowUser {
+        display_name: Some("Alice Anderson".to_owned()),
+        upn: Some("alice.anderson_gmail.com#EXT#@example.onmicrosoft.com".to_owned()),
+        mail: None,
+        other_mails: Some(vec!["alice.anderson@gmail.example".to_owned()]),
+        ..three_ways()
+    };
+    let name = first(&guest, SamSource::Upn);
+    assert_eq!(name, "alice.anderson_gmail", "guest UPN drags the source domain in");
+    assert!(name.contains("gmail"), "and it is a domain, not a name");
+
+    assert_eq!(first(&guest, SamSource::DisplayName), "alice.anderson");
+    // The whole point of reading otherMails: without it this would have fallen
+    // through to the polluted UPN above.
+    assert_eq!(first(&guest, SamSource::EmailUsername), "alice.anderson");
+
+    // `mail` wins when the account has both.
+    let member = ShadowUser { mail: Some("a.anderson@example.site".to_owned()), ..guest.clone() };
+    assert_eq!(first(&member, SamSource::EmailUsername), "a.anderson");
+}
+
+/// Any attribute can be absent on a real account, so each falls back to the
+/// others rather than deriving `kbuser`.
+#[test]
+fn an_absent_attribute_falls_back_to_the_others() {
+    let no_mail = ShadowUser {
+        display_name: Some("Bob Bobson".to_owned()),
+        upn: Some("bbobson@example.onmicrosoft.com".to_owned()),
+        mail: None,
+        other_mails: None,
+        ..three_ways()
+    };
+    // No mail and no otherMails: an address-shaped choice falls to the UPN,
+    // which is address-shaped too, rather than to the display name.
+    assert_eq!(first(&no_mail, SamSource::EmailUsername), "bbobson");
+
+    let only_upn = ShadowUser { display_name: None, ..no_mail.clone() };
+    assert_eq!(first(&only_upn, SamSource::EmailUsername), "bbobson");
+    assert_eq!(first(&only_upn, SamSource::DisplayName), "bbobson");
+
+    // otherMails alone is enough.
+    let other_only = ShadowUser {
+        other_mails: Some(vec!["bob@elsewhere.example".to_owned()]),
+        ..no_mail.clone()
+    };
+    assert_eq!(first(&other_only, SamSource::EmailUsername), "bob");
+
+    // Nothing usable at all offers nothing at all, and the realm names the
+    // account itself.
+    let nothing = ShadowUser { upn: None, ..only_upn.clone() };
+    assert!(name_candidates(&nothing, SamSource::DisplayName).is_empty());
+}
+
+/// An attribute that is present but sanitizes to nothing is dropped like an
+/// absent one. `...` is three characters `sam::allowed` accepts and no name,
+/// because the trim takes them all -- so a candidate list filtered on
+/// "non-blank" would offer `kbuser` while a perfectly good mail address went
+/// unread.
+#[test]
+fn an_attribute_that_sanitizes_to_nothing_is_dropped_like_an_absent_one() {
+    let punctuation = ShadowUser {
+        display_name: Some("...".to_owned()),
+        mail: Some("jane.doe@example.site".to_owned()),
+        upn: Some("jdoe@example.onmicrosoft.com".to_owned()),
+        other_mails: None,
+        ..three_ways()
+    };
+    assert_eq!(names(&punctuation, SamSource::DisplayName), ["jane.doe"]);
+    assert_eq!(names(&punctuation, SamSource::Upn), ["jdoe"]);
+
+    // Every attribute unusable offers nothing, rather than offering `kbuser` as
+    // if it were a real name.
+    let none =
+        ShadowUser { mail: None, upn: Some("@example.site".to_owned()), ..punctuation.clone() };
+    assert!(name_candidates(&none, SamSource::DisplayName).is_empty());
+}
+
+/// The seam takes a list, and this adapter never fills a second entry of it.
+/// The realm reads a second entry as "this account may hold that name instead",
+/// and moves a live account onto it rather than onto the `-<oid4>` suffix --
+/// which costs that user a sign-out, because a login name is their Kerberos
+/// principal.
+#[test]
+fn no_account_is_ever_offered_a_second_candidate() {
+    let shapes = [
+        three_ways(),
+        // Nothing in this tenant beyond the UPN.
+        ShadowUser { display_name: None, mail: None, other_mails: None, ..three_ways() },
+        // Invited from another tenant: no mailbox here, an address in otherMails.
+        ShadowUser {
+            mail: None,
+            other_mails: Some(vec!["alice.anderson@gmail.example".to_owned()]),
+            ..three_ways()
+        },
+    ];
+    for u in &shapes {
+        for source in [SamSource::DisplayName, SamSource::EmailUsername, SamSource::Upn] {
+            let offered = names(u, source);
+            assert!(offered.len() <= 1, "{source:?} offered {offered:?}");
+        }
+    }
 }

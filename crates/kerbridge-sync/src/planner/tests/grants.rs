@@ -40,8 +40,9 @@ fn reconciliation_never_touches_a_stored_device_grant() {
     // applier will accept -- `directory::SETTABLE_ATTRS`, which refuses the
     // rest outright rather than trusting this to stay true.
     let mut renamed = want.clone();
-    renamed.users.get_mut(&Subject::new(BUILDER)).unwrap().display_name =
-        "Renamed Builder".to_owned();
+    // Through the builder, so the candidates move with the display name the way
+    // an adapter's next read would move them.
+    renamed.users.insert(Subject::new(BUILDER), des_user("Renamed Builder"));
     let ops = plan_sync(&renamed, &cur, &ctx()).unwrap().ops;
     assert!(ops.iter().any(|o| matches!(o, Op::SetAttr { .. })), "{ops:?}");
     for op in &ops {

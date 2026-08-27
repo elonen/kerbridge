@@ -4,6 +4,10 @@ kerbridge (@VERSION@) unstable; urgency=@URGENCY@
   retired sync.toml options cycle_deadline_seconds and read_deadline_seconds;
   the daemon refuses a file that still names either one.
 
+  It also copies sync.toml's sam_source into every idp_<source>.toml, under
+  [provider_config]. No account changes its name; the option only moves.
+  The daemon refuses a sync.toml that still names it.
+
   In idp_<source>.toml, admission_group and device_grant_group are removed.
   Set admission_group_id or device_grant_group_id to the group's Object Id
   (Entra, on the group's Overview page) instead of its name. `kbconfig

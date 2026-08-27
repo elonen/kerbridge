@@ -11,8 +11,10 @@
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
+use kerbridge_core::sam;
 use kerbridge_notify::Notifier;
 use serde::{Deserialize, Serialize};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::IdpSettings;
 use crate::entra::sync::EntraSource;
@@ -172,18 +174,67 @@ pub struct Desired {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DesiredUser {
+    /// What the directory shows: `displayName`, and the CN built from it.
     pub display_name: String,
-    pub upn: String,
-    /// The mail address, empty when the account has none -- a user with no
-    /// mailbox is normal. Absent on both sides of the wire rather than present
-    /// and empty, which keeps the S1–S11 planner fixtures byte-stable.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub mail: String,
-    /// Entra's `otherMails` -- the portal's "Other emails". A guest usually has
-    /// this and no `mail` at all: it holds the address they were invited by.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub other_mails: Vec<String>,
+    /// What the login name may be minted from, best first.
+    ///
+    /// The adapter owns which strings are worth trying and in what order; the
+    /// realm owns which of them a name may actually be. Empty is legal and
+    /// means "nothing usable", which derives `kbuser` plus a collision suffix.
+    pub name_candidates: Vec<NameCandidate>,
     pub enabled: bool,
+}
+
+/// One string an account's `sAMAccountName` may be minted from, already reduced
+/// to what AD accepts.
+///
+/// Constructible only through [`name_candidate`], on the wire as in Rust: the
+/// rule has one home, so an adapter cannot inline a charset of its own and a
+/// fixture cannot state a name the realm would never derive.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct NameCandidate(String);
+
+impl NameCandidate {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for NameCandidate {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(d)?;
+        // Idempotent on a value this rule already produced, so a fixture that
+        // states the derived form round-trips and one that states anything else
+        // is refused rather than quietly rewritten.
+        name_candidate(&raw)
+            .filter(|c| c.as_str() == raw)
+            .ok_or_else(|| serde::de::Error::custom(format!("{raw:?} is not a name candidate")))
+    }
+}
+
+/// The character budget a candidate is cut to: AD's documented user limit. The
+/// byte ceiling [`sam::MAX_BYTES`] binds independently.
+const CANDIDATE_CHARS: usize = 20;
+
+/// `s` as a login name, or `None` when nothing usable survives.
+///
+/// NFC first, and this is the only place a read-path name is normalized:
+/// Unicode spells `å` as either `U+00E5` or `a` + `U+030A`, the two render
+/// identically, and deriving both would put two accounts in the directory that
+/// no human can tell apart.
+///
+/// The budget is not a parameter. An adapter that can pass a length can pass
+/// the wrong one.
+///
+/// `None` rather than the string, because [`sam::sanitize`] answers
+/// [`sam::FALLBACK`] -- the literal `kbuser` -- where nothing survives. Handed
+/// back raw, an adapter filtering on `!is_empty()` would offer `kbuser` as a
+/// real candidate for every user whose display name is `"..."`.
+pub fn name_candidate(s: &str) -> Option<NameCandidate> {
+    let nfc: String = s.nfc().collect();
+    let sanitized = sam::sanitize(&nfc, CANDIDATE_CHARS, sam::MAX_BYTES);
+    (sanitized != sam::FALLBACK).then_some(NameCandidate(sanitized))
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -211,6 +262,29 @@ pub struct Enumeration {
     /// group holds one -- an unheld account was never going to get an object, so
     /// naming it would be noise.
     pub refused: BTreeMap<Subject, Refusal>,
+}
+
+/// `"Jane Doe" -> "jane.doe"`: every whitespace-separated token of a display
+/// name, joined by `.`. Casing and illegal characters are [`name_candidate`]'s.
+///
+/// Every token rather than first-and-last. First-and-last assumes a name is
+/// *given* then *family*, and that assumption is wrong in both directions: it
+/// drops middle tokens everywhere, and on a Spanish double surname it keeps the
+/// last token -- the maternal surname -- while dropping the paternal one that
+/// actually identifies the person (`Gabriel García Márquez` ->
+/// `gabriel.márquez`, not `gabriel.garcía`). Joining every token imposes no
+/// ordering of its own, which is the only defensible reading of a display name:
+/// `山田 太郎` is family-first in the source and stays family-first here.
+pub fn dotted(display_name: &str) -> String {
+    display_name.split_whitespace().collect::<Vec<_>>().join(".")
+}
+
+/// The part of an address before the `@`. Empty when there is nothing there.
+///
+/// Only the `@`. Whatever else one IdP writes into a local part is that
+/// adapter's to strip, before or after this.
+pub fn local_part(address: &str) -> &str {
+    address.split('@').next().unwrap_or("")
 }
 
 /// A group edge, as the two classes the realm mirrors. Anything else an IdP

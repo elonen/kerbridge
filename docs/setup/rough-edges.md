@@ -56,9 +56,10 @@ Windows shows the login name as the file owner and in the *Security* tab. If
 the files of a person who is now called Jane Doe show `EXAMPLE\jane.smith`,
 then the directory fails at its job.
 
-First surprise: if you change `sam_source` in `configs/sync.toml` while renames
-are on, one cycle renames *each* user whose name derives differently under the
-new source. To stage that change, set `automatic_sam_renames` to `false` first.
+First surprise: if you change `sam_source` in `configs/idp_<source>.toml` while
+renames are on, one cycle renames *each* user of that source whose name derives
+differently under the new attribute. To stage that change, set
+`automatic_sam_renames` in `configs/sync.toml` to `false` first.
 
 Second surprise: the retire/return path derives the name again, and this
 setting has no effect on it. An account that leaves the admission group and

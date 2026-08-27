@@ -174,3 +174,33 @@ admission_group_id = "77778888-bbbb-9999-cccc-0000dddd1111"
 # the group by its marker. docs/setup/device-grants.md.
 # Example: "88889999-cccc-0000-dddd-1111eeee2222"
 #device_grant_group_id =
+
+# Which Entra attribute a *newly created* account's login name
+# (sAMAccountName) is minted from. Existing accounts are never renamed by a
+# change here. Per source: these are Entra's attribute names, and another cloud
+# IdP names people by other ones.
+#
+#   displayname     every whitespace token of Display name, joined by dots
+#                   ("Jane Doe" -> jane.doe) -- what users see as
+#                   REALM\jane.doe in Explorer, on file ownership and in ACL
+#                   dialogs. Not unique, so colliding names get a short
+#                   object-id suffix. Supports Unicode names.
+#
+#   email_username  the part of the mail address before the @. Usually
+#                   hand-made, already ASCII, and what the person answers to.
+#                   Reads Email, then Other emails -- an account invited from
+#                   another tenant has its address in Other emails, not Email.
+#
+#   upn             the part of the User principal name before the @. Unique
+#                   tenant-wide, so it collides least. Least readable, and see
+#                   the caveat below.
+#
+# Whichever you choose, the other two follow it as fallbacks: an attribute is
+# skipped where it yields no usable name -- absent, or holding nothing a
+# sAMAccountName may keep ("...", "!!!").
+#
+# Why displayname and not upn by default? An invited account's UPN carries the
+# source domain in its local part (alice.anderson_gmail.com#EXT#@...). The
+# #EXT# marker is stripped, but nothing distinguishes anderson_gmail.com from a
+# surname, so that account becomes EXAMPLE\alice.anderson_gmail.
+#sam_source = "displayname"

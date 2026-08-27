@@ -55,22 +55,16 @@ allocating one at the same moment would each see the other's name as free.
   whether anyone gets a ticket at all; device grants are optional and already
   fail closed on their own, so an ambiguous marker there is an event and not an
   outage.
-- Login names for **new** accounts are derived from one of the cloud
-  attributes named by `sam_source` in `configs/sync.toml`: `displayname` (default, every
-  whitespace token joined by dots), `email_username` (the local part of Email, or of the first Other email — an
-  account invited from another tenant has no Email in this tenant) or
-  `upn` (the UPN local part, most unique). Each falls back to the others when
-  its attribute yields no usable name -- absent, or nothing a
-  `sAMAccountName` may keep. `displayname` is the default because an invited
-  account's UPN embeds the source domain (`alice.anderson_gmail.com#EXT#@…`)
-  and `.`/`_` are legal in a sam, so the domain cannot be told from a surname —
-  it becomes `alice.anderson_gmail`, cut mid-domain. Not only guests, who sync
-  rejects: a member invited from another tenant keeps that UPN. The display name takes every
-  token rather than first-and-last, because first-and-last drops middle tokens
-  and, on a Spanish double surname, keeps the *maternal* one and drops the
-  paternal one that identifies the person. It imposes no ordering of its own:
-  `山田 太郎` stays family-first. `deploy/configs/sync.toml.example` carries the
-  full reasoning and `planner/tests/names.rs` pins each case with a test.
+- **Login names for new accounts come from the candidates the adapter offered.**
+  A `DesiredUser` carries `name_candidates`, best first, and the realm takes the
+  first one nobody holds; every candidate taken suffixes the *preferred* one with
+  four characters of the object id. Which strings those are, and how many, is the
+  adapter's — **the Entra adapter offers exactly one**, resolving its own
+  `sam_source` fallback order before the seam, so a taken name falls to the
+  suffix and never to a different attribute. Nothing here reads an attribute of
+  any one cloud IdP. The realm keeps what only it can know: the domain-wide name
+  scan, the case folding `samldb` enforces, the `-<oid4>` renumbering,
+  `_retired-`, the CN and the realm UPN.
 - **A live account's login name follows its cloud display name**
   (`automatic_sam_renames` in `configs/sync.toml`, default on). It is what
   Windows shows as the file owner and in the *Security* tab, so a person who

@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 
 use super::*;
 use kerbridge_core::ExternalIdentity;
-use kerbridge_idp::sync::DesiredGroup;
+use kerbridge_idp::sync::{DesiredGroup, NameCandidate, dotted, name_candidate};
 
 const ADMISSION: &str = "8689e2c1-3268-4744-a647-30d05e5c7b90";
 static ADMISSION_SUBJECT: LazyLock<Subject> = LazyLock::new(|| Subject::new(ADMISSION));
@@ -41,7 +41,6 @@ fn ctx() -> PlanCtx<'static> {
         upn_suffix: "example.site",
         group_suffix: "",
         now: "2026-07-21T12:00:00Z",
-        sam_source: SamSource::DisplayName,
         automatic_sam_renames: true,
         identity: ENCODE,
     }
@@ -112,14 +111,20 @@ fn cur_group(sam: &str, display: &str) -> CurrentGroup {
     }
 }
 
+/// A user the adapter offered one name for, the display name's own.
 fn des_user(display: &str) -> DesiredUser {
+    let dotted = dotted(display);
     DesiredUser {
         display_name: display.to_owned(),
-        mail: String::new(),
-        other_mails: Vec::new(),
-        upn: "someone@contoso.example".to_owned(),
+        name_candidates: candidates([dotted.as_str()]),
         enabled: true,
     }
+}
+
+/// Candidates as an adapter hands them over: through the one constructor, so no
+/// test offers the realm a name no adapter could have produced.
+fn candidates<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<NameCandidate> {
+    names.into_iter().filter_map(name_candidate).collect()
 }
 
 /// Retired one window ago, i.e. before the cycle under test.

@@ -57,6 +57,21 @@ A full read from scratch with no cursor, forced when Graph answers
 together, from an emptied shadow, and the cycle retries at most once.
 <!-- avoid: full read, full resync, fresh delta -->
 
+### sam source
+
+Which Entra attribute a **new** account's
+[login name](../kerbridge-core/GLOSSARY.md#login-name) is minted from: Display
+name, mail address, or User principal name. The chosen one leads a fixed
+fallback order through the other two, and an attribute is skipped where it
+sanitizes to nothing — a display name of `...` would otherwise consume the turn
+and leave a good mail address unread. The order is resolved here, so the winner
+is the one and only
+[name candidate](../kerbridge-sync/GLOSSARY.md#name-candidate) this adapter
+offers. Per source: another adapter names people by other attributes and spells
+its own choice.
+<!-- refs: `sam_source` in `configs/idp_<source>.toml` -->
+<!-- avoid: name source, sam strategy -->
+
 ### secret ID
 
 The Entra portal's identifier for an app credential, which is

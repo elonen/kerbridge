@@ -488,13 +488,13 @@ pub struct Broker {
     pub audit_log_file: Option<PathBuf>,
 }
 
-/// `sync.toml`: what the mirror does, and how it names what it creates. Which
-/// cloud IdP it reads is per source, not here.
+/// `sync.toml`: what the mirror does. Which cloud IdP it reads, and which of
+/// that IdP's attributes names an account, is per source and not here.
 ///
-/// `sam_source` and `device_grant_notify` stay strings. Their parsers live in
-/// `kerbridge-sync`, and a value is best refused where it is interpreted --
-/// this crate would only be able to repeat the spelling list, which is the way
-/// two checks come to disagree.
+/// `device_grant_notify` stays a string. Its parser lives in `kerbridge-sync`,
+/// and a value is best refused where it is interpreted -- this crate would only
+/// be able to repeat the spelling list, which is the way two checks come to
+/// disagree.
 #[derive(Debug, Deserialize, PartialEq)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema, serde::Serialize))]
 #[serde(deny_unknown_fields, default)]
@@ -503,7 +503,6 @@ pub struct Sync {
     /// source in turn, so the time between two reads of one source is that
     /// cycle plus this pause.
     pub interval_seconds: u32,
-    pub sam_source: String,
     pub automatic_sam_renames: bool,
     pub dry_run: bool,
     pub device_grant_notify: String,
@@ -523,7 +522,6 @@ impl Default for Sync {
     fn default() -> Self {
         Self {
             interval_seconds: 300,
-            sam_source: "displayname".to_owned(),
             automatic_sam_renames: true,
             dry_run: false,
             device_grant_notify: "off".to_owned(),

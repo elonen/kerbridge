@@ -173,8 +173,8 @@ every other component reads it.
 ### fallback name
 
 `kbuser`, the `login name` derived when nothing of the source string survives
-sanitizing. Public so a caller choosing between several `sam source`s can tell
-"this attribute yielded a real name" from "this one yielded nothing" — `...`
+sanitizing. Public so a caller choosing between several source attributes can
+tell "this one yielded a real name" from "this one yielded nothing" — `...`
 is three allowed characters and no name.
 <!-- refs: `kerbridge_core::sam::FALLBACK` -->
 <!-- avoid: default name, placeholder name -->

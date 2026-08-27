@@ -41,7 +41,6 @@ fn a_group_sam_collision_refuses_the_whole_cycle() {
         upn_suffix: "example.site",
         group_suffix: "",
         now: "2026-07-21T12:00:00Z",
-        sam_source: SamSource::DisplayName,
         automatic_sam_renames: true,
         identity: ENCODE,
     };
@@ -108,7 +107,6 @@ fn a_new_group_reusing_a_managed_group_sam_refuses_the_cycle() {
         upn_suffix: "example.site",
         group_suffix: "",
         now: "2026-07-21T12:00:00Z",
-        sam_source: SamSource::DisplayName,
         automatic_sam_renames: true,
         identity: ENCODE,
     };

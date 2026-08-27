@@ -19,7 +19,11 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::sync::{DesiredGroup, DesiredUser, Enumeration, Membership, Refusal, Subject};
+use super::SamSource;
+use crate::sync::{
+    DesiredGroup, DesiredUser, Enumeration, Membership, NameCandidate, Refusal, Subject, dotted,
+    local_part, name_candidate,
+};
 
 /// A directory-object membership edge's object class, taken from `@odata.type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,14 +217,74 @@ fn user_syncable(u: &ShadowUser) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// The address the account answers to: `mail`, or the first of `otherMails`
+/// where it has none.
+///
+/// An account with no mailbox in this tenant has no `mail` at all, while
+/// `otherMails` still holds an address the person actually uses. An account
+/// invited from another tenant has that shape -- guest or member alike -- and
+/// theirs is the UPN [`upn_local_part`] describes. Without `otherMails`,
+/// `email_username` would fall through to it for exactly those accounts.
+fn email_address(u: &ShadowUser) -> &str {
+    match u.mail.as_deref() {
+        Some(mail) if !mail.trim().is_empty() => mail,
+        _ => u.other_mails.as_ref().and_then(|m| m.first()).map_or("", String::as_str),
+    }
+}
+
+/// A UPN's local part, with Entra's `#EXT#` guest marker stripped.
+///
+/// `alice.anderson_gmail.com#EXT#@example.onmicrosoft.com` leaves
+/// `alice.anderson_gmail.com`. That is not a local part: it is Entra's
+/// flattening of the external address `alice.anderson@gmail.com` with the `@`
+/// rewritten to `_`, and `.` and `_` are both legal in a login name, so the
+/// domain riding along cannot be told from a surname. Both kinds of invited
+/// account carry it -- a guest, and a member invited from another tenant.
+fn upn_local_part(upn: &str) -> &str {
+    local_part(upn).split('#').next().unwrap_or("")
+}
+
+/// What this account's login name may be minted from: **one candidate, or
+/// none**.
+///
+/// The seam takes a list, and Entra offers at most one entry of it. The three
+/// attributes below are a fallback order and not a set of alternatives: each
+/// can be absent on a real account -- a user with no mailbox has no mail, a
+/// display name is not enforced, and only the UPN is guaranteed to exist -- so
+/// the configured one leads and the other two stand in where it yields nothing.
+///
+/// Offering the losers as further candidates would let a taken name fall to
+/// another attribute instead of to the realm's `-<oid4>` suffix. That renames
+/// live accounts that hold a suffixed name today, and a login name is a
+/// Kerberos principal, so each such rename signs one user out. An adapter that
+/// wants that behaviour returns more than one entry here; this one does not.
+fn name_candidates(u: &ShadowUser, sam_source: SamSource) -> Vec<NameCandidate> {
+    let display = dotted(u.display_name.as_deref().unwrap_or_default());
+    let email = local_part(email_address(u));
+    let upn = upn_local_part(u.upn.as_deref().unwrap_or_default());
+    let order: [&str; 3] = match sam_source {
+        SamSource::DisplayName => [&display, email, upn],
+        // The UPN before the display name here, not after it: someone who asked
+        // for an address-shaped name is better served by another address.
+        SamSource::EmailUsername => [email, upn, &display],
+        SamSource::Upn => [upn, &display, email],
+    };
+    // An attribute is spent only where it *yields* a candidate: a display name
+    // of `...` is three allowed characters and no name, so testing the raw
+    // string for blankness would spend the turn and leave a good mail address
+    // unread.
+    order.into_iter().find_map(name_candidate).into_iter().collect()
+}
+
 impl Shadow {
     /// The shadow as a whole-directory enumeration, with the syncable rule
     /// applied and every edge Samba cannot mirror dropped.
     ///
     /// The rule is Entra's own: `userType` is a wire fact about this IdP, so
     /// which accounts are acceptable is decided here and the closure walk that
-    /// narrows them further is not.
-    pub fn enumerate(&self) -> Enumeration {
+    /// narrows them further is not. So is the naming: `sam_source` names Entra's
+    /// own attributes, and the realm sees only the strings it produced.
+    pub fn enumerate(&self, sam_source: SamSource) -> Enumeration {
         let mut read = Enumeration::default();
         for (oid, u) in &self.users {
             let subject = Subject::new(oid.clone());
@@ -230,9 +294,7 @@ impl Shadow {
                         subject,
                         DesiredUser {
                             display_name: u.display_name.clone().unwrap_or_default(),
-                            upn: u.upn.clone().unwrap_or_default(),
-                            mail: u.mail.clone().unwrap_or_default(),
-                            other_mails: u.other_mails.clone().unwrap_or_default(),
+                            name_candidates: name_candidates(u, sam_source),
                             enabled: u.account_enabled.unwrap_or(false),
                         },
                     );

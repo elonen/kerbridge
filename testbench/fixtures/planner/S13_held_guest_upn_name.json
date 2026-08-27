@@ -50,33 +50,45 @@
     "users": {
       "33334444-dddd-5555-eeee-6666ffff7777": {
         "display_name": "Alice Anderson",
-        "enabled": true,
-        "upn": "alice.anderson@contoso.example"
+        "name_candidates": [
+          "alice.anderson"
+        ],
+        "enabled": true
       },
       "8b210003-aaaa-bbbb-cccc-000000000003": {
         "display_name": "John Doe",
-        "enabled": true,
-        "upn": "john.doe2@contoso.example"
+        "name_candidates": [
+          "john.doe2"
+        ],
+        "enabled": true
       },
       "9e570010-aaaa-bbbb-cccc-000000000010": {
         "display_name": "Gary Guest",
-        "enabled": true,
-        "upn": "gary_partner.example#EXT#@contoso.onmicrosoft.com"
+        "name_candidates": [
+          "gary_partner.example"
+        ],
+        "enabled": true
       },
       "9f3a0002-aaaa-bbbb-cccc-000000000002": {
         "display_name": "John Doe",
-        "enabled": true,
-        "upn": "jdoe@contoso.example"
+        "name_candidates": [
+          "jdoe"
+        ],
+        "enabled": true
       },
       "b0b00004-aaaa-bbbb-cccc-000000000004": {
         "display_name": "Bob Nested",
-        "enabled": true,
-        "upn": "bob.nested@contoso.example"
+        "name_candidates": [
+          "bob.nested"
+        ],
+        "enabled": true
       },
       "ca201005-aaaa-bbbb-cccc-000000000005": {
         "display_name": "Carol Cycle",
-        "enabled": true,
-        "upn": "carol.cycle@contoso.example"
+        "name_candidates": [
+          "carol.cycle"
+        ],
+        "enabled": true
       }
     }
   },

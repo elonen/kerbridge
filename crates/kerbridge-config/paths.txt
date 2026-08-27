@@ -73,6 +73,7 @@ sources.entra.name
 sources.entra.ou
 sources.entra.provider
 sources.entra.public_client_id
+sources.entra.sam_source
 sources.entra.scope
 sources.entra.sync_client_id
 sources.entra.sync_credential_expires
@@ -84,4 +85,3 @@ sync.credential_warn_before_days
 sync.device_grant_notify
 sync.dry_run
 sync.interval_seconds
-sync.sam_source

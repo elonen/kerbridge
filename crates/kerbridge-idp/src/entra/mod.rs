@@ -48,6 +48,63 @@ pub fn identity(source: &Source, oid: &str) -> Result<ExternalIdentity, Identity
     ExternalIdentity::new(source, oid)
 }
 
+/// Which tenant attribute a **new** account's login name is minted from.
+///
+/// Consulted only at creation. A live account's name is never recomputed, so
+/// changing this renames nobody -- see `kerbridge-sync`'s README.
+///
+/// None of the three is correct in general, which is why it is a choice: a
+/// display name is what users recognize but is not unique; a mail local part is
+/// usually hand-made, ASCII and stable, but not every account has one; a UPN
+/// always exists and is unique across the tenant, but an invited account's
+/// carries the source domain (`alice.anderson_gmail.com#EXT#@...`) and `.`/`_`
+/// are legal in a sam, so that domain cannot be told from a surname.
+///
+/// Per source, not per deployment: these are Entra's own attribute names, and
+/// another IdP may derive a name in a way that is neither of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SamSource {
+    /// Every whitespace token of the display name, joined by `.`.
+    #[default]
+    DisplayName,
+    /// The local part of `mail`, or of the first `otherMails` entry where the
+    /// account has no mailbox in this tenant.
+    EmailUsername,
+    /// The local part of the UPN. Unique across the tenant; least pretty.
+    Upn,
+}
+
+impl SamSource {
+    /// The accepted spellings, for the operator-facing error listing them.
+    pub const SPELLINGS: &'static str = "displayname, email_username, upn";
+
+    /// What a file states to get [`Self::default`]. The template shows it, so
+    /// it is written once here rather than typed there as well.
+    pub const DEFAULT_SPELLING: &'static str = "displayname";
+
+    /// The spelling a file would use, for `kbconfig get`.
+    pub fn spelling(self) -> &'static str {
+        match self {
+            Self::DisplayName => Self::DEFAULT_SPELLING,
+            Self::EmailUsername => "email_username",
+            Self::Upn => "upn",
+        }
+    }
+}
+
+impl std::str::FromStr for SamSource {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, ()> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "displayname" => Ok(Self::DisplayName),
+            "email_username" => Ok(Self::EmailUsername),
+            "upn" => Ok(Self::Upn),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Entra's product name: what the agent says on screen unless the deployment
 /// renames it.
 const PRODUCT_NAME: &str = "Entra";
@@ -94,6 +151,8 @@ pub struct Settings {
     /// fallback to a local file would verify against whatever is on disk.
     pub jwks: JwksSource,
     pub display_name: String,
+    /// Which tenant attribute a **new** account's login name is minted from.
+    pub sam_source: SamSource,
     pub sync_client_id: String,
     pub sync_credential_file: PathBuf,
     /// The operator's assertion of that credential's expiry, `YYYY-MM-DD`.
@@ -157,6 +216,8 @@ struct Raw {
     jwks_file: Option<PathBuf>,
     #[serde(default = "default_display_name")]
     display_name: String,
+    #[serde(default = "default_sam_source")]
+    sam_source: String,
     #[cfg_attr(feature = "schema", schemars(example = &"66667777-aaaa-8888-bbbb-9999cccc0000"))]
     sync_client_id: String,
     #[cfg_attr(feature = "schema", schemars(example = &"/etc/kerbridge.secrets/idp/entra/credential"))]
@@ -187,6 +248,9 @@ fn default_scope() -> String {
 fn default_display_name() -> String {
     PRODUCT_NAME.to_owned()
 }
+fn default_sam_source() -> String {
+    SamSource::DEFAULT_SPELLING.to_owned()
+}
 
 impl Settings {
     /// The `[provider_config]` table `kerbridge-core` captured verbatim.
@@ -211,7 +275,20 @@ impl Settings {
             .map(|id| group_id(id, "device_grant_group_id"))
             .transpose()?;
 
+        // Refused rather than defaulted: it is a name policy for every account
+        // this source will ever create, and a typo that silently picks the
+        // default is discovered only when someone reads a login name in
+        // Explorer.
+        let sam_source: SamSource = raw.sam_source.parse().map_err(|()| {
+            anyhow::anyhow!(
+                "[provider_config]: sam_source expects one of {}; got {:?}",
+                SamSource::SPELLINGS,
+                raw.sam_source
+            )
+        })?;
+
         Ok(Self {
+            sam_source,
             issuer: raw.issuer.unwrap_or_else(|| v2_endpoint(&raw.tenant_id)),
             authority: raw.authority.unwrap_or_else(|| v2_endpoint(&raw.tenant_id)),
             jwks,
@@ -255,6 +332,7 @@ pub(crate) fn paths(settings: &Settings) -> BTreeMap<String, String> {
         ("jwks_url", jwks_url),
         ("jwks_file", jwks_file),
         ("display_name", settings.display_name.clone()),
+        ("sam_source", settings.sam_source.spelling().to_owned()),
         ("sync_client_id", settings.sync_client_id.clone()),
         ("sync_credential_file", settings.sync_credential_file.display().to_string()),
         ("sync_credential_expires", settings.sync_credential_expires.clone().unwrap_or_default()),
@@ -502,6 +580,36 @@ pub(crate) const ENTRA_SRC: &str = r#"# Entra: the three app registrations from 
 # working grants, whatever main.toml's device_grant_days says: the broker finds
 # the group by its marker. docs/setup/device-grants.md.
 {{device_grant_group_id}}
+
+# Which Entra attribute a *newly created* account's login name
+# (sAMAccountName) is minted from. Existing accounts are never renamed by a
+# change here. Per source: these are Entra's attribute names, and another cloud
+# IdP names people by other ones.
+#
+#   displayname     every whitespace token of Display name, joined by dots
+#                   ("Jane Doe" -> jane.doe) -- what users see as
+#                   REALM\jane.doe in Explorer, on file ownership and in ACL
+#                   dialogs. Not unique, so colliding names get a short
+#                   object-id suffix. Supports Unicode names.
+#
+#   email_username  the part of the mail address before the @. Usually
+#                   hand-made, already ASCII, and what the person answers to.
+#                   Reads Email, then Other emails -- an account invited from
+#                   another tenant has its address in Other emails, not Email.
+#
+#   upn             the part of the User principal name before the @. Unique
+#                   tenant-wide, so it collides least. Least readable, and see
+#                   the caveat below.
+#
+# Whichever you choose, the other two follow it as fallbacks: an attribute is
+# skipped where it yields no usable name -- absent, or holding nothing a
+# sAMAccountName may keep ("...", "!!!").
+#
+# Why displayname and not upn by default? An invited account's UPN carries the
+# source domain in its local part (alice.anderson_gmail.com#EXT#@...). The
+# #EXT# marker is stripped, but nothing distinguishes anderson_gmail.com from a
+# surname, so that account becomes EXAMPLE\alice.anderson_gmail.
+{{sam_source}}
 "#;
 
 #[cfg(test)]
@@ -580,8 +688,32 @@ pub mod tests {
         assert_eq!(defaults.issuer, v2_endpoint(TENANT));
         assert_eq!(defaults.authority, v2_endpoint(TENANT));
         assert_eq!(defaults.jwks, JwksSource::Url(tenant_jwks_url(TENANT)));
+        assert_eq!(defaults.sam_source, SamSource::DisplayName);
         assert_eq!(defaults.device_grant_group_id, None);
         assert!(defaults.extra_group_ids.is_empty());
+    }
+
+    /// Every documented spelling parses, a near-miss does not, and the refusal
+    /// names the whole set. `Settings::parse` states why it refuses.
+    #[test]
+    fn sam_source_takes_only_the_documented_spellings() {
+        use std::str::FromStr;
+        assert_eq!(SamSource::from_str("displayname"), Ok(SamSource::DisplayName));
+        assert_eq!(SamSource::from_str(" EMAIL_Username "), Ok(SamSource::EmailUsername));
+        assert_eq!(SamSource::from_str("upn"), Ok(SamSource::Upn));
+        assert_eq!(SamSource::default(), SamSource::DisplayName);
+        for bad in ["", "email", "mail", "1", "true", "display_name", "userPrincipalName"] {
+            assert!(SamSource::from_str(bad).is_err(), "{bad:?} must not parse");
+        }
+        // Every spelling round-trips through the one `kbconfig get` answers.
+        for source in [SamSource::DisplayName, SamSource::EmailUsername, SamSource::Upn] {
+            assert_eq!(SamSource::from_str(source.spelling()), Ok(source));
+        }
+
+        let mut wrong = required();
+        wrong.insert("sam_source".into(), "display_name".into());
+        let err = format!("{:#}", Settings::parse(&wrong).unwrap_err());
+        assert!(err.contains("sam_source") && err.contains(SamSource::SPELLINGS), "{err}");
     }
 
     /// The typo that silently keeps a default is what the whole config set

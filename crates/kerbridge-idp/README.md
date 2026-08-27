@@ -58,6 +58,11 @@ the directory one — and `src/sync/` is the seam they meet the mirror at.
   reconciliation never enters an adapter. The realm's own rules — the group
   closure, the held-narrowing, the refusal list — are `sync::build_desired`, and
   an adapter uses them or fills a `Desired` its own way.
+- Which strings a login name may be minted from, and in what order. The adapter
+  offers `name_candidates`, best first; the realm decides which of them a name
+  may actually *be*, because that needs a domain-wide view no adapter has. One
+  rule reduces a candidate to what AD accepts — `sync::name_candidate` — so no
+  adapter carries a character set of its own. Entra's choice is `sam_source`.
 - A source file's `[provider_config]`, both the parser and the commented example
   block. `kerbridge-core` reads the envelope around it, captures that table and
   hands it here without looking inside — parsed anywhere else, core, and

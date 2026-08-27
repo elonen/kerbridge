@@ -10,9 +10,10 @@ use std::collections::HashSet;
 use kerbridge_core::dn::parent_of;
 use kerbridge_core::sam;
 use kerbridge_core::state::RETIRED_PREFIX;
+use kerbridge_idp::sync::NameCandidate;
 use unicode_normalization::UnicodeNormalization;
 
-use super::{DesiredUser, PlanError, SamSource};
+use super::{DesiredUser, PlanError};
 
 /// First four characters of an object id -- the collision-disambiguation suffix.
 ///
@@ -138,13 +139,14 @@ pub(crate) fn group_suffix_rejection(suffix: &str) -> Option<String> {
 
 /// `sAMAccountName`-safe, by the one rule `issuerd` also validates against.
 ///
-/// NFC first, and this is the only place it happens: Unicode spells `å` as
-/// either `U+00E5` or `a` + `U+030A`, the two render identically, and deriving
-/// both would put two accounts in the directory that no human can tell apart.
-/// Normalizing here means the directory only ever holds the composed form --
-/// `issuerd` refuses the decomposed one rather than treating it as a second
-/// principal. sync owns this because `kerbridge-core` may not carry the Unicode
-/// tables it needs: `issuerd` links that crate and holds KDC authority.
+/// The retirement path only. A name minted from the cloud goes through
+/// `kerbridge_idp::sync::name_candidate`; this reshapes a name the directory
+/// already holds.
+///
+/// NFC first, as that function does: Unicode spells `å` as either `U+00E5` or
+/// `a` + `U+030A`, the two render identically, and a directory holding both
+/// holds two accounts no human can tell apart. A name this tool wrote is
+/// composed already; a hand-edited one need not be.
 ///
 /// `maxlen` is a *character* budget; the byte ceiling is `sam::MAX_BYTES` and
 /// binds independently, since 20 characters of 4-byte UTF-8 is 80 bytes. The
@@ -155,87 +157,40 @@ pub(super) fn sanitize_sam(local: &str, maxlen: usize) -> String {
     sam::sanitize(&nfc, maxlen, sam::MAX_BYTES)
 }
 
-/// `"Jane Doe" -> "jane.doe"`: every whitespace-separated token of the
-/// display name, joined by `.`. Empty when there is no usable token, so the
-/// caller can fall back. Casing and illegal characters are `sanitize_sam`'s.
-///
-/// Every token rather than first-and-last. First-and-last assumes a name is
-/// *given* then *family*, and that assumption
-/// is wrong in both directions: it drops middle tokens everywhere, and on a
-/// Spanish double surname it keeps the last token -- the maternal surname --
-/// while dropping the paternal one that actually identifies the person
-/// (`Gabriel García Márquez` -> `gabriel.márquez`, not `gabriel.garcía`).
-/// Joining every token imposes no ordering of its own, which is the only
-/// defensible reading of a display name: `山田 太郎` is family-first in the
-/// source and stays family-first here.
-fn dotted(display_name: &str) -> String {
-    display_name.split_whitespace().collect::<Vec<_>>().join(".")
-}
-
-/// The account's mail address: `mail`, or the first of `otherMails` when it has
-/// none.
-///
-/// An account with no mailbox in this tenant has no `mail` at all, while
-/// `otherMails` still holds an address the person actually uses. A member
-/// invited from another tenant is the case that reaches sync today -- the
-/// mailbox is in the tenant they came from -- and a guest has the same shape.
-///
-/// Without the second half, `email_username` would silently fall through to the
-/// UPN for precisely those accounts, and theirs is the UPN that carries a
-/// domain in its local part.
-fn email_address(du: &DesiredUser) -> &str {
-    if du.mail.trim().is_empty() {
-        du.other_mails.first().map_or("", String::as_str)
-    } else {
-        &du.mail
-    }
-}
-
-/// The part of an address before the `@`, with Entra's `#EXT#` guest marker
-/// stripped. Empty when there is nothing usable.
-fn local_part(address: &str) -> &str {
-    address.split('@').next().unwrap_or("").split('#').next().unwrap_or("")
-}
-
 /// Deterministic `(sam, upn, cn)` with an oid-suffix fallback on collision.
+///
+/// The adapter says which strings are worth trying and in what order; this
+/// decides which of them a name may actually be. Only the realm can: the
+/// namespace is domain-wide, so `current_sam_keys` covers other sources and
+/// operator-managed objects an adapter cannot see.
 pub(super) fn alloc_names(
     du: &DesiredUser,
     oid: &str,
     current_sam_keys: &HashSet<String>,
     upn_suffix: &str,
-    sam_source: SamSource,
 ) -> Result<(String, String, String), PlanError> {
-    // Every source falls back to the others, in a fixed order, because any of
-    // them can be absent on a real account: a user with no mailbox has no mail,
-    // a display name is not enforced, and only the UPN is guaranteed to exist.
-    let display = dotted(&du.display_name);
-    let email = local_part(email_address(du));
-    let upn = local_part(&du.upn);
-    let order: [&str; 3] = match sam_source {
-        SamSource::DisplayName => [&display, email, upn],
-        // The UPN before the display name here, not after it: someone who asked
-        // for an address-shaped name is better served by another address.
-        SamSource::EmailUsername => [email, upn, &display],
-        SamSource::Upn => [upn, &display, email],
+    let held = |name: &str| current_sam_keys.contains(&sam::fold(name));
+    // An empty candidate list is legal and means the account offered nothing
+    // usable. The fallback name then stands in as its one candidate, so it is
+    // tried and, where it is taken, disambiguated like any other.
+    let offered: Vec<&str> = match du.name_candidates.is_empty() {
+        true => vec![sam::FALLBACK],
+        false => du.name_candidates.iter().map(NameCandidate::as_str).collect(),
     };
-    // A source is spent only when it *sanitizes* to a name, not when it is
-    // merely non-blank: a display name of `...` is three allowed characters and
-    // no name, and testing the raw string would derive `sam::FALLBACK` for it
-    // while a perfectly good mail address went unread. Lazy, so no source past
-    // the first usable one is sanitized at all.
-    let base = order
-        .into_iter()
-        .map(|s| sanitize_sam(s, 20))
-        .find(|s| s != sam::FALLBACK)
-        .unwrap_or_else(|| sam::FALLBACK.to_owned());
-    let mut sam = base.clone();
-    if current_sam_keys.contains(&sam::fold(&sam)) {
-        let short: String = base.chars().take(15).collect();
-        sam = format!("{short}-{}", oid4(oid));
-        if current_sam_keys.contains(&sam::fold(&sam)) {
-            return Err(PlanError::NameCollision(vec![format!("{sam:?} (user {oid})")]));
+    let sam = match offered.iter().copied().find(|name| !held(name)) {
+        Some(name) => name.to_owned(),
+        None => {
+            // Every candidate is taken, so the preferred one is disambiguated
+            // rather than a later one preferred: the suffix keeps the name the
+            // person would recognize.
+            let short: String = offered[0].chars().take(15).collect();
+            let suffixed = format!("{short}-{}", oid4(oid));
+            if held(&suffixed) {
+                return Err(PlanError::NameCollision(vec![format!("{suffixed:?} (user {oid})")]));
+            }
+            suffixed
         }
-    }
+    };
     let cn = safe_name(&du.display_name).unwrap_or_else(|| sam.clone());
     Ok((sam.clone(), format!("{sam}@{upn_suffix}"), cn))
 }

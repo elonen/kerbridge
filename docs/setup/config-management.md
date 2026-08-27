@@ -104,7 +104,8 @@ main.toml
 sync.toml
   dry_run = true          default false
 = interval_seconds = 300  same as the default
-! sam_attribute = "upn"   rename `sam_attribute` to `sam_source`
+! sam_source = "upn"      copy `sam_source` to `provider_config.sam_source`
+                          in every idp_<name>.toml, then remove it
 ```
 
 The first column marks the lines that need your attention:
@@ -177,11 +178,12 @@ If the option was renamed, KerBridge says so:
 ```
 kbconfig: in configs/sync.toml: TOML parse error at line 73, column 1
    |
-73 | sam_attribute = "upn"
-   | ^^^^^^^^^^^^^
-unknown field `sam_attribute`, expected one of `interval_seconds`, ...
+73 | sam_source = "upn"
+   | ^^^^^^^^^^
+unknown field `sam_source`, expected one of `interval_seconds`, ...
 
-  this version of KerBridge moved it -- rename `sam_attribute` to `sam_source`
+  this version of KerBridge moved it -- copy `sam_source` to
+  `provider_config.sam_source` in every idp_<name>.toml, then remove it
 
 == How to fix this?
 

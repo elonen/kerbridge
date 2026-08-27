@@ -12,9 +12,9 @@ use kerbridge_core::is_guid;
 use kerbridge_core::time::{days_from_ymd, now_unix};
 use kerbridge_notify::{Event, Notifier, Severity};
 
-use super::Settings;
 use super::client::{AuthRefused, GraphClient, GraphReader, StreamResult, TokenError};
 use super::wire::Shadow;
+use super::{SamSource, Settings};
 use crate::sync::{
     CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, Subject, build_desired,
 };
@@ -34,6 +34,7 @@ pub struct EntraSource {
     grant_group_id: Option<String>,
     /// Group ids to mirror beyond the admission-group closure.
     allowlist: Vec<String>,
+    sam_source: SamSource,
     notifier: Arc<Notifier>,
     shadow: Shadow,
     users_cursor: Option<String>,
@@ -51,6 +52,7 @@ impl EntraSource {
             admission_group_id: settings.admission_group_id.clone(),
             grant_group_id: settings.device_grant_group_id.clone(),
             allowlist: settings.extra_group_ids.clone(),
+            sam_source: settings.sam_source,
             notifier,
             shadow: Shadow::default(),
             users_cursor: None,
@@ -215,7 +217,8 @@ impl EntraSource {
         let grant = self.grant_group_id.clone().map(Subject::new);
         roots.extend(grant.clone());
         let admission = Subject::new(self.admission_group_id.clone());
-        let (desired, refused) = build_desired(self.shadow.enumerate(), &admission, &roots);
+        let (desired, refused) =
+            build_desired(self.shadow.enumerate(self.sam_source), &admission, &roots);
         SourceSnapshot { desired, admission, grant, refused }
     }
 }
@@ -450,6 +453,7 @@ mod tests {
             admission_group_id: "77778888-bbbb-9999-cccc-0000dddd1111".to_owned(),
             grant_group_id: None,
             allowlist: Vec::new(),
+            sam_source: SamSource::default(),
             notifier: Arc::new(notifier),
             shadow: Shadow::default(),
             users_cursor: Some(STORED_CURSOR.to_owned()),

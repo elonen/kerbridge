@@ -26,28 +26,13 @@ names the tag, and it stops if that section is absent or empty.
 
 ## Unreleased
 
-- Config `sync.toml`: `cycle_deadline_seconds` and `read_deadline_seconds`
-  are removed. A read from the cloud IdP runs until the directory has been
-  read out, so there is no allowance to set. A read that stops making
-  progress is abandoned on its own. Run `kbconfig upgrade` to remove the
-  option, or edit the file.
-- Config `idp_<source>.toml`: a role group is bound by its object id only.
-  `admission_group` and `device_grant_group` are removed, and a file that
-  states one is refused at startup. Read the Object Id off the group's
-  Overview page in Entra and put it in `admission_group_id` or
-  `device_grant_group_id`. No tool can make this change for you: the
-  conversion needs a call to the tenant.
-- The `admission-group-misconfigured` notification is removed. Sync now
-  repoints the realm-admission marker onto the configured group, because an
-  object id says which group admits and a display name could not.
-- The notifications `graph-credential-expiring` and
-  `graph-credential-expired` are renamed to `sync-credential-expiring` and
-  `sync-credential-expired`. Sync reads more than one cloud IdP, and only
-  Entra speaks Graph. Change any monitoring rule that matches the old
-  slug, and delete the stale problem files named below.
-- The documentation calls the secret sync reads the cloud directory with
-  the "sync credential" everywhere. It was also called the "Graph
-  credential", which named a thing only Entra has.
+- Entra role groups are now configured by Object Id. Replace
+  `admission_group` and `device_grant_group` manually before upgrading.
+- Retired sync read timeout options. Run `kbconfig upgrade`.
+- Moved `sam_source` into each identity-provider file. Run `kbconfig upgrade`.
+- Sync keeps the configured admission group when its display name changes.
+- Sync credential notifications have new names. Update monitoring rules and
+  delete problem files with the old `graph-credential-*` names.
 
 ## 0.9.2
 

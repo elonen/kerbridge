@@ -16,9 +16,9 @@
 //! self-healing and does not cascade.
 //!
 //! S13 is the recorded initial read with the admission group holding Gary
-//! Guest, whose UPN carries Entra's `#EXT#` marker. It is replayed in
-//! `SamSource::Upn`, so it pins the login name that a UPN local part with a
-//! domain in it derives to.
+//! Guest, an account invited from another tenant. Its candidates were built by
+//! the adapter from his UPN, so it pins the login name a UPN local part with a
+//! domain in it ends up as.
 
 use super::*;
 
@@ -56,8 +56,9 @@ fn matches_every_recorded_planner_fixture() {
         }
         let name = path.file_stem().unwrap().to_string_lossy().to_string();
         let fx: Fixture = serde_json::from_slice(&std::fs::read(&path).unwrap()).expect(&name);
-        // The stamp the fixtures were generated with, and the naming mode they
-        // were generated in -- the sam derived from the UPN. Replay needs both.
+        // The stamp the fixtures were generated with. The naming mode is in the
+        // fixtures: their candidate lists were built by the adapter in
+        // `SamSource::Upn`.
         let ctx = PlanCtx {
             idp_ou: "OU=Entra,DC=example,DC=site",
             admission: &fx.admission,
@@ -65,7 +66,6 @@ fn matches_every_recorded_planner_fixture() {
             upn_suffix: "example.site",
             group_suffix: "",
             now: "2026-07-21T12:00:00Z",
-            sam_source: SamSource::Upn,
             // Off for the recorded scenarios. Their `current` blocks were authored when
             // a login name never moved, so every one of them would otherwise gain
             // rename ops and stop being about the thing it was recorded for --

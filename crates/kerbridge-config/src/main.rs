@@ -133,10 +133,7 @@ fn check(dir: &Path, online: bool) -> Result<()> {
         config.broker.listen,
         config.broker.issuer_socket.display()
     );
-    println!(
-        "sync: every {}s, login names from {}",
-        config.sync.interval_seconds, config.sync.sam_source
-    );
+    println!("sync: every {}s", config.sync.interval_seconds);
     if config.sources.is_empty() {
         println!("sources: none listed -- a realm mid-bootstrap, not a broken one");
     }
@@ -1115,6 +1112,53 @@ mod tests {
         Config::load(dir).expect("the set loads once the line is gone");
         let kept = std::fs::read_to_string(dir.join("sync.toml.bak")).unwrap();
         assert!(kept.contains("sam_attribute"), "the old file keeps the line");
+    }
+
+    /// A second source, so a per-source rule is exercised against more than the
+    /// one file every fixture already has.
+    fn second_source(dir: &Path, name: &str) {
+        let body = format!(
+            "{}{}",
+            kerbridge_core::config::source_envelope(name, Provider::Entra.name())
+                .expect("the envelope renders"),
+            Provider::Entra.template().expect("the block renders")
+        );
+        std::fs::write(dir.join(format!("idp_{name}.toml")), body).unwrap();
+        let path = dir.join("main.toml");
+        let body = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace(r#"sources = ["entra"]"#, &format!(r#"sources = ["entra", "{name}"]"#));
+        std::fs::write(&path, body).unwrap();
+    }
+
+    /// An option that was deployment-wide and is now per source reaches *every*
+    /// source, and leaves the file it came from. Copying is the only lossless
+    /// answer -- "which source gets it" has no other one -- so no account
+    /// changes its name because of an upgrade.
+    #[test]
+    fn an_option_that_became_per_source_is_copied_into_every_source() {
+        let fixture = fixture("upgrade-spread");
+        let dir = fixture.dir();
+        second_source(dir, "staff");
+        let path = dir.join("sync.toml");
+        let body = std::fs::read_to_string(&path).unwrap() + "sam_source = \"upn\"\n";
+        std::fs::write(&path, body).unwrap();
+
+        upgrade(dir, false).unwrap();
+
+        let config = Config::load(dir).expect("the set loads once the option has moved");
+        for source in &config.sources {
+            let settings = IdpSettings::parse(Provider::Entra, &source.provider_config)
+                .expect("the block parses");
+            assert_eq!(
+                settings.paths()["sam_source"],
+                "upn",
+                "source {} did not take what sync.toml held",
+                source.name
+            );
+        }
+        let sync = std::fs::read_to_string(dir.join("sync.toml")).unwrap();
+        assert!(!sync.contains("\nsam_source"), "the old home still states it:\n{sync}");
     }
 
     /// What an operator most wants out of an upgrade, and the one thing a diff

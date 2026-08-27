@@ -259,155 +259,78 @@ fn oid4_counts_characters_not_bytes() {
     assert_eq!(oid4("🙂🙃🙂🙃🙂"), "🙂🙃🙂🙃");
 }
 
-/// One helper, three sources, so the difference between them is readable
-/// in one place.
-fn alloc(du: &DesiredUser, src: SamSource) -> String {
-    alloc_names(du, "oid1", &HashSet::new(), "example.site", src).unwrap().0
+/// One helper, so the difference between the cases below is readable in one
+/// place. `taken` is the domain-wide namespace a new name must avoid.
+fn alloc(du: &DesiredUser, taken: &[&str]) -> String {
+    let keys: HashSet<String> = taken.iter().map(|s| sam::fold(s)).collect();
+    alloc_names(du, "oid1", &keys, "example.site").unwrap().0
 }
 
+/// The realm picks among what the adapter offered: the first candidate nobody
+/// holds. Which strings those are, and in what order, is the adapter's.
 #[test]
-fn each_sam_source_derives_from_its_own_attribute() {
+fn the_first_unheld_candidate_becomes_the_login_name() {
     let du = DesiredUser {
         display_name: "Jane Doe".to_owned(),
-        mail: "jdoe@example.site".to_owned(),
-        other_mails: Vec::new(),
-        upn: "jane.doe.longcontractor@example.onmicrosoft.com".to_owned(),
+        name_candidates: candidates(["jane.doe", "jdoe", "jane.doe.contractor"]),
         enabled: true,
     };
-    assert_eq!(alloc(&du, SamSource::DisplayName), "jane.doe");
-    assert_eq!(alloc(&du, SamSource::EmailUsername), "jdoe");
-    // Truncated to 20 characters by sanitize_sam.
-    assert_eq!(alloc(&du, SamSource::Upn), "jane.doe.longcontrac");
+    assert_eq!(alloc(&du, &[]), "jane.doe");
+    // Folded, because that is what samldb enforces uniqueness under.
+    assert_eq!(alloc(&du, &["Jane.Doe"]), "jdoe");
+    assert_eq!(alloc(&du, &["jane.doe", "jdoe"]), "jane.doe.contractor");
 
-    let (sam, upn, cn) =
-        alloc_names(&du, "oid1", &HashSet::new(), "example.site", SamSource::DisplayName).unwrap();
-    assert_eq!((upn, cn), ("jane.doe@example.site".to_owned(), "Jane Doe".to_owned()));
+    // The UPN moves with the sam -- samldb enforces uniqueness there too -- and
+    // the CN is the display name as it stands.
+    let (sam, upn, cn) = alloc_names(&du, "oid1", &HashSet::new(), "example.site").unwrap();
     assert_eq!(sam, "jane.doe");
-
-    // A one-word display name still yields a usable name.
-    let one = DesiredUser { display_name: "Prince".to_owned(), ..du.clone() };
-    assert_eq!(alloc(&one, SamSource::DisplayName), "prince");
+    assert_eq!(upn, "jane.doe@example.site");
+    assert_eq!(cn, "Jane Doe");
 }
 
-/// The display name keeps *every* token, because first-and-last mangles
-/// names that are not `given family`.
+/// Every candidate taken disambiguates the *preferred* one rather than settling
+/// for a later one: the suffix keeps the name the person would recognize, and a
+/// name they would not recognize is no better for being unsuffixed.
 #[test]
-fn the_display_name_source_keeps_every_token() {
+fn every_candidate_taken_suffixes_the_preferred_one() {
     let du = DesiredUser {
-        display_name: "Gabriel García Márquez".to_owned(),
-        mail: String::new(),
-        other_mails: Vec::new(),
-        upn: "gabo@example.onmicrosoft.com".to_owned(),
+        display_name: "Jane Doe".to_owned(),
+        name_candidates: candidates(["jane.doe", "jdoe"]),
         enabled: true,
     };
-    // First-and-last would have given `gabriel.márquez`, keeping the
-    // maternal surname and dropping the paternal one that identifies him.
-    assert_eq!(alloc(&du, SamSource::DisplayName), "gabriel.garcía.márqu");
-
-    // No ordering is imposed: a family-first display name stays family-first.
-    let jp = DesiredUser { display_name: "山田 太郎".to_owned(), ..du.clone() };
-    assert_eq!(alloc(&jp, SamSource::DisplayName), "山田.太郎");
+    assert_eq!(alloc(&du, &["jane.doe", "jdoe"]), "jane.doe-oid1");
+    // The suffix is spent from the budget, not added past it: 15 characters of
+    // the name plus the four of the object id.
+    let long = DesiredUser { name_candidates: candidates(["jane.doe.contractor1"]), ..du.clone() };
+    assert_eq!(alloc(&long, &["jane.doe.contractor1"]), "jane.doe.contra-oid1");
 }
 
-/// Why `upn` is the last resort: a UPN local part can carry a *domain*,
-/// and the other two sources cannot.
-///
-/// `alice.anderson_gmail.com#EXT#@tenant.onmicrosoft.com` has its `#EXT#`
-/// stripped but not its domain -- that is not separable from a name, since
-/// `.` and `_` are both legal in a sam -- so the login name concatenates a
-/// domain and is then cut mid-domain by the character budget.
-///
-/// This is the UPN of an invited account, and both kinds of them reach sync: a
-/// guest is syncable as soon as a selected group holds them, and a *member*
-/// invited from another tenant keeps the same UPN.
-/// `S13_held_guest_upn_name` carries a recorded one from the Graph read all the
-/// way to the login name. This test is the three-source comparison that fixture
-/// cannot make.
+/// No candidates at all is legal on the seam -- an account with nothing usable
+/// on it -- and still yields a legal name rather than an empty one.
 #[test]
-fn a_upn_local_part_can_carry_a_domain_where_the_others_cannot() {
-    // No `mail` at all, because the mailbox is not in this tenant; the
-    // address the person uses is in `otherMails`.
-    let guest = DesiredUser {
-        display_name: "Alice Anderson".to_owned(),
-        mail: String::new(),
-        other_mails: vec!["alice.anderson@gmail.example".to_owned()],
-        upn: "alice.anderson_gmail.com#EXT#@example.onmicrosoft.com".to_owned(),
+fn an_empty_candidate_list_lands_on_the_fallback_name() {
+    let du =
+        DesiredUser { display_name: "...".to_owned(), name_candidates: Vec::new(), enabled: true };
+    assert_eq!(alloc(&du, &[]), sam::FALLBACK);
+    assert_eq!(alloc(&du, &[sam::FALLBACK]), "kbuser-oid1");
+}
+
+/// The suffixed form taken as well is the operator's to resolve, so the whole
+/// cycle is refused rather than half-applied.
+#[test]
+fn a_taken_suffixed_name_refuses_the_cycle() {
+    let du = DesiredUser {
+        display_name: "Jane Doe".to_owned(),
+        name_candidates: candidates(["jane.doe"]),
         enabled: true,
     };
-    let sam = alloc(&guest, SamSource::Upn);
-    assert_eq!(sam, "alice.anderson_gmail", "guest UPN drags the source domain in");
-    assert!(sam.contains("gmail"), "and it is a domain, not a name");
-
-    assert_eq!(alloc(&guest, SamSource::DisplayName), "alice.anderson");
-    // The whole point of reading otherMails: without it this would have
-    // fallen through to the polluted UPN above.
-    assert_eq!(alloc(&guest, SamSource::EmailUsername), "alice.anderson");
-
-    // `mail` wins when the account has both.
-    let member = DesiredUser { mail: "a.anderson@example.site".to_owned(), ..guest.clone() };
-    assert_eq!(alloc(&member, SamSource::EmailUsername), "a.anderson");
-}
-
-/// Any source can be absent on a real account, so each falls back to the
-/// others rather than deriving `kbuser`.
-#[test]
-fn an_absent_source_falls_back_to_the_others() {
-    let no_mail = DesiredUser {
-        display_name: "Bob Bobson".to_owned(),
-        mail: String::new(),
-        other_mails: Vec::new(),
-        upn: "bbobson@example.onmicrosoft.com".to_owned(),
-        enabled: true,
-    };
-    // No mail and no otherMails: an address-shaped choice falls to the UPN,
-    // which is address-shaped too, rather than to the display name.
-    assert_eq!(alloc(&no_mail, SamSource::EmailUsername), "bbobson");
-
-    let only_upn = DesiredUser { display_name: String::new(), ..no_mail.clone() };
-    assert_eq!(alloc(&only_upn, SamSource::EmailUsername), "bbobson");
-    assert_eq!(alloc(&only_upn, SamSource::DisplayName), "bbobson");
-
-    // otherMails alone is enough.
-    let other_only =
-        DesiredUser { other_mails: vec!["bob@elsewhere.example".to_owned()], ..no_mail.clone() };
-    assert_eq!(alloc(&other_only, SamSource::EmailUsername), "bob");
-
-    // Nothing usable at all still yields a legal name, never an empty one.
-    let nothing = DesiredUser { upn: String::new(), ..only_upn.clone() };
-    assert_eq!(alloc(&nothing, SamSource::DisplayName), "kbuser");
-}
-
-/// A source that is present but sanitizes to nothing is spent like an absent
-/// one. `...` is three characters `sam::allowed` accepts and no name, because
-/// the trim takes them all -- so testing the raw string for blankness derives
-/// `sam::FALLBACK` while a perfectly good mail address goes unread.
-#[test]
-fn a_source_that_sanitizes_to_nothing_falls_through_like_an_absent_one() {
-    let punctuation = DesiredUser {
-        display_name: "...".to_owned(),
-        mail: "jane.doe@example.site".to_owned(),
-        other_mails: Vec::new(),
-        upn: "jdoe@example.onmicrosoft.com".to_owned(),
-        enabled: true,
-    };
-    assert_eq!(alloc(&punctuation, SamSource::DisplayName), "jane.doe");
-    assert_eq!(alloc(&punctuation, SamSource::Upn), "jdoe");
-
-    // Every source unusable is still the fallback, not an empty name.
-    let none = DesiredUser { mail: String::new(), upn: "@example.site".to_owned(), ..punctuation };
-    assert_eq!(alloc(&none, SamSource::DisplayName), sam::FALLBACK);
-}
-
-#[test]
-fn sam_source_parses_only_the_documented_spellings() {
-    use std::str::FromStr;
-    assert_eq!(SamSource::from_str("displayname"), Ok(SamSource::DisplayName));
-    assert_eq!(SamSource::from_str(" EMAIL_Username "), Ok(SamSource::EmailUsername));
-    assert_eq!(SamSource::from_str("upn"), Ok(SamSource::Upn));
-    assert_eq!(SamSource::default(), SamSource::DisplayName);
-    // Near-misses are refused, not silently defaulted.
-    for bad in ["", "email", "mail", "1", "true", "display_name", "userPrincipalName"] {
-        assert!(SamSource::from_str(bad).is_err(), "{bad:?} must not parse");
+    let keys: HashSet<String> =
+        ["jane.doe", "jane.doe-oid1"].iter().map(|s| sam::fold(s)).collect();
+    match alloc_names(&du, "oid1", &keys, "example.site") {
+        Err(PlanError::NameCollision(names)) => {
+            assert!(names[0].contains("jane.doe-oid1"), "{names:?}");
+        }
+        other => panic!("expected a NameCollision, got {other:?}"),
     }
 }
 
@@ -521,10 +444,11 @@ fn a_user_whose_display_name_survives_nothing_still_gets_a_dn() {
         })
         .expect("the user is created")
     };
-    // `,,,` sanitizes to nothing, so the UPN local part is spent instead.
-    assert_eq!(created_dn(des_user(" ,,, ")), format!("CN=someone,{BASE}"));
-    // With no source left, the sam is itself `sanitize_sam`'s never-empty
-    // fallback, so the two substitutions chain rather than leaving a hole.
-    let nothing = DesiredUser { upn: String::new(), ..des_user(" ,,, ") };
-    assert_eq!(created_dn(nothing), format!("CN=kbuser,{BASE}"));
+    // `,,,` survives nothing, so the CN falls back to whatever name the
+    // candidates did yield.
+    let addressed = DesiredUser { name_candidates: candidates(["jdoe"]), ..des_user(" ,,, ") };
+    assert_eq!(created_dn(addressed), format!("CN=jdoe,{BASE}"));
+    // With no candidate either, the sam is itself the never-empty fallback, so
+    // the two substitutions chain rather than leaving a hole.
+    assert_eq!(created_dn(des_user(" ,,, ")), format!("CN=kbuser,{BASE}"));
 }

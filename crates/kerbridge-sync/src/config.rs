@@ -13,8 +13,6 @@ use kerbridge_core::config::SourceFile;
 use kerbridge_idp::sync::Subject;
 use kerbridge_idp::{IdpSettings, Provider};
 
-use crate::planner::SamSource;
-
 /// What one process does, and for whom.
 ///
 /// Everything here is deployment-wide; anything that could differ between two
@@ -27,9 +25,6 @@ pub struct Config {
     /// Compute and log the plan but apply nothing. A safe way to watch a new
     /// deployment before letting it write.
     pub dry_run: bool,
-    /// Which cloud attribute a *newly created* account's `sAMAccountName` is
-    /// derived from. Existing accounts are never renamed by it.
-    pub sam_source: SamSource,
     /// Whether a live account's login name follows its cloud display name.
     /// Default on. Off freezes every live name where it is.
     pub automatic_sam_renames: bool,
@@ -99,7 +94,6 @@ impl Config {
         let config = Self {
             interval: interval(sync.interval_seconds)?,
             dry_run: sync.dry_run,
-            sam_source: sam_source(&sync.sam_source)?,
             automatic_sam_renames: sync.automatic_sam_renames,
             device_grant_days: set.main.device_grant_days,
             device_grant_notify_days: notify_days(&sync.device_grant_notify)?,
@@ -184,19 +178,6 @@ fn notify_days(raw: &str) -> Result<Option<u32>> {
     }
 }
 
-/// `sync.toml`'s `sam_source`. An unrecognized value is refused rather than
-/// defaulted: it is a name policy for every account the deployment will ever
-/// create, and a typo that silently picks the default is discovered only when
-/// someone reads a login name in Explorer.
-fn sam_source(raw: &str) -> Result<SamSource> {
-    raw.parse().map_err(|()| {
-        anyhow::anyhow!(
-            "sync.toml: sam_source expects one of {}; got {raw:?}",
-            SamSource::SPELLINGS
-        )
-    })
-}
-
 /// A source's group `sAMAccountName` suffix, or the literal `none` for none at
 /// all.
 ///
@@ -230,16 +211,13 @@ mod tests {
         assert!(err.contains("idp_entra.toml") && err.contains("none"), "{err}");
     }
 
-    /// An unrecognized value is a refusal, not a silent default, in both
-    /// directions -- and `off` is spelled, so a deployment that wants no
-    /// notification says so.
+    /// An unrecognized value is a refusal, not a silent default -- and `off` is
+    /// spelled, so a deployment that wants no notification says so.
     #[test]
-    fn the_two_spelled_settings_refuse_what_they_do_not_recognize() {
+    fn the_notify_setting_refuses_what_it_does_not_recognize() {
         assert_eq!(notify_days("off").unwrap(), None);
         assert_eq!(notify_days("14").unwrap(), Some(14));
         assert!(notify_days("yes").is_err());
-        assert_eq!(sam_source("upn").unwrap(), SamSource::Upn);
-        assert!(sam_source("").is_err());
     }
 
     /// A pause of nothing is the one interval that is refused, and the refusal

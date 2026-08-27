@@ -35,6 +35,12 @@ pub enum Migration {
     /// The option kept its meaning and moved to another file, under this name
     /// there.
     Moved { file: &'static str, key: &'static str, to_file: &'static str, to: &'static str },
+    /// The option was deployment-wide and is now per source. Every source file
+    /// takes a copy under `to`, and the original goes.
+    ///
+    /// A copy, not a choice: "which source gets it" has no other lossless
+    /// answer.
+    SpreadToSources { file: &'static str, key: &'static str, to: &'static str },
     /// The option is gone. `instead` says what to do now, in one sentence an
     /// operator can act on.
     Retired { file: &'static str, key: &'static str, instead: &'static str },
@@ -73,6 +79,11 @@ pub const MIGRATIONS: &[Migration] = &[
         key: "read_deadline_seconds",
         instead: "a read runs until it is done, and a stalled one is abandoned on its own",
     },
+    Migration::SpreadToSources {
+        file: "sync.toml",
+        key: "sam_source",
+        to: "provider_config.sam_source",
+    },
 ];
 
 /// What a source file is called in an entry. A deployment names its own source
@@ -87,6 +98,7 @@ impl Migration {
         match self {
             Self::Renamed { file, .. }
             | Self::Moved { file, .. }
+            | Self::SpreadToSources { file, .. }
             | Self::Retired { file, .. }
             | Self::ValueRenamed { file, .. } => file,
         }
@@ -97,6 +109,7 @@ impl Migration {
         match self {
             Self::Renamed { from, .. } => from,
             Self::Moved { key, .. }
+            | Self::SpreadToSources { key, .. }
             | Self::Retired { key, .. }
             | Self::ValueRenamed { key, .. } => key,
         }
@@ -121,6 +134,9 @@ impl Migration {
             Self::Renamed { from, to, .. } => format!("rename `{from}` to `{to}`"),
             Self::Moved { key, to_file, to, .. } => {
                 format!("move `{key}` to `{to}` in {to_file}")
+            }
+            Self::SpreadToSources { key, to, .. } => {
+                format!("copy `{key}` to `{to}` in every {SOURCE_FILE}, then remove it")
             }
             Self::Retired { key, instead, .. } => format!("remove `{key}`: {instead}"),
             Self::ValueRenamed { key, from, to, .. } => {
@@ -173,10 +189,16 @@ pub fn instruction(file: &str, key: &str, value: &toml::Value) -> Option<String>
 /// show. An empty return means the set was already current -- which is the
 /// normal answer, and the reason replaying costs nothing.
 pub fn replay(set: &mut BTreeMap<String, toml::Table>) -> Vec<String> {
+    replay_with(MIGRATIONS, set)
+}
+
+fn replay_with(list: &[Migration], set: &mut BTreeMap<String, toml::Table>) -> Vec<String> {
     let mut changed = Vec::new();
-    for entry in MIGRATIONS {
+    for entry in list {
         let files: Vec<String> =
             set.keys().filter(|file| shape_of(file) == entry.file()).cloned().collect();
+        let sources: Vec<String> =
+            set.keys().filter(|file| shape_of(file) == SOURCE_FILE).cloned().collect();
         for file in files {
             // A deployment that does not have the target file cannot be given
             // one here: an absent `kbmanage.toml` is a deliberate state, and
@@ -193,11 +215,20 @@ pub fn replay(set: &mut BTreeMap<String, toml::Table>) -> Vec<String> {
                 continue;
             }
 
+            // A deployment with no source file has nothing to copy into. The
+            // option is then left where it is and dropped by the rewrite, which
+            // reports it -- a set with no sources mirrors nothing, so there is
+            // no behaviour to preserve. Checked before the document is borrowed.
+            if matches!(entry, Migration::SpreadToSources { .. }) && sources.is_empty() {
+                continue;
+            }
+
             let document = set.get_mut(&file).expect("a key just taken from this map");
             if !entry.matches(at(document, entry.key())) {
                 continue;
             }
             let mut moved = None;
+            let mut spread = None;
             match entry {
                 Migration::Renamed { from, to, .. } => {
                     let value = take(document, from).expect("matched, so it is there");
@@ -212,9 +243,21 @@ pub fn replay(set: &mut BTreeMap<String, toml::Table>) -> Vec<String> {
                 Migration::Moved { key, to_file, to, .. } => {
                     moved = take(document, key).map(|value| (value, *to_file, *to));
                 }
+                Migration::SpreadToSources { key, to, .. } => {
+                    spread = take(document, key).map(|value| (value, *to));
+                }
             }
             if let Some((value, to_file, to)) = moved {
                 put(set.get_mut(to_file).expect("checked above"), to, value);
+            }
+            if let Some((value, to)) = spread {
+                for source in &sources {
+                    put(
+                        set.get_mut(source).expect("a key just taken from this map"),
+                        to,
+                        value.clone(),
+                    );
+                }
             }
             changed.push(format!("{file}: {}", entry.instruction()));
         }
@@ -399,6 +442,55 @@ mod tests {
                 "{file}"
             );
         }
+    }
+
+    /// Every source takes a copy, and the file it came from loses it. Two
+    /// sources is the case that shows why a copy: one of them would otherwise
+    /// have to be chosen over the other.
+    #[test]
+    fn a_spread_entry_reaches_every_source_and_empties_the_file_it_came_from() {
+        const SPREAD: &[Migration] = &[Migration::SpreadToSources {
+            file: "sync.toml",
+            key: "sam_source",
+            to: "provider_config.sam_source",
+        }];
+        let named = |value: &str| toml::Value::String(value.to_owned());
+        let mut set: BTreeMap<String, toml::Table> = [
+            ("sync.toml", toml::Table::from_iter([("sam_source".to_owned(), named("upn"))])),
+            ("idp_entra.toml", toml::Table::new()),
+            ("idp_staff.toml", toml::Table::new()),
+        ]
+        .into_iter()
+        .map(|(file, document)| (file.to_owned(), document))
+        .collect();
+
+        assert_eq!(replay_with(SPREAD, &mut set).len(), 1);
+        assert!(set["sync.toml"].is_empty(), "the option stayed where it was");
+        for file in ["idp_entra.toml", "idp_staff.toml"] {
+            assert_eq!(at(&set[file], "provider_config.sam_source"), Some(&named("upn")), "{file}");
+        }
+    }
+
+    /// A deployment with no source file has nothing to copy into, and inventing
+    /// one would turn an upgrade into a change of what the deployment is. The
+    /// rewrite drops the line and names it, which is the same treatment any
+    /// option this version does not have gets.
+    #[test]
+    fn a_spread_entry_leaves_a_set_with_no_source_alone() {
+        const SPREAD: &[Migration] = &[Migration::SpreadToSources {
+            file: "sync.toml",
+            key: "sam_source",
+            to: "provider_config.sam_source",
+        }];
+        let mut set: BTreeMap<String, toml::Table> = BTreeMap::from([(
+            "sync.toml".to_owned(),
+            toml::Table::from_iter([(
+                "sam_source".to_owned(),
+                toml::Value::String("upn".to_owned()),
+            )]),
+        )]);
+        assert!(replay_with(SPREAD, &mut set).is_empty());
+        assert!(set["sync.toml"].contains_key("sam_source"));
     }
 
     /// The ratchet. A key that was renamed away must not come back meaning

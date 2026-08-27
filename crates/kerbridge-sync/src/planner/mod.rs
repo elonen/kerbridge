@@ -89,46 +89,6 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OrderedMap<T> {
     }
 }
 
-/// Which cloud attribute a **new** account's `sAMAccountName` is derived from.
-///
-/// Consulted only at creation. A live account's name is never recomputed, so
-/// changing this renames nobody -- see the crate README.
-///
-/// None of the three is correct in general, which is why it is a choice: a
-/// display name is what users recognize but is not unique; a mail local part is
-/// usually hand-made, ASCII and stable, but not every account has one; a UPN
-/// always exists and is unique across the IdP, but a guest's carries the source
-/// domain (`alice.anderson_gmail.com#EXT#@…`) and `.`/`_` are legal in a sam, so
-/// that domain cannot be told from a surname.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SamSource {
-    /// Every whitespace token of the display name, joined by `.`.
-    #[default]
-    DisplayName,
-    /// The local part of the mail address -- what the person already answers to.
-    EmailUsername,
-    /// The local part of the UPN. Unique across the IdP; least pretty.
-    Upn,
-}
-
-impl SamSource {
-    /// The accepted spellings, for the operator-facing error listing them.
-    pub const SPELLINGS: &'static str = "displayname, email_username, upn";
-}
-
-impl std::str::FromStr for SamSource {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, ()> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "displayname" => Ok(Self::DisplayName),
-            "email_username" => Ok(Self::EmailUsername),
-            "upn" => Ok(Self::Upn),
-            _ => Err(()),
-        }
-    }
-}
-
 /// Current state, read from Samba. Only objects carrying a `kb1` identity for
 /// this instance's own source reach `users`/`groups`; everything else in the OU
 /// lands in `unmanaged_dns` and is reported but never touched.
@@ -365,9 +325,6 @@ pub struct PlanCtx<'a> {
     pub group_suffix: &'a str,
     /// RFC 3339 timestamp stamped into retire/quarantine markers.
     pub now: &'a str,
-    /// Which cloud attribute a newly created account's `sAMAccountName` comes
-    /// from. Existing accounts keep the name they were created with.
-    pub sam_source: SamSource,
     /// Whether a live account's login name follows its cloud display name after
     /// creation. Off means it is set once and never moves again.
     pub automatic_sam_renames: bool,
@@ -575,8 +532,7 @@ pub fn plan_sync(
                 let Some(identity) = encoded_identity(&mut b, ctx, oid) else {
                     continue;
                 };
-                let (sam, upn, cn) =
-                    alloc_names(du, oid.as_str(), &sam_keys, ctx.upn_suffix, ctx.sam_source)?;
+                let (sam, upn, cn) = alloc_names(du, oid.as_str(), &sam_keys, ctx.upn_suffix)?;
                 sam_keys.insert(sam::fold(&sam));
                 let dn = fresh_dn(&cn, oid.as_str(), ctx.idp_ou, &mut taken_dns);
                 dn_of.insert(oid, dn.clone());
@@ -605,7 +561,7 @@ pub fn plan_sync(
                     // do. Her own held name must read as free to her.
                     sam_keys.remove(&sam::fold(&cu.sam));
                     let (sam, upn, mut cn) =
-                        alloc_names(du, oid.as_str(), &sam_keys, ctx.upn_suffix, ctx.sam_source)?;
+                        alloc_names(du, oid.as_str(), &sam_keys, ctx.upn_suffix)?;
                     sam_keys.insert(sam::fold(&sam));
                     let parent = parent_of(&cu.dn);
                     let mut newdn = format!("CN={cn},{parent}");
@@ -653,8 +609,7 @@ pub fn plan_sync(
                     // reappearance: otherwise every account collides with itself
                     // and drifts into the `-<oid4>` fallback.
                     sam_keys.remove(&sam::fold(&cu.sam));
-                    let (sam, upn, _) =
-                        alloc_names(du, oid.as_str(), &sam_keys, ctx.upn_suffix, ctx.sam_source)?;
+                    let (sam, upn, _) = alloc_names(du, oid.as_str(), &sam_keys, ctx.upn_suffix)?;
                     sam_keys.insert(sam::fold(&sam));
                     if sam != cu.sam {
                         // The DN is left where it is: the CN follows the display
