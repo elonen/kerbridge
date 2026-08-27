@@ -352,6 +352,31 @@ fn carries_cursor(url: &str) -> bool {
     url.query_pairs().any(|(k, _)| k == "$deltatoken" || k == "$skiptoken")
 }
 
+/// Graph refused the request itself, not the transport. `401` is an access token
+/// Graph no longer accepts -- normally one that aged out during a long read, which
+/// the next cycle's own token clears. `403` is a directory permission the
+/// application never had, which no retry fixes.
+#[derive(Debug)]
+pub(super) struct AuthRefused {
+    status: u16,
+    detail: String,
+}
+
+impl std::fmt::Display for AuthRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let why = if self.status == 401 {
+            "Graph rejected the access token; a token is short-lived, so the next cycle's own \
+             token normally clears this"
+        } else {
+            "Graph refused the read; grant the application User.Read.All and Group.Read.All, \
+             then give admin consent"
+        };
+        write!(f, "{why} (HTTP {}: {})", self.status, self.detail)
+    }
+}
+
+impl std::error::Error for AuthRefused {}
+
 fn classify<T: DeserializeOwned>(
     status: u16,
     retry_after: Option<u64>,
@@ -379,6 +404,11 @@ fn classify<T: DeserializeOwned>(
         // on the request rather than on the error message, because the message
         // is Microsoft's prose and this must not turn on their wording.
         400 if carries_cursor => Ok(Outcome::CursorCorrupt),
+        // Not a transport fault, so this must not read as one: the operator is
+        // sent to the firewall for a consent they never gave.
+        401 | 403 => {
+            Err(AuthRefused { status, detail: String::from_utf8_lossy(body).into_owned() }.into())
+        }
         s if (500..=599).contains(&s) => Ok(Outcome::Transient),
         s => bail!("unexpected Graph status {s}: {}", String::from_utf8_lossy(body)),
     }
@@ -522,6 +552,22 @@ mod tests {
         let e = e.to_string();
         assert!(e.contains("Invalid $select"), "{e}");
         assert!(e.contains("400"), "{e}");
+    }
+
+    /// A refused read is not an unreachable one. `Unreachable` sends the
+    /// operator to the network; both of these are answered in the portal.
+    #[test]
+    fn graph_refusing_the_read_is_named_and_not_reported_as_a_transport_fault() {
+        let body = br#"{"error":{"code":"Authorization_RequestDenied","message":"Insufficient privileges"}}"#;
+        for (status, expect) in [(401u16, "access token"), (403, "User.Read.All")] {
+            let Err(e) = classify::<RawUser>(status, None, None, body, false) else {
+                panic!("{status} must not parse as a page");
+            };
+            assert!(e.downcast_ref::<AuthRefused>().is_some(), "{status}: must stay downcastable");
+            let msg = e.to_string();
+            assert!(msg.contains(expect), "{status}: {msg}");
+            assert!(msg.contains("Insufficient privileges"), "{status}: body must reach it");
+        }
     }
 
     #[test]

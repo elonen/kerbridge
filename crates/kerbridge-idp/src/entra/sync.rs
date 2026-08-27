@@ -13,7 +13,7 @@ use kerbridge_core::time::{days_from_ymd, now_unix};
 use kerbridge_notify::{Event, Notifier, Severity};
 
 use super::Settings;
-use super::client::{GraphClient, GraphReader, StreamResult, TokenError};
+use super::client::{AuthRefused, GraphClient, GraphReader, StreamResult, TokenError};
 use super::wire::Shadow;
 use crate::sync::{
     CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, Subject, build_desired,
@@ -270,7 +270,10 @@ fn days_remaining(expires: Option<&str>, now: u64) -> Option<i64> {
 
 /// Anything Graph did not answer: the tenant is out of reach this cycle.
 fn transport(e: anyhow::Error) -> SourceError {
-    SourceError::Unreachable(format!("cycle error: {e:#}"))
+    match e.downcast_ref::<AuthRefused>() {
+        Some(refused) => SourceError::Credential(refused.to_string()),
+        None => SourceError::Unreachable(format!("cycle error: {e:#}")),
+    }
 }
 
 /// One stream's outcome, flattened so [`EntraSource::read`] can match users and
