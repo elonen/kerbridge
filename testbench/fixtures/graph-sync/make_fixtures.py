@@ -98,7 +98,7 @@ fx("groups_delta_init_page1", "GET",
         "The two John Does are admission-group members because an account exists only for a user a "
         "selected group holds; they are the colliding-display-name pair, and holding them "
         "is what keeps that collision in the corpus. Gary Guest is deliberately in no "
-        "group at all: he is the eligible-but-unheld case.")
+        "group at all: he is the syncable-but-unheld case.")
 fx("groups_delta_init_page2", "GET", f"{G}/groups/delta?$skiptoken=ppqq-init-2", 200,
    {"@odata.context": f"{G}/$metadata#groups", "@odata.deltaLink":
     f"{G}/groups/delta?$deltatoken=tok-AAA1",
@@ -205,8 +205,8 @@ fx("transitive_members_admission_group", "GET",
    note="transitiveMembers returns nested groups AS OBJECTS plus flattened users. Used as the "
         "admission cross-check; costs 5 resource units vs 3 for /members (throttling-limits).")
 
-# --- 11. eligibility zoo: every claimed member type on one admission group ---------------------
-fx("eligibility_zoo_members", "GET", f"{G}/groups/{ADMISSION}/members", 200,
+# --- 11. syncable zoo: every claimed member type on one admission group ---------------------
+fx("syncable_zoo_members", "GET", f"{G}/groups/{ADMISSION}/members", 200,
    {"@odata.context": f"{G}/$metadata#directoryObjects", "value": [
       dict(mref("user", U_ALICE), **{"displayName": "Alice Anderson", "userType": "Member"}),
       dict(mref("user", U_GUEST), **{"displayName": "Gary Guest", "userType": "Guest",
@@ -223,8 +223,8 @@ fx("eligibility_zoo_members", "GET", f"{G}/groups/{ADMISSION}/members", 200,
       dict(mref("device", DEV_1), **{"displayName": "LAPTOP-0042", "deviceId": "4d0042aa-0000-0000-0000-00000000dead"}),
       dict(mref("servicePrincipal", SP_1), **{"displayName": "ci-automation", "appId": "ap9f0000-0000-0000-0000-0000000000aa"}),
    ]},
-   note="Eligibility fixture. KNOWN ISSUE (group-list-members doc): v1.0 /members omits "
-        "servicePrincipals; included here deliberately so the eligibility filter is exercised - "
+   note="Syncable fixture. KNOWN ISSUE (group-list-members doc): v1.0 /members omits "
+        "servicePrincipals; included here deliberately so the syncable filter is exercised - "
         "implementation must reject SPs whether or not Graph returns them. "
         "@odata.type strings for device/servicePrincipal are pattern-inferred (live-tenant TODO).")
 
@@ -243,7 +243,7 @@ fx("deleted_items_groups", "GET",
 fx("groups_delta_admission_group_deleted", "GET", f"{G}/groups/delta?$deltatoken=tok-AAA5", 200,
    {"@odata.deltaLink": f"{G}/groups/delta?$deltatoken=tok-AAA6",
     "value": [{"id": ADMISSION, "@removed": {"reason": "changed"}}]},
-   note="THE ADMISSION ITSELF deleted -> sync freezes admission changes + alerts; broker fails closed "
+   note="THE ADMISSION GROUP ITSELF deleted -> sync freezes admission changes + alerts; broker fails closed "
         "via role-marker count 0 after quarantine. NEVER auto-recreate (SID would change).")
 
 print("done")

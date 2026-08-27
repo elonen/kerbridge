@@ -18,7 +18,7 @@ it was taken.
 ### case
 
 One named situation a [fixture](#fixture-test-corpus) pins. Planner cases are
-numbered `S1` through `S12` (plus `S2b`); token cases are named for the single
+numbered `S1` through `S13` (plus `S2b`); token cases are named for the single
 thing wrong with them.
 <!-- avoid: scenario, work-order item -->
 
