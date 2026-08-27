@@ -10,13 +10,13 @@ use std::sync::Arc;
 use anyhow::{Result, bail};
 use kerbridge_core::is_guid;
 use kerbridge_core::time::{days_from_ymd, now_unix};
-use kerbridge_idp::entra::Settings;
 use kerbridge_notify::{Event, Notifier, Severity};
 
-use crate::graph::{Shadow, build_desired};
-use crate::graphclient::{GraphClient, GraphReader, StreamResult, TokenError};
-use crate::source::{
-    CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, Subject,
+use super::Settings;
+use super::client::{GraphClient, GraphReader, StreamResult, TokenError};
+use super::wire::Shadow;
+use crate::sync::{
+    CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, Subject, build_desired,
 };
 
 /// One Entra tenant, read over Graph.
@@ -211,15 +211,12 @@ impl EntraSource {
         // admission group. Someone held only by this group gets a directory object
         // and no admission, so no ticket -- the two groups are additive, never
         // alternatives.
-        let mut roots = self.allowlist.clone();
-        roots.extend(self.grant_group_id.clone());
-        let (desired, refused) = build_desired(&self.shadow, &self.admission_group_id, &roots);
-        SourceSnapshot {
-            desired,
-            admission: Subject::new(self.admission_group_id.clone()),
-            grant: self.grant_group_id.clone().map(Subject::new),
-            refused,
-        }
+        let mut roots: Vec<Subject> = self.allowlist.iter().cloned().map(Subject::new).collect();
+        let grant = self.grant_group_id.clone().map(Subject::new);
+        roots.extend(grant.clone());
+        let admission = Subject::new(self.admission_group_id.clone());
+        let (desired, refused) = build_desired(self.shadow.enumerate(), &admission, &roots);
+        SourceSnapshot { desired, admission, grant, refused }
     }
 }
 
@@ -300,7 +297,7 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::graph::{RawGroup, RawUser};
+    use crate::entra::wire::{RawGroup, RawUser};
 
     const STORED_CURSOR: &str = "https://graph.microsoft.com/v1.0/users/delta?$deltatoken=stored";
     const STALE_USER: &str = "user-from-the-last-cycle";

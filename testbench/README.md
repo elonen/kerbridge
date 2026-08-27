@@ -6,9 +6,9 @@ Nothing here is production code, for testing only.
 
 | Path | What | Read by |
 |---|---|---|
-| `entra-token/` | signed JWTs + `jwks.json`: one positive delegated token and 16 negatives (wrong tenant/audience/`azp`/scope, missing `scp` or `oid`, `idtyp=app`, expired, future `nbf`, unknown kid, `alg:none`, HS256 confusion, malformed tid, iss/tid mismatch, v1 shape, non-JWT garbage). The script also generates a second positive for a different `oid`, which only the live run below uses — see the note there. | `kerbridge-idp/src/entra.rs`, and `deploy/scripts/bench/ci-stack.sh` |
-| `graph-sync/` | recorded-shape Graph exchanges — delta init/incremental/paging, soft and hard delete, 410 Gone, 429 throttle, transitive members, admission-group ambiguity, syncable-rule cases. | `kerbridge-sync/src/graph/mod.rs`, `graphclient.rs` |
-| `planner/` | golden files, each `{desired, current, plan, error}` — retention, quarantine, admission-group-deleted freeze, partial-read refusal, ambiguous-identity conflict, role-marker restamp. | `kerbridge-sync/src/planner/mod.rs`, `graph/mod.rs` |
+| `entra-token/` | signed JWTs + `jwks.json`: one positive delegated token and 16 negatives (wrong tenant/audience/`azp`/scope, missing `scp` or `oid`, `idtyp=app`, expired, future `nbf`, unknown kid, `alg:none`, HS256 confusion, malformed tid, iss/tid mismatch, v1 shape, non-JWT garbage). The script also generates a second positive for a different `oid`, which only the live run below uses — see the note there. | `kerbridge-idp/src/entra/auth.rs`, and `deploy/scripts/bench/ci-stack.sh` |
+| `graph-sync/` | recorded-shape Graph exchanges — delta init/incremental/paging, soft and hard delete, 410 Gone, 429 throttle, transitive members, admission-group ambiguity, syncable-rule cases. | `kerbridge-idp/src/entra/wire.rs`, `client.rs` |
+| `planner/` | golden files, each `{admission, desired, current, plan}` — retention, quarantine, admission-group-deleted freeze, ambiguous-identity conflict, role-marker restamp. | `kerbridge-sync/src/planner/mod.rs`, `kerbridge-idp/src/entra/wire.rs` |
 | `tls/` | Two certificates, covering both arms of every branch the client's X.509 reader has: private-CA-issued vs self-signed, subjectAltName vs none, UTCTime vs GeneralizedTime, ASCII vs UTF8String. Nothing presents or trusts these — they are bytes to parse. | `kerbridge-client/src/tls.rs` |
 
 The `make_fixtures` scripts stay because they are the only way to

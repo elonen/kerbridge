@@ -865,7 +865,7 @@ reads and LDAPS for [directory](#directory) writes.
 The cloud-side rule that decides if [sync](#sync) can create an
 on-premises account for an object. KerBridge accepts Entra users of type
 `Member` or `Guest`. It rejects unknown types, devices, and service principals.
-<!-- refs: `kerbridge_sync::graph::user_syncable` -->
+<!-- refs: `kerbridge_idp::entra::wire::user_syncable` -->
 <!-- avoid: eligibility, eligibility policy, qualification -->
 <!-- different than: eligible -->
 

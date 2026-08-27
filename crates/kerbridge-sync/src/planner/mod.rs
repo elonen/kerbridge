@@ -3,8 +3,9 @@
 //!
 //! Four safety properties are structural, not incidental:
 //!
-//! - A read that did not finish yields no [`crate::source::SourceSnapshot`], so
-//!   there is nothing to plan from and nothing can be deleted or disabled.
+//! - A read that did not finish yields no
+//!   [`kerbridge_idp::sync::SourceSnapshot`], so there is nothing to plan from
+//!   and nothing can be deleted or disabled.
 //! - Every op targets a DN inside the IdP-specific OU; [`Builder::add`] asserts it, so a
 //!   bug cannot make the applier write outside this source's own OU.
 //! - A `sAMAccountName` collision on any new group refuses the whole cycle rather
@@ -23,7 +24,7 @@
 //! [`PlanCtx::identity`], so sync writes exactly the bytes the broker's verifier
 //! emits; the markers come from [`kerbridge_core::state`] for the same reason.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -46,7 +47,7 @@ use kerbridge_core::state::{
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::source::Subject;
+use kerbridge_idp::sync::{Desired, DesiredUser, Subject};
 
 mod names;
 
@@ -88,32 +89,6 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OrderedMap<T> {
     }
 }
 
-/// The population the realm should hold, keyed by the adapter's own subjects.
-/// `BTreeMap` because the reference planner iterates every desired collection
-/// in subject order, and this makes that ordering automatic and total.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Desired {
-    pub users: BTreeMap<Subject, DesiredUser>,
-    pub groups: BTreeMap<Subject, DesiredGroup>,
-    pub membership: BTreeMap<Subject, Vec<Subject>>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct DesiredUser {
-    pub display_name: String,
-    pub upn: String,
-    /// The mail address, empty when the account has none -- a user with no
-    /// mailbox is normal. Absent on both sides of the wire rather than present
-    /// and empty, which keeps the S1–S11 planner fixtures byte-stable.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub mail: String,
-    /// Entra's `otherMails` -- the portal's "Other emails". A guest usually has
-    /// this and no `mail` at all: it holds the address they were invited by.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub other_mails: Vec<String>,
-    pub enabled: bool,
-}
-
 /// Which Entra attribute a **new** account's `sAMAccountName` is derived from.
 ///
 /// Consulted only at creation. A live account's name is never recomputed, so
@@ -152,11 +127,6 @@ impl std::str::FromStr for SamSource {
             _ => Err(()),
         }
     }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct DesiredGroup {
-    pub display_name: String,
 }
 
 /// Current state, read from Samba. Only objects carrying a `kb1` identity for

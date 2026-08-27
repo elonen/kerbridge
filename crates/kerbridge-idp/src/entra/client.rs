@@ -25,7 +25,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use url::Url;
 
-use crate::graph::{Page, RawGroup, RawUser};
+use super::wire::{Page, RawGroup, RawUser};
 
 const GRAPH: &str = "https://graph.microsoft.com/v1.0";
 /// Exactly what the desired state is built from, and nothing else. A field nobody

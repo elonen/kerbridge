@@ -1,7 +1,7 @@
 # kerbridge-sync — every cloud IdP into its own local IdP-specific OU
 
-Reads the configured users and groups from Microsoft
-Graph, works out what Samba AD should look like as a result, and applies the
+Asks each source's adapter for the users and groups it holds, works out what
+Samba AD should look like as a result, and applies the
 difference over delegated LDAPS — stamping each object with the
 `ExternalIdentity` the broker will later look it up by. Nothing else writes
 an IdP-specific OU.
@@ -17,9 +17,9 @@ allocating one at the same moment would each see the other's name as free.
   business in the interactive authentication path. The broker reads the
   directory; only this service changes it.
 - **No second database.** Samba AD is the single source of truth for the
-  external-to-realm mapping. This service persists only delta cursors and
-  reconciliation state — rebuildable by a full resync, and nothing a login
-  depends on.
+  external-to-realm mapping. This service persists nothing of its own: an
+  adapter's read state — Entra's delta cursors and shadow — lives in memory, so
+  a restart reads from scratch and no login depends on it.
 - **It cannot delete.** The plan type has no delete op, so no plan — however
   wrong — can destroy an object. Deletion is the operator's, through `kbmanage`,
   which says what a lost SID costs: SIDs sit in durable filesystem ACLs and every

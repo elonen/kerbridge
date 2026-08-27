@@ -10,10 +10,12 @@ mod grants;
 mod guards;
 mod names;
 
+use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use super::*;
 use kerbridge_core::ExternalIdentity;
+use kerbridge_idp::sync::DesiredGroup;
 
 const ADMISSION: &str = "8689e2c1-3268-4744-a647-30d05e5c7b90";
 static ADMISSION_SUBJECT: LazyLock<Subject> = LazyLock::new(|| Subject::new(ADMISSION));

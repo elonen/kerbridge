@@ -45,7 +45,9 @@ with no channel between them. The value is also the join key of sync's
 reconciliation loop. Thus there is one encoder, reached from both sides.
 
 **How sync gets a desired state** is behind a second interface,
-`DirectorySource`. It encloses incrementality itself, because Graph's failure
+`DirectorySource`. It sits in the same crate as the encoder, behind a `sync`
+feature that only the mirror turns on, so an adapter is one directory to add and
+the broker compiles no reader at all. It encloses incrementality itself, because Graph's failure
 semantics are meaningless to a second adapter: a 400 means that a stored cursor
 was refused and a 410 means that it expired, each resetting the shadow and
 resynchronizing from a full read, while Google's Admin SDK Directory API has no

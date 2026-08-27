@@ -10,10 +10,10 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use kerbridge_core::Source;
 use kerbridge_core::config::SourceFile;
+use kerbridge_idp::sync::Subject;
 use kerbridge_idp::{IdpSettings, Provider};
 
 use crate::planner::SamSource;
-use crate::source::Subject;
 
 /// What one process does, and for whom.
 ///
@@ -74,9 +74,9 @@ pub struct SourceConfig {
     pub group_suffix: String,
     pub bind_dn: String,
     pub bind_password: String,
-    /// The adapter's half of the source file: the tenant, its credential and its
-    /// group ids. Handed to [`crate::source::connect`] and never read above the
-    /// seam.
+    /// The adapter's half of the source file: the tenant, its credential and
+    /// its group ids. Handed to [`kerbridge_idp::sync::connect`] and never read
+    /// above the seam.
     pub settings: IdpSettings,
 }
 

@@ -1,7 +1,7 @@
 # Entra tokens
 
 What an Entra access token carries, and what the broker does with each claim.
-The verifier is [`src/entra.rs`](src/entra.rs). The signed corpus that holds it
+The verifier is [`src/entra/auth.rs`](src/entra/auth.rs). The signed corpus that holds it
 to this shape is [`testbench/fixtures/entra-token/`](../../testbench/fixtures/entra-token/),
 and `make_fixtures.py` there is the same claim set in executable form.
 

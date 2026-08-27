@@ -24,12 +24,18 @@ no channel between them. If they emit different bytes for the same account:
 
 Neither program looks wrong while that happens. Putting both faces behind one
 `Provider` and one encoder is what makes the agreement structural instead of a
-convention two crates are trusted to keep. `crates/kerbridge-idp/src/entra.rs`'s
+convention two crates are trusted to keep. `crates/kerbridge-idp/src/entra/auth.rs`'s
 tests hold them against each other directly.
 
 `issuerd` deliberately does **not** link this crate. It holds KDC authority, and
 all it needs of an identity is that the stored value parses — which
 `kerbridge-core` answers on its own, with no dependencies.
+
+The directory face is behind the `sync` feature, which only `kerbridge-sync`
+turns on: the broker, `kbconfig` and `kbsetup` link this crate for the token face
+alone and compile no reader at all. One directory per provider holds both —
+`src/entra/{mod,auth}.rs` is the token face, `src/entra/{sync,client,wire}.rs`
+the directory one — and `src/sync/` is the seam they meet the mirror at.
 
 ## What is provider-specific, and therefore lives here
 
@@ -47,6 +53,11 @@ all it needs of an identity is that the stored value parses — which
   client.
 - The **subject encoding** — what goes in field 3 of `kb1|<name>|<subject>`.
   Opaque to everything else. Entra's is the bare `oid`.
+- Reading the directory: the protocol, the credential, the cursors, and which
+  accounts the IdP's own rules accept. What comes back is a `SourceSnapshot`, and
+  reconciliation never enters an adapter. The realm's own rules — the group
+  closure, the held-narrowing, the refusal list — are `sync::build_desired`, and
+  an adapter uses them or fills a `Desired` its own way.
 - A source file's `[provider_config]`, both the parser and the commented example
   block. `kerbridge-core` reads the envelope around it, captures that table and
   hands it here without looking inside — parsed anywhere else, core, and
@@ -94,15 +105,15 @@ says to use an asymmetric signing key.
 ## Adding an adapter
 
 Add one arm to `Provider`, and the compiler names every place it has to be
-wired: `name`, `template`, `connect`, `encode_identity`, `IdpSettings::parse`
-and `probe`.
+wired: `name`, `template`, `connect`, `encode_identity`, `IdpSettings::parse`,
+`probe` and `sync::connect`.
 Then run the shared conformance suite
 (`src/conformance.rs`) against it with tokens forged against that IdP — an
 adapter that does not run it is one whose algorithm handling nobody has checked,
 and the failure mode there is a silent authentication bypass.
 
 Nothing here has been measured against any IdP but Entra, so read that IdP's own
-documentation rather than assuming it resembles `entra.rs`. The interface is
+documentation rather than assuming it resembles Entra's. The interface is
 shaped so that the likely differences are absorbable inside your arm of the
 match:
 
@@ -110,7 +121,7 @@ match:
   a token, so an adapter whose access tokens are opaque can verify something else
   or introspect instead.
 - **A claim need not have the type or spelling Entra uses.** Parse what your IdP
-  documents; `entra.rs` is one example, not a template.
+  documents; `src/entra/auth.rs` is one example, not a template.
 - **The issuer may be a setting rather than a constant**, which is the whole
   reason the stored identity carries a source name and not an issuer URL.
 

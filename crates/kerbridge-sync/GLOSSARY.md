@@ -1,7 +1,8 @@
 # kerbridge-sync glossary
 
-The Entra-to-source-OU reconciliation loop: reading Graph, planning and
-applying — the read/plan/apply cycle and the directory state it reasons about.
+The cloud-IdP-to-IdP-specific-OU reconciliation loop: planning and applying —
+the read/plan/apply cycle and the directory state it reasons about. How a tenant
+is read is the adapter's, below the seam in `kerbridge-idp`.
 
 Part of the repo-wide vocabulary in [`GLOSSARY.md`](../../GLOSSARY.md) — a term
 means the same thing there and here. It lives in this file, closest to where
@@ -22,7 +23,7 @@ The users an on-prem account exists for: those a selected
 group holds and the syncable rule admits, which is exactly what the IdP-specific OU contains.
 Leaving the admission-group closure therefore retires the account rather than
 only dropping its memberships.
-<!-- refs: `kerbridge_sync::graph::build_desired` -->
+<!-- refs: `kerbridge_idp::sync::build_desired` -->
 <!-- avoid: synchronized set, the admitted, managed set -->
 
 ### alert
@@ -81,7 +82,7 @@ the `allowlist` through nested group membership; it is the whole answer to who
 has a directory object here, not merely who may get a ticket. Direct edges are
 mirrored as-is and nesting is resolved by Samba, not flattened here; leaving the
 closure therefore retires the account rather than only dropping its memberships.
-<!-- refs: `kerbridge_sync::graph::build_desired` -->
+<!-- refs: `kerbridge_idp::sync::build_desired` -->
 <!-- avoid: selected, group closure, selected set, expansion -->
 
 ### CN
@@ -148,7 +149,7 @@ object. Absent is not empty.
 The on-prem target: what the IdP-specific OU should contain once
 the syncable rule and the admission-group closure have been applied to the shadow —
 never the raw Graph read.
-<!-- refs: `kerbridge_sync::graph::build_desired`, `planner::Desired` -->
+<!-- refs: `kerbridge_idp::sync::build_desired`, `kerbridge_idp::sync::Desired` -->
 <!-- avoid: desired, target state, wanted state, cloud state, source state -->
 
 ### directory source
@@ -157,7 +158,7 @@ One cloud IdP behind the seam, reduced to what the mirror needs of it: it
 advances, and yields a `source snapshot` or says why it could not. How it reads
 — the protocol, the credential, the `delta cursor`s — is its own, and
 reconciliation never enters one.
-<!-- refs: `kerbridge_sync::source::DirectorySource` -->
+<!-- refs: `kerbridge_idp::sync::DirectorySource` -->
 <!-- avoid: connector, provider interface, source trait, reader -->
 
 ### disambiguation suffix
@@ -183,6 +184,17 @@ The cycle reads, plans and logs every op it
 would apply, and applies nothing.
 <!-- refs: `dry_run` in `configs/sync.toml` -->
 <!-- avoid: dry-run, would apply, no-op mode, simulate -->
+
+### enumeration
+
+One `directory source`'s whole reading of its IdP, before the realm's rules
+narrow it: every account the adapter's own rules accept, every group it read,
+and the accounts it turned away. `build_desired` turns one into a `desired
+state`. Filling one in is how an adapter opts into the `closure` walk and the
+held-narrowing; an adapter whose IdP expands nesting itself builds a desired
+state directly and produces none.
+<!-- refs: `kerbridge_idp::sync::Enumeration`, `kerbridge_idp::sync::build_desired` -->
+<!-- avoid: raw read, tenant dump, directory read -->
 
 ### foreign member
 
@@ -347,10 +359,10 @@ place. Sync refuses a GUID-shaped credential file for exactly that reason.
 ### shadow
 
 The locally accumulated copy of the Entra directory that delta
-pages patch. Besides the delta cursors it is
-the only state sync persists: a full read starts from an empty one and a full
-resync rebuilds it.
-<!-- refs: `kerbridge_sync::graph::Shadow` -->
+pages patch. It belongs to the Entra adapter, below the seam, and lives in
+memory alone: a full read starts from an empty one, a full resync rebuilds it,
+and a restart loses it.
+<!-- refs: `kerbridge_idp::entra::wire::Shadow` -->
 <!-- avoid: mirror, local copy, read model, directory copy -->
 
 ### soft delete
@@ -368,7 +380,7 @@ adapter that cannot enumerate yields none — so a read that did not finish can
 never delete or disable anything. A `200` with an empty page still yields one,
 which is why the empty-expansion freeze — no users desired while accounts are
 synchronized — is a separate guard in the planner.
-<!-- refs: `kerbridge_sync::source::SourceSnapshot` -->
+<!-- refs: `kerbridge_idp::sync::SourceSnapshot` -->
 <!-- avoid: poll result, directory image, desired set, complete read, complete flag -->
 
 ### stalled read
@@ -385,5 +397,5 @@ directory is large — how long a whole read takes is not bounded.
 
 A Graph 429 with `Retry-After`. It stops a read from finishing — no
 `source snapshot` comes out of one — and says nothing about the directory.
-<!-- refs: `Outcome::Throttled` in `crates/kerbridge-sync/src/graphclient.rs` -->
+<!-- refs: `Outcome::Throttled` in `crates/kerbridge-idp/src/entra/client.rs` -->
 <!-- avoid: 429, throttling, rate limit -->

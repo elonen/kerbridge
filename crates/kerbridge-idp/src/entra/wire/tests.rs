@@ -1,4 +1,5 @@
 use super::*;
+use crate::sync::{Desired, build_desired};
 
 const ADMISSION: &str = "4e8a1c9d-5f6b-4d7e-b8a9-001122334455";
 const PROJX: &str = "77770001-aaaa-bbbb-cccc-000000000001";
@@ -37,8 +38,11 @@ fn desired_fixture(name: &str) -> serde_json::Value {
 }
 
 fn built(shadow: &Shadow) -> serde_json::Value {
-    let allow = [PROJX.to_owned()];
-    serde_json::to_value(build_desired(shadow, ADMISSION, &allow).0).unwrap()
+    serde_json::to_value(narrow(shadow, ADMISSION, &[sub(PROJX)]).0).unwrap()
+}
+
+fn narrow(shadow: &Shadow, admission: &str, allowlist: &[Subject]) -> (Desired, Vec<String>) {
+    build_desired(shadow.enumerate(), &sub(admission), allowlist)
 }
 
 fn sub(id: &str) -> Subject {
@@ -234,7 +238,7 @@ fn mutual_nesting_terminates_and_expands_each_group_once() {
         ),
     );
 
-    let (d, _) = build_desired(&sh, "g-admission", &[]);
+    let (d, _) = narrow(&sh, "g-admission", &[]);
 
     assert_eq!(d.groups.len(), 3, "each group once: {:?}", d.groups.keys().collect::<Vec<_>>());
     assert!(d.users.contains_key(&sub("u-dana")), "an edge behind the cycle is still followed");
@@ -261,7 +265,7 @@ fn membership_never_names_a_group_with_no_object() {
     );
     // Named as a member, not yet in the shadow: no object, so no membership edge.
 
-    let (d, _) = build_desired(&sh, "g-admission", &[]);
+    let (d, _) = narrow(&sh, "g-admission", &[]);
     assert!(!d.groups.contains_key(&sub("g-unread")));
     for (gid, members) in &d.membership {
         for m in members {
@@ -298,7 +302,7 @@ fn a_held_but_unsyncable_user_is_reported() {
         ),
     );
 
-    let (d, refused) = build_desired(&sh, "g-admission", &[]);
+    let (d, refused) = narrow(&sh, "g-admission", &[]);
     assert!(d.users.is_empty(), "neither is syncable");
     assert!(
         refused.iter().any(|r| r.contains("u-device-ish") && r.contains("userType")),

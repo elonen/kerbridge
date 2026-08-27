@@ -12,6 +12,12 @@ license.workspace = true
 # block needs core's renderer too.
 schema = ["dep:schemars", "kerbridge-core/schema"]
 
+# The directory face -- the seam, the desired state, and every adapter's reader.
+# Off by default so the broker, `kbconfig` and `kbsetup` compile none of it: they
+# link this crate for the token face alone. `kerbridge-sync` is the one consumer
+# and turns it on, and `url` rides with it.
+sync = ["dep:url"]
+
 [dependencies]
 kerbridge-core.workspace = true
 kerbridge-notify.workspace = true
@@ -37,15 +43,23 @@ async-trait = "0.1"
 ring.workspace = true
 base64.workspace = true
 
+# Graph URLs are parsed rather than pattern-matched: every one after the first is
+# a string the *server* chose.
+url = { workspace = true, optional = true }
+
 [dev-dependencies]
 
 # Depending on ourselves is how a crate turns its own feature on for its own
 # tests without turning it on for anything that depends on it, the same trick
 # `kerbridge-core` uses: the template tests below need the schema, and the broker
 # and sync still must not compile schemars.
-kerbridge-idp = { path = ".", features = ["schema"] }
+kerbridge-idp = { path = ".", features = ["schema", "sync"] }
 
 # Building a `reqwest::Response` from a body without a server, for the
 # document-size limit. Already in the lock via reqwest; nothing ships with it.
 http = "1"
 tokio = { workspace = true, features = ["rt"] }
+
+# A loopback receiver, so a cycle's incidents are counted off the wire rather
+# than from a private field. Already in the lock via the broker.
+axum.workspace = true

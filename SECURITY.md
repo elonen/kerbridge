@@ -238,7 +238,7 @@ every device grant you did not create.
 ### 3. The token verifier is hand-written
 
 **Risk.** KerBridge uses **no JWT library**.
-`crates/kerbridge-idp/src/entra.rs` splits the token, resolves the algorithm,
+`crates/kerbridge-idp/src/entra/auth.rs` splits the token, resolves the algorithm,
 and applies every claim rule itself, calling `ring` for the signature. This is
 the single most security-critical routine in the project, and it is bespoke
 code in a project whose code is mostly agent-written.

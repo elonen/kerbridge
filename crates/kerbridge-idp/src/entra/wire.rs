@@ -1,5 +1,4 @@
-//! Microsoft Graph: reading users and groups into the desired state the planner
-//! consumes.
+//! Microsoft Graph's wire shapes, and the shadow they patch.
 //!
 //! The read model is a **shadow** -- a locally accumulated copy of the directory
 //! that delta cycles patch. Graph delta entries are *sparse*: a change carries
@@ -9,18 +8,18 @@
 //! edges too, because Graph does not report it on the groups stream
 //! (research spike `entra-directory-sync` @1.2).
 //!
-//! [`build_desired`] then applies the syncable rule and the admission
-//! group's reachable closure to turn the shadow into a
-//! [`crate::planner::Desired`]. It is pure and validated against the recorded
-//! Graph fixtures: replaying the fixtures through the shadow reproduces, byte
-//! for byte, the `desired` blocks the planner scenarios were generated from.
+//! [`Shadow::enumerate`] then applies the syncable rule to turn the shadow into
+//! an [`Enumeration`], which the realm's own rules narrow to a
+//! [`Desired`](crate::sync::Desired). Both steps are pure and validated against
+//! the recorded Graph fixtures: replaying the fixtures through the shadow
+//! reproduces, byte for byte, the `desired` blocks the planner scenarios were
+//! generated from.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::planner::{Desired, DesiredGroup, DesiredUser};
-use crate::source::Subject;
+use crate::sync::{DesiredGroup, DesiredUser, Enumeration, Membership, Refusal, Subject};
 
 /// A directory-object membership edge's object class, taken from `@odata.type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,132 +213,61 @@ fn user_syncable(u: &ShadowUser) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// Turn the shadow into the planner's desired state.
-///
-/// Group selection is the closure reachable from the admission group through
-/// nested group membership, plus the configured allowlist. Direct edges are
-/// mirrored as-is; nesting is resolved by Samba, not flattened here.
-///
-/// Returns the desired state and the refusals that shaped it -- every user a
-/// selected group holds that the syncable rule turned away.
-pub fn build_desired(
-    shadow: &Shadow,
-    admission_oid: &str,
-    allowlist: &[String],
-) -> (Desired, Vec<String>) {
-    let mut syncable = BTreeMap::new();
-    for (oid, u) in &shadow.users {
-        if user_syncable(u).is_ok() {
-            syncable.insert(
-                oid.clone(),
-                DesiredUser {
-                    display_name: u.display_name.clone().unwrap_or_default(),
-                    upn: u.upn.clone().unwrap_or_default(),
-                    mail: u.mail.clone().unwrap_or_default(),
-                    other_mails: u.other_mails.clone().unwrap_or_default(),
-                    enabled: u.account_enabled.unwrap_or(false),
-                },
+impl Shadow {
+    /// The shadow as a whole-directory enumeration, with the syncable rule
+    /// applied and every edge Samba cannot mirror dropped.
+    ///
+    /// The rule is Entra's own: `userType` is a wire fact about this IdP, so
+    /// which accounts are acceptable is decided here and the closure walk that
+    /// narrows them further is not.
+    pub fn enumerate(&self) -> Enumeration {
+        let mut read = Enumeration::default();
+        for (oid, u) in &self.users {
+            let subject = Subject::new(oid.clone());
+            match user_syncable(u) {
+                Ok(()) => {
+                    read.users.insert(
+                        subject,
+                        DesiredUser {
+                            display_name: u.display_name.clone().unwrap_or_default(),
+                            upn: u.upn.clone().unwrap_or_default(),
+                            mail: u.mail.clone().unwrap_or_default(),
+                            other_mails: u.other_mails.clone().unwrap_or_default(),
+                            enabled: u.account_enabled.unwrap_or(false),
+                        },
+                    );
+                }
+                Err(why) => {
+                    read.refused.insert(
+                        subject,
+                        Refusal {
+                            who: format!("{oid} ({})", u.upn.as_deref().unwrap_or("no UPN")),
+                            why: why.to_owned(),
+                        },
+                    );
+                }
+            }
+        }
+        for (gid, g) in &self.groups {
+            let subject = Subject::new(gid.clone());
+            read.groups.insert(
+                subject.clone(),
+                DesiredGroup { display_name: g.display_name.clone().unwrap_or_default() },
             );
+            let edges = g
+                .members
+                .iter()
+                .filter_map(|m| match m.kind {
+                    MemberKind::User => Some(Membership::User(Subject::new(m.id.clone()))),
+                    MemberKind::Group => Some(Membership::Group(Subject::new(m.id.clone()))),
+                    // device/servicePrincipal: nothing the realm mirrors.
+                    _ => None,
+                })
+                .collect();
+            read.membership.insert(subject, edges);
         }
+        read
     }
-
-    // Admission-group-reachable closure + allowlist, following only group-typed edges.
-    //
-    // `selected` breaks nesting cycles: Entra permits mutual nesting, and the
-    // recorded fixtures contain `cyc-a` -> `cyc-b` -> `cyc-a` reachable from the
-    // admission group. A group is expanded once; the second arrival at it is a no-op.
-    //
-    // Inserted only *after* the shadow lookup succeeds, so `selected` never names a
-    // group with no `ShadowGroup` -- the loop below unwraps its `shadow.groups`
-    // lookup and would panic. An id absent from the shadow is therefore re-examined
-    // on each arrival, which costs nothing and still terminates, because an absent
-    // group contributes no edges.
-    let mut selected: HashSet<String> = HashSet::new();
-    let mut refused: Vec<String> = Vec::new();
-    let mut todo: Vec<String> =
-        std::iter::once(admission_oid.to_owned()).chain(allowlist.iter().cloned()).collect();
-    while let Some(gid) = todo.pop() {
-        if selected.contains(&gid) {
-            continue;
-        }
-        let Some(g) = shadow.groups.get(&gid) else {
-            continue;
-        };
-        selected.insert(gid);
-        for m in &g.members {
-            if m.kind == MemberKind::Group {
-                todo.push(m.id.clone());
-            }
-        }
-    }
-
-    let mut groups = BTreeMap::new();
-    let mut membership = BTreeMap::new();
-    // Users a selected group actually holds. Everyone else in the tenant is
-    // syncable but unheld, and gets no account at all -- see the narrowing below.
-    let mut held: HashSet<String> = HashSet::new();
-    let mut order: Vec<&String> = selected.iter().collect();
-    order.sort();
-    for gid in order {
-        let g = shadow.groups.get(gid).expect("selected implies a shadow group");
-        let mut mm = Vec::new();
-        for m in &g.members {
-            match m.kind {
-                MemberKind::User if syncable.contains_key(&m.id) => {
-                    held.insert(m.id.clone());
-                    mm.push(Subject::new(m.id.clone()));
-                }
-                // `selected`, not `shadow.groups`: a member group that exists in the
-                // tenant but was not selected has no directory object, so naming it
-                // here would put a member in `membership` that is absent from
-                // `groups`. The planner drops such a reference silently when it
-                // fails to resolve a DN for it, which makes this an invariant held
-                // by accident two files away rather than stated here.
-                MemberKind::Group if selected.contains(&m.id) => {
-                    mm.push(Subject::new(m.id.clone()))
-                }
-                // A held user the tenant has but the syncable rule refuses is the confusing
-                // case worth naming: the operator put them in the admission group and
-                // no account appeared. An *absent* member is not reported -- that is
-                // ordinary delta ordering, not a decision.
-                MemberKind::User => {
-                    if let Some(u) = shadow.users.get(&m.id)
-                        && let Err(why) = user_syncable(u)
-                    {
-                        refused.push(format!(
-                            "user {} ({}) is held by a selected group but gets no account: {why}",
-                            m.id,
-                            u.upn.as_deref().unwrap_or("no UPN")
-                        ));
-                    }
-                }
-                _ => {} // device/servicePrincipal, or an absent object: dropped
-            }
-        }
-        groups.insert(
-            Subject::new(gid.clone()),
-            DesiredGroup { display_name: g.display_name.clone().unwrap_or_default() },
-        );
-        membership.insert(Subject::new(gid.clone()), mm);
-    }
-
-    // A directory object exists for someone a selected group holds, and for
-    // nobody else. The admission group and the allowlist are therefore the whole
-    // answer to "who has an account here", not merely "who may get a ticket":
-    // an operator reading the IdP-specific OU in ADUC sees the admitted set and
-    // nothing else, which is the same thing the `_retired-` prefix is for.
-    //
-    // The consequence is deliberate: leaving the admission-group closure retires the
-    // account rather than only dropping its group memberships. Retention keeps
-    // the SID, so file ACLs survive and a returning user takes their name back.
-    let users: BTreeMap<Subject, DesiredUser> = syncable
-        .into_iter()
-        .filter(|(oid, _)| held.contains(oid))
-        .map(|(oid, u)| (Subject::new(oid), u))
-        .collect();
-
-    refused.sort();
-    (Desired { users, groups, membership }, refused)
 }
 
 #[cfg(test)]

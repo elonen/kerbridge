@@ -87,7 +87,7 @@ A token [fixture](#fixture-test-corpus) that must verify. Exactly one is
 committed; the second exists only in the [live corpus](#live-corpus), because
 committing it would mean regenerating the whole corpus and moving the
 [validity window](#validity-window) the broker's verifier pins.
-<!-- refs: the pinned window lives in `kerbridge-idp/src/entra.rs` -->
+<!-- refs: the pinned window lives in `kerbridge-idp/src/entra/auth.rs` -->
 <!-- avoid: good token, happy path -->
 
 ### recorded-shape exchange

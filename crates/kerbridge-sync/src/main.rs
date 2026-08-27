@@ -13,8 +13,9 @@
 //! cycle per source: ask that source's adapter to advance, diff the snapshot it
 //! returns against the current directory with the [`planner`], and apply the
 //! plan over delegated LDAPS as that source's own account. How a tenant is read
-//! is the adapter's own business, behind [`source::DirectorySource`]; a cycle
-//! that produced no whole enumeration is discarded rather than planned from, so
+//! is the adapter's own business, behind
+//! [`kerbridge_idp::sync::DirectorySource`]; a cycle that produced no whole
+//! enumeration is discarded rather than planned from, so
 //! it can never delete or disable anything.
 //!
 //! Sequential rather than concurrent, which is what makes the realm
@@ -28,11 +29,7 @@
 
 mod config;
 mod directory;
-mod entra;
-mod graph;
-mod graphclient;
 mod planner;
-mod source;
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
@@ -46,10 +43,11 @@ use kerbridge_notify::{Event, Notifier, Severity};
 
 use crate::config::{Config, SourceConfig};
 use crate::directory::{Directory, marker_index};
-use crate::planner::{AlertKind, Current, PlanCtx, PlanError, plan_sync};
-use crate::source::{
+use kerbridge_idp::sync::{
     CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, connect,
 };
+
+use crate::planner::{AlertKind, Current, PlanCtx, PlanError, plan_sync};
 
 /// Consecutive discarded cycles before an operator is alerted.
 const FAIL_THRESHOLD: u32 = 3;
