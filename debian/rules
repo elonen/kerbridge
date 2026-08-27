@@ -83,7 +83,7 @@ override_dh_auto_install:
 	# *.docs file cannot read a make variable, and PREBUILT is overridable.
 	install -D -m 0644 "$(PREBUILT)/THIRD-PARTY-NOTICES" \
 	    debian/tmp/THIRD-PARTY-NOTICES
-	# kerbridge-config's tier-2 helper, at the path that package installs it
+	# kerbridge-config's internal helper, at the path that package installs it
 	# to. Both deployments run these same bytes: this postinst calls it
 	# directly, and Compose calls it in a throwaway root container.
 	install -D -m 0755 crates/kerbridge-config/libexec/prepare-state \

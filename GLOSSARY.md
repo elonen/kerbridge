@@ -577,10 +577,9 @@ calls it in a throwaway root container, because a bind mount masks whatever an
 install created underneath it and the hardened service containers cannot set the
 ownership their own mounts need.
 
-A *tier-2* program, and the distinction is the install path: tier 1 is
-`/usr/sbin/` -- [kbsetup](#kbsetup) and the daemons, operator-facing and
-documented -- while tier 2 is `/usr/libexec/kerbridge/`, internal, with nothing
-promised about it outside this repository.
+Internal, and the install path says so: `/usr/libexec/kerbridge/` promises
+nothing outside this repository, while `/usr/sbin/` -- [kbsetup](#kbsetup) and
+the daemons -- is operator-facing and documented.
 <!-- refs: `crates/kerbridge-config/libexec/prepare-state`, `deploy/scripts/compose/bootstrap-secrets.sh` -->
 <!-- avoid: the bootstrap script, bootstrap-secrets, the state helper -->
 <!-- different than: kbsetup -->
@@ -888,6 +887,21 @@ tenant, so once the adapter has pinned `tid` to the configured tenant the `oid`
 alone is a sufficient key — which is why the identity does not carry the tenant.
 <!-- refs: token claim `tid`, `tenant_id` in `configs/idp_<source>.toml` -->
 <!-- avoid: the org, organization -->
+
+### test tier
+
+One `make test-*` target, with its own cost, its own prerequisites and its own
+CI job. They range from `test-fast`, which needs no Docker and no network, to
+`test-deb`, which installs the packages on every Debian release the docs make a
+claim about. `make test-all` runs every tier except `test-mac`, which needs a
+Mac. A tier that cannot run on this host says so rather than passing quietly.
+
+A tier is not a set of cases: the verifier conformance suite is a set of cases
+*inside* `test-fast`.
+<!-- refs: `Makefile`, `.github/workflows/ci.yml` -->
+<!-- user-facing: which tests you can run -->
+<!-- avoid: test suite, test level, test stage -->
+<!-- different than: conformance suite -->
 
 ### TGT
 

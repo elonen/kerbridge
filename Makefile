@@ -374,7 +374,7 @@ test-fast:
 	@# a glob silently stops covering a script that moves into a subdirectory.
 	@# read-result, prepare-state and everything under debian/ are listed by
 	@# hand because none of them has a .sh -- one is a research helper, one is a
-	@# packaged tier-2 program whose install path is its name, and the rest are
+	@# program installed to /usr/libexec/kerbridge/, and the rest are
 	@# maintainer scripts and packaging helpers whose names dpkg and debhelper
 	@# fix. SC1091 is `. ./.env` and `. /usr/share/debconf/confmodule`, neither
 	@# of which shellcheck can follow and both of which are done on purpose.
