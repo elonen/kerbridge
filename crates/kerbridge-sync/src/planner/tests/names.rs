@@ -317,10 +317,12 @@ fn the_display_name_source_keeps_every_token() {
 /// `.` and `_` are both legal in a sam -- so the login name concatenates a
 /// domain and is then cut mid-domain by the character budget.
 ///
-/// This is the UPN of an invited account. Sync rejects guests today, but a
-/// *member* invited from another tenant keeps exactly this UPN, so the shape
-/// is reachable -- and it is the clearest case of the difference between the
-/// three sources.
+/// This is the UPN of an invited account, and both kinds of them reach sync: a
+/// guest is syncable as soon as a selected group holds them, and a *member*
+/// invited from another tenant keeps the same UPN.
+/// `S13_held_guest_upn_name` carries a recorded one from the Graph read all the
+/// way to the login name. This test is the three-source comparison that fixture
+/// cannot make.
 #[test]
 fn a_upn_local_part_can_carry_a_domain_where_the_others_cannot() {
     // No `mail` at all, because the mailbox is not in this tenant; the

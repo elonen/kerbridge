@@ -681,6 +681,14 @@ These are decisions, not oversights. Each is recorded with its reasoning in
   sufficient. The coarser grant ships anyway, for two reasons. A stolen sync
   credential already grants realm access under either scheme. And an attribute
   list has to be re-derived each time sync writes a new attribute.
+- **Sync copies the minimum into your realm.** A synchronized account holds a
+  login name, a UPN, a display name, an enabled flag, a password it never uses,
+  and its [external identity](crates/kerbridge-core/GLOSSARY.md#external-identity).
+  Groups hold their members. Mail addresses stay in the IdP. A mirror of them
+  could be useful one day, but it would make your realm a second copy of
+  personal data that you do not have to hold, and a copy you do not need is
+  still one you must protect, retain and erase on request. The realm keeps what
+  Kerberos and SMB need to work, and no more.
 - **No multi-DC replication and no application HA.** One VM, one realm.
 - **No backup scheduling, retention or off-site copy.** KerBridge collects its
   state into one tarball and puts it back. Everything else is yours.

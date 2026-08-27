@@ -14,6 +14,11 @@
 //! markers stripped off, as a restore or a bulk `extensionName` edit leaves it.
 //! The next cycle re-stamps both and does nothing else -- marker loss is
 //! self-healing and does not cascade.
+//!
+//! S13 is the recorded initial read with the admission group holding Gary
+//! Guest, whose UPN carries Entra's `#EXT#` marker. It is replayed in
+//! `SamSource::Upn`, so it pins the login name that a UPN local part with a
+//! domain in it derives to.
 
 use super::*;
 
@@ -83,5 +88,5 @@ fn matches_every_recorded_planner_fixture() {
         }
         count += 1;
     }
-    assert_eq!(count, 12, "expected all twelve planner fixtures");
+    assert_eq!(count, 13, "a fixture that silently stops being read proves nothing");
 }

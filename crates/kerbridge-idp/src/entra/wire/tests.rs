@@ -3,6 +3,7 @@ use crate::sync::{Desired, build_desired};
 
 const ADMISSION: &str = "4e8a1c9d-5f6b-4d7e-b8a9-001122334455";
 const PROJX: &str = "77770001-aaaa-bbbb-cccc-000000000001";
+const GARY: &str = "9e570010-aaaa-bbbb-cccc-000000000010";
 
 fn fixture(name: &str) -> serde_json::Value {
     let path =
@@ -58,7 +59,6 @@ fn sub(id: &str) -> Subject {
 /// group in the corpus, so unheld.
 #[test]
 fn an_account_exists_only_for_a_user_a_selected_group_holds() {
-    const GARY: &str = "9e570010-aaaa-bbbb-cccc-000000000010";
     let shadow = initial_shadow();
     assert!(shadow.users.contains_key(GARY), "the tenant read did see him");
     assert!(user_syncable(&shadow.users[GARY]).is_ok(), "and he is syncable");
@@ -71,6 +71,19 @@ fn an_account_exists_only_for_a_user_a_selected_group_holds() {
 
     // Held by the admission group, and he gets one -- nothing about being a guest
     // keeps him out, only being unheld did.
+    let d = built(&shadow_holding_gary());
+    assert!(d["users"].as_object().unwrap().contains_key(GARY), "held guest gets an account");
+    assert!(
+        d["membership"][ADMISSION].as_array().unwrap().iter().any(|m| m == GARY),
+        "and is an admission-group member"
+    );
+}
+
+/// The recorded initial read with the admission group holding Gary as well.
+/// Adding the edge here rather than to the corpus keeps him unheld in S1-S7,
+/// which is what `an_account_exists_only_for_a_user_a_selected_group_holds`
+/// reads him for.
+fn shadow_holding_gary() -> Shadow {
     let mut held = initial_shadow();
     held.apply_groups(
         serde_json::from_value::<Page<RawGroup>>(serde_json::json!({
@@ -82,12 +95,19 @@ fn an_account_exists_only_for_a_user_a_selected_group_holds() {
         .unwrap()
         .value,
     );
-    let d = built(&held);
-    assert!(d["users"].as_object().unwrap().contains_key(GARY), "held guest gets an account");
-    assert!(
-        d["membership"][ADMISSION].as_array().unwrap().iter().any(|m| m == GARY),
-        "and is an admission-group member"
+    held
+}
+
+/// An invited account's UPN reaches the planner exactly as Entra wrote it,
+/// `#EXT#` and all. S13 pins the login name that derives from it.
+#[test]
+fn held_guest_reproduces_the_s13_desired_state() {
+    let d = built(&shadow_holding_gary());
+    assert_eq!(
+        d["users"][GARY]["upn"], "gary_partner.example#EXT#@contoso.onmicrosoft.com",
+        "the marker survives the adapter verbatim"
     );
+    assert_eq!(d, desired_fixture("S13_held_guest_upn_name"));
 }
 
 #[test]
