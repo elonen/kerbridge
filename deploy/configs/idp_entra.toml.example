@@ -155,28 +155,22 @@ sync_credential_file = "/etc/kerbridge.secrets/idp/entra/credential"
 # Example: "2027-01-31"
 #sync_credential_expires =
 
-# The Entra security group whose members may hold Kerberos tickets. Nothing
-# works without one: with no admission group sync mirrors no users and every
-# sign-in is a 403.
+# The Entra security group whose members may hold Kerberos tickets, by object
+# id -- the portal shows it on the group's Overview page. Nothing works without
+# one: with no admission group sync mirrors no users and every sign-in is a 403.
 #
-# By name or by object id, never both. The name is for the first binding only --
-# a group that is renamed or recreated can resolve to one you did not choose --
-# so state the id once the realm is live, and delete the name. Repointing at a
-# different group retires every user the new one does not admit.
-# Example: "KerBridge Allowed On-prem Users"
-#admission_group =
-# Example: "77778888-bbbb-9999-cccc-0000dddd1111"
-#admission_group_id =
+# The id, and not the display name: a group that is renamed or recreated keeps
+# its id, and a name can come to answer for a group you did not choose.
+# Repointing at a different group retires every user the new one does not admit.
+admission_group_id = "77778888-bbbb-9999-cccc-0000dddd1111"
 
 # Object ids of further groups to mirror, beyond those reachable from the
 # admission group.
 #extra_group_ids = []
 
-# The Entra group whose members may activate a device grant, under the same
-# name-or-id rule. Unset is a deployment with no device-grant group and
-# therefore no working grants, whatever main.toml's device_grant_days says: the
-# broker finds the group by its marker. docs/setup/device-grants.md.
-# Example: "KerBridge Device-Grant Grantees"
-#device_grant_group =
+# The Entra group whose members may activate a device grant, by object id as
+# above. Unset is a deployment with no device-grant group and therefore no
+# working grants, whatever main.toml's device_grant_days says: the broker finds
+# the group by its marker. docs/setup/device-grants.md.
 # Example: "88889999-cccc-0000-dddd-1111eeee2222"
 #device_grant_group_id =

@@ -171,8 +171,10 @@ group are mirrored from Entra, and only they can get Kerberos tickets.
   correctly.
 - This group is Kerberos admission only. It gives no file access.
 
-For how the group is bound to the realm, and why you can bind it by name or by
-id but never by both, see
+- Record the group's **Object Id**. That, and not the name, is what binds the
+  group to the realm.
+
+For how the group is bound, and how to repoint the realm at another one, see
 [The `[provider_config]` values (`entra.md`)](entra.md#the-providerconfig-values).
 
 ## Which Entra groups carry your authorization

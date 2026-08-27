@@ -315,8 +315,7 @@ v1 events, and their repeat policy:
 | `graph-credential-expiring` | sync | countdown |
 | `graph-credential-expired` | sync | persisting |
 | `admission-group-missing` — no group carries the realm-admission marker, so nobody can be admitted | sync **and the broker** | persisting |
-| `admission-group-ambiguous` — two or more groups carry the realm-admission marker, so which group admits is undefined | sync **and the broker** | persisting |
-| `admission-group-misconfigured` — exactly one group carries the marker, but it is not the one the configuration resolves to | sync | persisting |
+| `admission-group-ambiguous` — two or more groups carry the realm-admission marker, so which group admits is undefined | the broker | persisting |
 | `grant-group-missing` — no group carries the device-grant marker, so every device grant is refused. Not a freeze: ordinary sign-in is unaffected | broker | persisting |
 | `grant-group-ambiguous` — two or more groups carry the device-grant marker. Refuses the same grants for the opposite reason | broker | persisting |
 | `grant-group-misconfigured` — the configured device-grant group and the marker disagree, in either direction: grants still working after the operator turned the feature off, or no machine able to authorize at all. Invisible to the broker, which sees one marked group and nothing wrong | sync | persisting |
@@ -337,7 +336,7 @@ extras, or make the configuration and the marker agree. They are separate
 problems, and not one problem that is keyed by the reason, because the
 faults change into each other without passing through health. A realm with no
 marked group acquires a second one and is now ambiguous, and it was never right.
-Thus whichever service concludes one of them clears the rest of the family in the
+Thus a service that concludes one of them clears the rest of the family in the
 same breath. If it did not, an operator would read a stale instruction beside a
 live one.
 
@@ -377,7 +376,7 @@ condition can clear it:
 | `graph-credential-expiring` | a deadline back beyond 30 days |
 | `graph-credential-expired` | a token acquisition that succeeds |
 | `admission-group-missing` | a plan that built with no admission-group alert (sync); a directory lookup that completed (broker) |
-| `admission-group-ambiguous`, `admission-group-misconfigured` | a cycle that read the marker state and found a different one of them, or none (sync); a directory lookup that completed (broker, `-ambiguous` only) |
+| `admission-group-ambiguous` | a directory lookup that completed |
 | `grant-group-missing`, `grant-group-ambiguous` | a directory lookup that completed |
 | `grant-group-misconfigured` | a plan that built with no device-grant alert |
 | `device-grants-expiring` | a cycle in which no grant is inside the window |
@@ -410,10 +409,12 @@ authentication. Thus it is a secret file, and not an `.env` value.
 
 Notification has two consumers, and not one:
 
-- **Sync** raises the credential, cycle, plan and apply events, the
-  admission problems, and `grant-group-misconfigured`. That is the one fault in
-  the family that only sync can see, because only sync reads the operator's
-  configuration beside the marker.
+- **Sync** raises the credential, cycle, plan and apply events,
+  `admission-group-missing`, and `grant-group-misconfigured`. That is the one
+  fault in the family that only sync can see, because only sync reads the
+  operator's configuration beside the marker. Sync has no admission
+  `-misconfigured` reading: the file names the group by object id, so a marker
+  found anywhere else is repointed rather than reported.
 - **The broker** raises the admission problems that it can see too. It counts the
   groups that carry the `kbrole1|realm-admission` marker at each request — none
   is `-missing`, and two or more is `-ambiguous` — and it used to only fail the

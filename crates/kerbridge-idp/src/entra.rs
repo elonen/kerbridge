@@ -98,27 +98,15 @@ pub struct Settings {
     /// The operator's assertion of that credential's expiry, `YYYY-MM-DD`.
     /// Absent means no advance warning, not a refusal to run.
     pub sync_credential_expires: Option<String>,
-    /// Who may hold Kerberos tickets. Required: with no admission group sync
-    /// mirrors nobody and every sign-in is a 403.
-    pub admission_group: GroupBinding,
-    /// Who may activate a device grant. `None` is a deployment with no
-    /// device-grant group and therefore no working grants -- the broker finds
-    /// the group by its marker.
-    pub device_grant_group: Option<GroupBinding>,
+    /// Who may hold Kerberos tickets, by object id. Required: with no admission
+    /// group sync mirrors nobody and every sign-in is a 403.
+    pub admission_group_id: String,
+    /// Who may activate a device grant, by object id. `None` is a deployment
+    /// with no device-grant group and therefore no working grants -- the broker
+    /// finds the group by its marker.
+    pub device_grant_group_id: Option<String>,
     /// Groups to mirror beyond those reachable from the admission group.
     pub extra_group_ids: Vec<String>,
-}
-
-/// A cloud-IdP group, bound by display name or by object id -- never both, and
-/// unrepresentable as both once parsed rather than re-checked downstream.
-///
-/// The name is for the first binding only: a group that is renamed or recreated
-/// can resolve to one the operator did not select, so a live realm states the
-/// id.
-#[derive(Debug, PartialEq)]
-pub enum GroupBinding {
-    Name(String),
-    Id(String),
 }
 
 /// The file's own shape, before the exactly-one rules and the derived defaults.
@@ -174,12 +162,8 @@ struct Raw {
     sync_credential_file: PathBuf,
     #[cfg_attr(feature = "schema", schemars(example = &"2027-01-31"))]
     sync_credential_expires: Option<String>,
-    #[cfg_attr(feature = "schema", schemars(example = &"KerBridge Allowed On-prem Users"))]
-    admission_group: Option<String>,
     #[cfg_attr(feature = "schema", schemars(example = &"77778888-bbbb-9999-cccc-0000dddd1111"))]
-    admission_group_id: Option<String>,
-    #[cfg_attr(feature = "schema", schemars(example = &"KerBridge Device-Grant Grantees"))]
-    device_grant_group: Option<String>,
+    admission_group_id: String,
     #[cfg_attr(feature = "schema", schemars(example = &"88889999-cccc-0000-dddd-1111eeee2222"))]
     device_grant_group_id: Option<String>,
     #[serde(default)]
@@ -220,31 +204,18 @@ impl Settings {
             (None, None) => JwksSource::Url(tenant_jwks_url(&raw.tenant_id)),
         };
 
-        let admission = binding(
-            raw.admission_group,
-            raw.admission_group_id,
-            "admission_group",
-            "admission_group_id",
-        )?;
-        let Some(admission_group) = admission else {
-            bail!(
-                "[provider_config]: set admission_group or admission_group_id. It is the group \
-                 that admits a user to the realm, and with neither, sync mirrors nobody and \
-                 every sign-in is a 403"
-            );
-        };
+        let admission_group_id = group_id(raw.admission_group_id, "admission_group_id")?;
+        let device_grant_group_id = raw
+            .device_grant_group_id
+            .map(|id| group_id(id, "device_grant_group_id"))
+            .transpose()?;
 
         Ok(Self {
             issuer: raw.issuer.unwrap_or_else(|| v2_endpoint(&raw.tenant_id)),
             authority: raw.authority.unwrap_or_else(|| v2_endpoint(&raw.tenant_id)),
             jwks,
-            admission_group,
-            device_grant_group: binding(
-                raw.device_grant_group,
-                raw.device_grant_group_id,
-                "device_grant_group",
-                "device_grant_group_id",
-            )?,
+            admission_group_id,
+            device_grant_group_id,
             tenant_id: raw.tenant_id,
             broker_api_client_id: raw.broker_api_client_id,
             public_client_id: raw.public_client_id,
@@ -262,10 +233,9 @@ impl Settings {
 /// own key names.
 ///
 /// Hand-written, unlike the envelope's generated half, because [`Settings`] is
-/// *resolved* rather than a copy of the file: `jwks` and the two bindings are
-/// enums with no one obvious rendering. Each prints as the pair of keys a file
-/// would state, the one it is not bound by empty, so that no reader has to
-/// guess whether a value is a name or an id.
+/// *resolved* rather than a copy of the file: `jwks` is an enum with no one
+/// obvious rendering, and prints as the pair of keys a file would state, the one
+/// it is not bound by empty.
 /// `a_settings_key_answers_by_the_name_the_file_gives_it` holds the set to the
 /// adapter's own schema, so a key added to the block and forgotten here fails
 /// the build.
@@ -274,9 +244,6 @@ pub(crate) fn paths(settings: &Settings) -> BTreeMap<String, String> {
         JwksSource::Url(url) => (url.clone(), String::new()),
         JwksSource::File(path) => (String::new(), path.display().to_string()),
     };
-    let (admission_group, admission_group_id) = binding_paths(Some(&settings.admission_group));
-    let (device_grant_group, device_grant_group_id) =
-        binding_paths(settings.device_grant_group.as_ref());
     [
         ("tenant_id", settings.tenant_id.clone()),
         ("broker_api_client_id", settings.broker_api_client_id.clone()),
@@ -290,10 +257,8 @@ pub(crate) fn paths(settings: &Settings) -> BTreeMap<String, String> {
         ("sync_client_id", settings.sync_client_id.clone()),
         ("sync_credential_file", settings.sync_credential_file.display().to_string()),
         ("sync_credential_expires", settings.sync_credential_expires.clone().unwrap_or_default()),
-        ("admission_group", admission_group),
-        ("admission_group_id", admission_group_id),
-        ("device_grant_group", device_grant_group),
-        ("device_grant_group_id", device_grant_group_id),
+        ("admission_group_id", settings.admission_group_id.clone()),
+        ("device_grant_group_id", settings.device_grant_group_id.clone().unwrap_or_default()),
         ("extra_group_ids", settings.extra_group_ids.join("\n")),
     ]
     .into_iter()
@@ -301,48 +266,20 @@ pub(crate) fn paths(settings: &Settings) -> BTreeMap<String, String> {
     .collect()
 }
 
-/// A binding as the two keys that state it, the other one empty.
-fn binding_paths(binding: Option<&GroupBinding>) -> (String, String) {
-    match binding {
-        Some(GroupBinding::Name(name)) => (name.clone(), String::new()),
-        Some(GroupBinding::Id(id)) => (String::new(), id.clone()),
-        None => (String::new(), String::new()),
+/// Check a group object id's shape. The likely mistake in one of these keys is
+/// the display name pasted into it, which would otherwise surface only as a
+/// realm that admits nobody.
+fn group_id(id: String, key: &str) -> Result<String> {
+    // Folded first, because `is_guid` takes only the canonical lowercase form:
+    // an uppercase Object Id is still an Object Id, and this refuses a mistake
+    // rather than a spelling.
+    if !is_guid(&id.to_ascii_lowercase()) {
+        bail!(
+            "[provider_config]: {key} is not a group object id (GUID): {id:?} -- the portal \
+             shows it on the group's Overview page, as Object Id"
+        );
     }
-}
-
-/// One group, spelled as a display name or bound by object id -- never both. A
-/// name left beside an id sits in the file looking authoritative while selecting
-/// nothing, so the pair is refused rather than given a precedence rule.
-///
-/// The GUID shape is checked because the likely mistake in an `_id` key is the
-/// display name pasted into it, which would otherwise surface only as a realm
-/// that admits nobody.
-fn binding(
-    name: Option<String>,
-    id: Option<String>,
-    name_key: &str,
-    id_key: &str,
-) -> Result<Option<GroupBinding>> {
-    match (name, id) {
-        (Some(_), Some(_)) => bail!(
-            "[provider_config]: {name_key} and {id_key} are both set -- remove the name. The id \
-             is what the group is bound by, and a name beside it would select nothing"
-        ),
-        (None, Some(id)) => {
-            // Folded: this refuses a *mistake*, and an uppercase Object ID is
-            // still an Object ID. The message below would send them to the
-            // wrong key.
-            if !is_guid(&id.to_ascii_lowercase()) {
-                bail!(
-                    "[provider_config]: {id_key} is not a group object id (GUID): {id:?} -- a \
-                     display name goes in {name_key}"
-                );
-            }
-            Ok(Some(GroupBinding::Id(id)))
-        }
-        (Some(name), None) => Ok(Some(GroupBinding::Name(name))),
-        (None, None) => Ok(None),
-    }
+    Ok(id)
 }
 
 /// The three checks, named as `kbconfig` prints them.
@@ -546,26 +483,23 @@ pub(crate) const ENTRA_SRC: &str = r#"# Entra: the three app registrations from 
 # -- sync.toml's credential_warn_before_days.
 {{sync_credential_expires}}
 
-# The Entra security group whose members may hold Kerberos tickets. Nothing
-# works without one: with no admission group sync mirrors no users and every
-# sign-in is a 403.
+# The Entra security group whose members may hold Kerberos tickets, by object
+# id -- the portal shows it on the group's Overview page. Nothing works without
+# one: with no admission group sync mirrors no users and every sign-in is a 403.
 #
-# By name or by object id, never both. The name is for the first binding only --
-# a group that is renamed or recreated can resolve to one you did not choose --
-# so state the id once the realm is live, and delete the name. Repointing at a
-# different group retires every user the new one does not admit.
-{{admission_group}}
+# The id, and not the display name: a group that is renamed or recreated keeps
+# its id, and a name can come to answer for a group you did not choose.
+# Repointing at a different group retires every user the new one does not admit.
 {{admission_group_id}}
 
 # Object ids of further groups to mirror, beyond those reachable from the
 # admission group.
 {{extra_group_ids}}
 
-# The Entra group whose members may activate a device grant, under the same
-# name-or-id rule. Unset is a deployment with no device-grant group and
-# therefore no working grants, whatever main.toml's device_grant_days says: the
-# broker finds the group by its marker. docs/setup/device-grants.md.
-{{device_grant_group}}
+# The Entra group whose members may activate a device grant, by object id as
+# above. Unset is a deployment with no device-grant group and therefore no
+# working grants, whatever main.toml's device_grant_days says: the broker finds
+# the group by its marker. docs/setup/device-grants.md.
 {{device_grant_group_id}}
 "#;
 
@@ -1113,7 +1047,7 @@ pub mod tests {
         public_client_id = "22223333-cccc-4444-dddd-5555eeee6666"
         sync_client_id = "66667777-aaaa-8888-bbbb-9999cccc0000"
         sync_credential_file = "/etc/kerbridge.secrets/idp/entra/credential"
-        admission_group = "onprem-realm-users"
+        admission_group_id = "77778888-bbbb-9999-cccc-0000dddd1111"
     "#;
 
     fn required() -> toml::Table {
@@ -1126,10 +1060,7 @@ pub mod tests {
     #[test]
     fn the_template_states_the_defaults_it_claims() {
         let rendered = crate::Provider::Entra.template().expect("the source renders");
-        let mut shown = block(&rendered);
-        // Neither half of an exactly-one-of pair is required, so the template
-        // comments both out and nothing parses until the operator picks one.
-        shown.insert("admission_group".into(), "onprem-realm-users".into());
+        let shown = block(&rendered);
         let stated = Settings::parse(&shown).expect("the template parses");
         let defaults = Settings::parse(&required()).expect("the minimal document parses");
         assert_eq!(stated, defaults);
@@ -1140,7 +1071,7 @@ pub mod tests {
         assert_eq!(defaults.issuer, v2_endpoint(TENANT));
         assert_eq!(defaults.authority, v2_endpoint(TENANT));
         assert_eq!(defaults.jwks, JwksSource::Url(tenant_jwks_url(TENANT)));
-        assert_eq!(defaults.device_grant_group, None);
+        assert_eq!(defaults.device_grant_group_id, None);
         assert!(defaults.extra_group_ids.is_empty());
     }
 
@@ -1154,44 +1085,36 @@ pub mod tests {
         assert!(format!("{err:#}").contains("unknown field"), "{err:#}");
     }
 
-    /// Neither is a realm that admits nobody; both is a name sitting beside the
-    /// id it does not select. Exactly one, in both directions.
+    /// Required, and an object id: a realm with no admission group admits
+    /// nobody, and a display name pasted into the key selects nothing.
     #[test]
-    fn the_admission_group_is_bound_exactly_once() {
-        let mut neither = required();
-        neither.remove("admission_group");
-        let err = Settings::parse(&neither).unwrap_err().to_string();
-        assert!(err.contains("admission_group") && err.contains("admission_group_id"), "{err}");
+    fn the_admission_group_is_bound_by_object_id() {
+        let mut absent = required();
+        absent.remove("admission_group_id");
+        let err = format!("{:#}", Settings::parse(&absent).unwrap_err());
+        assert!(err.contains("admission_group_id"), "{err}");
 
-        let mut both = required();
-        both.insert("admission_group_id".into(), GROUP_ID.into());
-        let err = Settings::parse(&both).unwrap_err().to_string();
-        assert!(err.contains("remove the name"), "{err}");
+        assert_eq!(Settings::parse(&required()).unwrap().admission_group_id, GROUP_ID);
 
-        let mut by_id = required();
-        by_id.remove("admission_group");
-        by_id.insert("admission_group_id".into(), GROUP_ID.into());
-        let parsed = Settings::parse(&by_id).unwrap();
-        assert_eq!(parsed.admission_group, GroupBinding::Id(GROUP_ID.to_owned()));
-
-        // The likely mistake in the `_id` key, which would otherwise surface
-        // only as a realm that admits nobody.
         let mut misplaced = required();
-        misplaced.remove("admission_group");
         misplaced.insert("admission_group_id".into(), "onprem-realm-users".into());
         let err = Settings::parse(&misplaced).unwrap_err().to_string();
-        assert!(err.contains("display name goes in admission_group"), "{err}");
+        assert!(err.contains("not a group object id"), "{err}");
+
+        let mut named = required();
+        named.insert("admission_group".into(), "onprem-realm-users".into());
+        let err = format!("{:#}", Settings::parse(&named).unwrap_err());
+        assert!(err.contains("unknown field"), "{err}");
     }
 
-    /// Optional, unlike the admission group -- but never two bindings at once.
+    /// Optional, unlike the admission group -- and held to the same shape.
     #[test]
-    fn a_device_grant_group_is_optional_and_bound_at_most_once() {
-        assert_eq!(Settings::parse(&required()).unwrap().device_grant_group, None);
+    fn a_device_grant_group_is_optional_and_bound_by_object_id() {
+        assert_eq!(Settings::parse(&required()).unwrap().device_grant_group_id, None);
 
-        let mut both = required();
-        both.insert("device_grant_group".into(), "onprem-device-grants".into());
-        both.insert("device_grant_group_id".into(), GROUP_ID.into());
-        let err = Settings::parse(&both).unwrap_err().to_string();
+        let mut misplaced = required();
+        misplaced.insert("device_grant_group_id".into(), "onprem-device-grants".into());
+        let err = Settings::parse(&misplaced).unwrap_err().to_string();
         assert!(err.contains("device_grant_group_id"), "{err}");
     }
 

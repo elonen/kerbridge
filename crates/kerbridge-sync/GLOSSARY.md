@@ -66,12 +66,11 @@ hands the name back.
 ### bind by id
 
 Naming the admission or device-grant group by its immutable
-Entra object id instead of a display name; setting a name beside an id is
-refused at startup. An
-id is an identity, so sync moves a role marker found on the wrong group to obey
-it, where a resolved display name only freezes the cycle. A different operation
-from a `name pin`, which freezes a value against recomputation rather than
-selecting by a key.
+Entra object id, which is the only way either is stated. An id is an identity,
+so sync moves a role marker found on the wrong group to obey it, and a rename
+in the tenant cannot point the binding at a different group. A different
+operation from a `name pin`, which freezes a value against recomputation rather
+than selecting by a key.
 <!-- refs: `admission_group_id`, `device_grant_group_id` in `configs/idp_<source>.toml`'s `[provider_config]` -->
 <!-- avoid: pin, pinned, pinning the group, pinned id, id pin, id override, admission_pinned -->
 
@@ -297,10 +296,9 @@ false` there, so they are told apart by `groupTypes` being empty.
 
 ### repoint
 
-Moving the admission role marker to a group the operator has newly
-bound by id. Only a group bound by id repoints; one resolved from a display name
-freezes the cycle instead, because a name is not an identity. The move is clear-
-then-stamp, so a partial apply leaves too few markers rather than too many.
+Moving the admission role marker to the group the operator has newly
+bound by id. The move is clear-then-stamp, so a partial apply leaves too few
+markers rather than too many.
 <!-- avoid: remark, re-stamp, marker move, redirect -->
 
 ### resync

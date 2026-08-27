@@ -40,7 +40,6 @@ use anyhow::{Context, Result, bail};
 use kerbridge_core::audit::AuditLog;
 use kerbridge_core::grant::DeviceGrant;
 use kerbridge_core::time::{now_unix, rfc3339};
-use kerbridge_idp::entra::GroupBinding;
 use kerbridge_notify::{Event, Notifier, Severity};
 
 use crate::config::{Config, SourceConfig};
@@ -79,10 +78,6 @@ struct SyncState {
     shadow: Shadow,
     users_cursor: Option<String>,
     groups_cursor: Option<String>,
-    /// What a display-name binding last resolved to. A group the file pinned by
-    /// id is never in here: it needs no lookup, so it needs no cache.
-    admission_oid: Option<String>,
-    grant_oid: Option<String>,
     consecutive_failures: u32,
 }
 
@@ -112,55 +107,6 @@ impl SourceSync {
         )
         .with_context(|| format!("configuring the directory client for {}", cfg.name()))?;
         Ok(Self { cfg, dir, state: SyncState::default() })
-    }
-
-    /// The admission group's object id: the one the file pinned, or the one its
-    /// display name resolved to and is remembered as.
-    ///
-    /// Which of the two it is comes off the binding rather than off the cache,
-    /// so a pinned id is never looked up -- the pin exists precisely to stop a
-    /// renamed or recreated group from resolving to a different one.
-    async fn admission_oid(&mut self, graph: &impl GraphReader, token: &str) -> Result<String> {
-        let name = match &self.cfg.admission_group {
-            GroupBinding::Id(id) => return Ok(id.clone()),
-            GroupBinding::Name(name) => name.clone(),
-        };
-        if let Some(g) = &self.state.admission_oid {
-            return Ok(g.clone());
-        }
-        let g = graph.resolve_group(token, &name, "admission_group_id").await?;
-        eprintln!("[sync/{}] resolved admission group {name:?} -> {g}", self.cfg.name());
-        self.state.admission_oid = Some(g.clone());
-        Ok(g)
-    }
-
-    /// The device-grant group's object id, or `None` when this source names no
-    /// such group and can therefore create no grants.
-    ///
-    /// Unlike the admission group, a name that resolves to nothing is not fatal:
-    /// it stops device grants and leaves everything else synchronizing, where
-    /// failing the cycle would make an unrelated typo a full outage.
-    async fn grant_oid(&mut self, graph: &impl GraphReader, token: &str) -> Option<String> {
-        let name = match self.cfg.grant_group.as_ref()? {
-            GroupBinding::Id(id) => return Some(id.clone()),
-            GroupBinding::Name(name) => name.clone(),
-        };
-        if self.state.grant_oid.is_none() {
-            match graph.resolve_group(token, &name, "device_grant_group_id").await {
-                Ok(g) => {
-                    eprintln!(
-                        "[sync/{}] resolved device-grant group {name:?} -> {g}",
-                        self.cfg.name()
-                    );
-                    self.state.grant_oid = Some(g);
-                }
-                Err(e) => eprintln!(
-                    "[sync/{}] ALERT: device-grant group {name:?} unresolved: {e:#}",
-                    self.cfg.name()
-                ),
-            }
-        }
-        self.state.grant_oid.clone()
     }
 
     /// This source's turn. Never returns `Err`: one source's failure is counted
@@ -244,8 +190,8 @@ impl SourceSync {
             Err(TokenError::Other(e)) => return Err(e.context("acquiring Graph token")),
         };
 
-        let admission_oid = self.admission_oid(graph, &token).await?;
-        let grant_oid = self.grant_oid(graph, &token).await;
+        let admission_oid = self.cfg.admission_group_id.clone();
+        let grant_oid = self.cfg.grant_group_id.clone();
 
         // A resync (410) or corrupt cursor (400) on either stream forces a fresh full
         // read of both this cycle, from an empty shadow. At most one retry.
@@ -362,7 +308,6 @@ impl SourceSync {
             now: &now,
             sam_source: shared.sam_source,
             automatic_sam_renames: shared.automatic_sam_renames,
-            admission_bound_by_id: matches!(cfg.admission_group, GroupBinding::Id(_)),
             identity: &identity,
         };
         let plan = match plan_sync(&desired, &current, &ctx) {
@@ -372,14 +317,6 @@ impl SourceSync {
                     "[sync/{name}] planner refused a partial read (should not happen on a full \
                      cycle)"
                 );
-                return Ok(());
-            }
-            Err(PlanError::AdmissionAmbiguous(why)) => {
-                admission_state(notifier, name, Some((ADMISSION_AMBIGUOUS, &why))).await;
-                return Ok(());
-            }
-            Err(PlanError::AdmissionMisconfigured(why)) => {
-                admission_state(notifier, name, Some((ADMISSION_MISCONFIGURED, &why))).await;
                 return Ok(());
             }
             Err(PlanError::NameCollision(names)) => {
@@ -410,11 +347,12 @@ impl SourceSync {
         for a in &plan.alerts {
             match a.kind {
                 AlertKind::AdmissionGroup => {
-                    // Every alert of this kind is the same reading: the configured
-                    // admission group is not in the desired state, or expands to
-                    // nobody. The other two readings never reach a built plan --
-                    // they are `PlanError`s above.
-                    admission_state(notifier, name, Some((ADMISSION_MISSING, &a.message))).await;
+                    notifier
+                        .send(
+                            Event::new(ADMISSION_MISSING, Severity::Error, a.message.clone())
+                                .subject(name),
+                        )
+                        .await;
                     admission_alerted = true;
                 }
                 AlertKind::DeviceGrantGroup => {
@@ -430,9 +368,9 @@ impl SourceSync {
             notifier.resolve_subject("grant-group-misconfigured", name).await;
         }
         if !admission_alerted {
-            // The planner accepted the admission group and nothing alerted on it, so
-            // none of the three readings holds.
-            admission_state(notifier, name, None).await;
+            // A plan that built is the evidence: the planner found the configured
+            // admission group in the desired state, so it is no longer missing.
+            notifier.resolve_subject(ADMISSION_MISSING, name).await;
         }
         for c in &plan.conflicts {
             eprintln!("[sync/{name}] CONFLICT: {c}");
@@ -819,37 +757,11 @@ fn grant_group_wrong(source: &str, why: &str) -> Event {
     Event::new("grant-group-misconfigured", Severity::Error, why.to_owned()).subject(source)
 }
 
+/// Sync's one reading of the admission state: the configured group is absent
+/// from the desired state, or expands to nobody. A marker found on any other
+/// group is repointed rather than reported, because the file binds by object id
+/// and so which group admits is never in doubt.
 const ADMISSION_MISSING: &str = "admission-group-missing";
-const ADMISSION_AMBIGUOUS: &str = "admission-group-ambiguous";
-const ADMISSION_MISCONFIGURED: &str = "admission-group-misconfigured";
-
-/// The three readings of the admission role-marker state -- no group carries it,
-/// two or more do, one does but not the configured group.
-const ADMISSION_PROBLEMS: [&str; 3] =
-    [ADMISSION_MISSING, ADMISSION_AMBIGUOUS, ADMISSION_MISCONFIGURED];
-
-/// Raise one reading of this source's admission marker state and clear the other
-/// two; `None` clears all three.
-///
-/// The state changes arity -- a source with no marked group can acquire two
-/// without ever being healthy in between -- so a cycle that concludes one
-/// reading must say what the state is *not* as well, or the earlier one stays
-/// open for as long as the deployment lives. Call only where the cycle actually
-/// learned the state; a read that never got that far leaves all three alone.
-async fn admission_state(notifier: &Notifier, source: &str, open: Option<(&'static str, &str)>) {
-    if let Some((problem, why)) = open {
-        notifier.send(Event::new(problem, Severity::Error, why.to_owned()).subject(source)).await;
-    }
-    for problem in admission_siblings(open.map(|(p, _)| p)) {
-        notifier.resolve_subject(problem, source).await;
-    }
-}
-
-/// The readings `open` is not -- exactly what a cycle that concluded `open` has
-/// disproved, and `None` disproves all three.
-fn admission_siblings(open: Option<&'static str>) -> impl Iterator<Item = &'static str> {
-    ADMISSION_PROBLEMS.into_iter().filter(move |p| Some(*p) != open)
-}
 
 /// One stream's outcome, flattened so `run_cycle` can match users and groups
 /// together regardless of element type.
@@ -903,16 +815,6 @@ mod tests {
         for bad in [vec!["--test-notifcation"], vec!["-help"], vec!["--config"]] {
             assert!(usage(&args(&bad)).is_err(), "{bad:?}");
         }
-    }
-
-    #[test]
-    fn every_admission_reading_clears_the_other_two() {
-        for open in ADMISSION_PROBLEMS {
-            let cleared: Vec<_> = admission_siblings(Some(open)).collect();
-            assert!(!cleared.contains(&open), "{open} cleared the problem it just raised");
-            assert_eq!(cleared.len(), ADMISSION_PROBLEMS.len() - 1, "{open} left a sibling open");
-        }
-        assert_eq!(admission_siblings(None).count(), ADMISSION_PROBLEMS.len());
     }
 
     const STORED_CURSOR: &str = "https://graph.microsoft.com/v1.0/users/delta?$deltatoken=stored";
@@ -973,10 +875,6 @@ mod tests {
                 items: Vec::new(),
                 delta_link: Some(delta_link.to_owned()),
             })
-        }
-
-        async fn resolve_group(&self, _t: &str, _name: &str, _setting: &str) -> Result<String> {
-            Ok("admission-group-oid".to_owned())
         }
     }
 

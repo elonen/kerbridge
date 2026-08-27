@@ -12,7 +12,6 @@ use kerbridge_core::Source;
 use kerbridge_core::config::SourceFile;
 use kerbridge_core::is_guid;
 use kerbridge_core::time::days_from_ymd;
-use kerbridge_idp::entra::GroupBinding;
 use kerbridge_idp::{IdpSettings, Provider};
 
 use crate::planner::SamSource;
@@ -85,12 +84,12 @@ pub struct SourceConfig {
     /// Operator-asserted expiry of a *secret* credential (`YYYY-MM-DD`).
     /// Absent means no advance warning, not a refusal to run.
     pub credential_expires: Option<String>,
-    /// Who may hold Kerberos tickets, by display name or object id.
-    pub admission_group: GroupBinding,
-    /// Who may activate a device grant. `None` is a source with no device-grant
-    /// group and therefore no working grants -- the broker finds the group by
-    /// its marker.
-    pub grant_group: Option<GroupBinding>,
+    /// Who may hold Kerberos tickets, by object id.
+    pub admission_group_id: String,
+    /// Who may activate a device grant, by object id. `None` is a source with no
+    /// device-grant group and therefore no working grants -- the broker finds
+    /// the group by its marker.
+    pub grant_group_id: Option<String>,
     /// Extra group ids to synchronize beyond the admission-group-reachable
     /// closure.
     pub allowlist: Vec<String>,
@@ -157,8 +156,8 @@ impl SourceConfig {
             graph_client_id: entra.sync_client_id,
             credential_file: entra.sync_credential_file,
             credential_expires: entra.sync_credential_expires,
-            admission_group: entra.admission_group,
-            grant_group: entra.device_grant_group,
+            admission_group_id: entra.admission_group_id,
+            grant_group_id: entra.device_grant_group_id,
             allowlist: entra.extra_group_ids,
         })
     }
@@ -254,8 +253,8 @@ impl SourceConfig {
             graph_client_id: "11111111-1111-1111-1111-111111111111".to_owned(),
             credential_file: PathBuf::from("/nonexistent/credential"),
             credential_expires: None,
-            admission_group: GroupBinding::Name("KerBridge Users".to_owned()),
-            grant_group: None,
+            admission_group_id: "77778888-bbbb-9999-cccc-0000dddd1111".to_owned(),
+            grant_group_id: None,
             allowlist: Vec::new(),
         }
     }
@@ -405,8 +404,8 @@ mod tests {
             graph_client_id: String::new(),
             credential_file: PathBuf::new(),
             credential_expires: None,
-            admission_group: GroupBinding::Name(String::new()),
-            grant_group: None,
+            admission_group_id: String::new(),
+            grant_group_id: None,
             allowlist: Vec::new(),
         }
     }

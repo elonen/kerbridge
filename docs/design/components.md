@@ -187,8 +187,8 @@ a time, under that source's own OU and bind account.
 Responsibilities:
 
 - Read the configured users and groups from Microsoft Graph.
-- Resolve the configured Entra realm-admission group. It defaults to
-  `KerBridge Allowed On-prem Users`.
+- Read the Entra realm-admission group the source file names by object id. The
+  documented group is `KerBridge Allowed On-prem Users`.
 - Reconcile the IdP-controlled users and groups into dedicated Samba AD OUs.
 - Store the immutable external identity mapping on each Samba AD object.
 - Create user accounts with random, undisclosed key-generating passwords.

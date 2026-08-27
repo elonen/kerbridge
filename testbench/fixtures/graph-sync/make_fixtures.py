@@ -72,23 +72,6 @@ BOB = user(U_BOB, "Bob Nested", "bob.nested@contoso.example")
 CAROL = user(U_CAROL, "Carol Cycle", "carol.cycle@contoso.example")
 GUEST = user(U_GUEST, "Gary Guest", "gary_partner.example#EXT#@contoso.onmicrosoft.com", utype="Guest")
 
-# --- 1. admission-group resolution by display name (bootstrap): exactly one --------------------
-fx("admission_resolve_by_name", "GET",
-   f"{G}/groups?$filter=displayName eq 'onprem-realm-users'&$select={GROUP_SELECT.replace(',members','')}",
-   200,
-   {"@odata.context": f"{G}/$metadata#groups", "value": [group(ADMISSION, "onprem-realm-users")]},
-   note="Bootstrap-only display-name lookup. Plain eq filter needs no ConsistencyLevel header "
-        "(group-list docs). Sync must require exactly one result.")
-
-# --- 1b. ambiguous admission-group name: two results -> fail closed ----------------------------
-fx("admission_resolve_ambiguous", "GET",
-   f"{G}/groups?$filter=displayName eq 'onprem-realm-users'",
-   200,
-   {"@odata.context": f"{G}/$metadata#groups",
-    "value": [group(ADMISSION, "onprem-realm-users"),
-              group("dup1f0f0-aaaa-bbbb-cccc-0000000000ff", "onprem-realm-users")]},
-   note="Two groups share the configured display name. Sync MUST abort bootstrap (fail closed).")
-
 # --- 2. full user read, paginated ---------------------------------------------------
 fx("full_users_page1", "GET", f"{G}/users?$select={USER_SELECT}", 200,
    {"@odata.context": f"{G}/$metadata#users({USER_SELECT})",

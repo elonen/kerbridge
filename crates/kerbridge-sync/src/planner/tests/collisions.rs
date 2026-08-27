@@ -48,7 +48,6 @@ fn a_group_sam_collision_refuses_the_whole_cycle() {
         now: "2026-07-21T12:00:00Z",
         sam_source: SamSource::DisplayName,
         automatic_sam_renames: true,
-        admission_bound_by_id: false,
         identity: ENCODE,
     };
     match plan_sync(&desired, &current, &ctx) {
@@ -121,7 +120,6 @@ fn a_new_group_reusing_a_managed_group_sam_refuses_the_cycle() {
         now: "2026-07-21T12:00:00Z",
         sam_source: SamSource::DisplayName,
         automatic_sam_renames: true,
-        admission_bound_by_id: false,
         identity: ENCODE,
     };
     match plan_sync(&desired, &current, &ctx) {

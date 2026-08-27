@@ -105,9 +105,8 @@ enum Outcome<T> {
     Transient,
 }
 
-/// Everything a cycle asks of Graph: a token, the two delta streams, and the
-/// role-group lookup a display-name binding needs. Nothing else in this crate
-/// speaks to the tenant.
+/// Everything a cycle asks of Graph: a token and the two delta streams. Nothing
+/// else in this crate speaks to the tenant.
 ///
 /// [`GraphClient`] is the only implementation a deployment runs. The trait is
 /// earned by testability alone -- the cycle's cursor recovery is otherwise
@@ -128,15 +127,6 @@ pub trait GraphReader {
         token: &str,
         cursor: Option<&str>,
     ) -> Result<StreamResult<RawGroup>>;
-
-    /// Bootstrap role-group resolution: a plain `displayName eq` filter that
-    /// must match exactly one group. Used only when no immutable id is
-    /// configured.
-    ///
-    /// `id_setting` is the `.env` key that binds the group by id, so an
-    /// ambiguous name tells the operator which setting resolves it rather than
-    /// which one the last caller happened to be about.
-    async fn resolve_group(&self, token: &str, name: &str, id_setting: &str) -> Result<String>;
 }
 
 impl GraphReader for GraphClient {
@@ -195,14 +185,6 @@ impl GraphReader for GraphClient {
             .map(str::to_owned)
             .unwrap_or_else(|| format!("{GRAPH}/groups/delta?$select={GROUP_SELECT}"));
         self.read_stream(token, &start).await
-    }
-
-    async fn resolve_group(&self, token: &str, name: &str, id_setting: &str) -> Result<String> {
-        let url = group_by_name_url(name);
-        match self.get_page::<RawGroup>(token, &url).await? {
-            Outcome::Page(p) => pick_single_group(&p.value, name, id_setting),
-            _ => bail!("group resolution for {name:?} got a non-200 response"),
-        }
     }
 }
 
@@ -283,22 +265,6 @@ impl GraphClient {
             }
         }
     }
-}
-
-/// The `displayName eq` lookup URL, split out from the request so what this
-/// crate does to a name is testable without a tenant.
-///
-/// A display name is whatever a group owner typed, and the documented admission
-/// group has spaces in it. Nothing here encodes them, deliberately: this string
-/// is parsed as a URL twice before it goes anywhere -- once by
-/// [`assert_graph_url`] and once by reqwest -- and the query percent-encode set
-/// turns a space into `%20` both times. Encoding here as well would send `%2520`.
-///
-/// The one escape that is this function's own is OData's, which no URL parser
-/// knows about: a single quote inside a filter literal is doubled.
-fn group_by_name_url(name: &str) -> String {
-    let escaped = name.replace('\'', "''");
-    format!("{GRAPH}/groups?$select=id,displayName&$filter=displayName eq '{escaped}'")
 }
 
 /// The scheme, host and path prefix every request must be under.
@@ -415,17 +381,6 @@ fn classify<T: DeserializeOwned>(
         400 if carries_cursor => Ok(Outcome::CursorCorrupt),
         s if (500..=599).contains(&s) => Ok(Outcome::Transient),
         s => bail!("unexpected Graph status {s}: {}", String::from_utf8_lossy(body)),
-    }
-}
-
-fn pick_single_group(groups: &[RawGroup], name: &str, id_setting: &str) -> Result<String> {
-    match groups.len() {
-        1 => Ok(groups[0].id.clone()),
-        // Both are fail-closed: with no group nobody is in it, and with two the
-        // policy it carries is undefined. Binding it by id resolves either --
-        // "replace", not "set": name and id together is a startup refusal.
-        0 => bail!("no group named {name:?}; create it, or replace the name with {id_setting}"),
-        n => bail!("{n} groups named {name:?}; replace the name with {id_setting} to disambiguate"),
     }
 }
 
@@ -574,7 +529,7 @@ mod tests {
         assert!(carries_cursor(&format!("{GRAPH}/users/delta?$deltatoken=abc")));
         assert!(carries_cursor(&format!("{GRAPH}/groups/delta?$select=id&$skiptoken=abc")));
         assert!(!carries_cursor(&format!("{GRAPH}/users/delta?$select=id,displayName")));
-        assert!(!carries_cursor(&format!("{GRAPH}/groups?$filter=displayName eq 'x'")));
+        assert!(!carries_cursor(&format!("{GRAPH}/groups/delta?$select=id,members")));
     }
 
     /// A cursor is a parameter, not a substring. A delta token whose opaque
@@ -622,56 +577,6 @@ mod tests {
         // A parameter that merely mentions one is not a cursor and survives.
         let out = redact(&format!("{GRAPH}/users?$select=tokenCount"));
         assert!(out.contains("tokenCount"), "{out}");
-    }
-
-    #[test]
-    fn admission_group_resolution_rejects_zero_or_ambiguous_matches() {
-        let by_name: Page<RawGroup> = serde_json::from_value(
-            fixture("admission_resolve_by_name")["response"]["body"].clone(),
-        )
-        .unwrap();
-        assert_eq!(
-            pick_single_group(&by_name.value, "onprem-realm-users", "ENTRA_ADMISSION_GROUP_ID")
-                .unwrap(),
-            "4e8a1c9d-5f6b-4d7e-b8a9-001122334455"
-        );
-        let ambiguous: Page<RawGroup> = serde_json::from_value(
-            fixture("admission_resolve_ambiguous")["response"]["body"].clone(),
-        )
-        .unwrap();
-        assert!(
-            pick_single_group(&ambiguous.value, "onprem-realm-users", "ENTRA_ADMISSION_GROUP_ID")
-                .is_err()
-        );
-        assert!(pick_single_group(&[], "onprem-realm-users", "ENTRA_ADMISSION_GROUP_ID").is_err());
-    }
-
-    /// A group whose display name has spaces in it -- the documented admission
-    /// group has three -- reaches Graph as the same request as one without. The
-    /// space survives every parser this URL passes through and arrives at the
-    /// server as the tenant spells it, so the name in a config file needs no
-    /// slug form beside it.
-    #[test]
-    fn a_display_name_with_spaces_asks_the_same_question_as_one_without() {
-        for name in ["onprem-realm-users", "KerBridge Allowed On-prem Users"] {
-            let raw = group_by_name_url(name);
-            // Both checks the string meets before it is sent.
-            assert!(assert_graph_url(&raw).is_ok(), "{raw}");
-            assert!(!carries_cursor(&raw), "{raw}");
-            // And the filter the server will read back off it.
-            let url = Url::parse(&raw).unwrap();
-            let (_, filter) = url.query_pairs().find(|(k, _)| k == "$filter").unwrap();
-            assert_eq!(filter, format!("displayName eq '{name}'"));
-        }
-        // Encoded exactly once: reqwest parses the same string this does.
-        let url = Url::parse(&group_by_name_url("KerBridge Allowed On-prem Users")).unwrap();
-        assert!(url.as_str().contains("KerBridge%20Allowed%20On-prem%20Users"), "{url}");
-        // The escape no URL parser would apply: OData doubles a quote in a literal.
-        let raw = group_by_name_url("Ops' own group");
-        assert!(raw.ends_with("'Ops'' own group'"), "{raw}");
-        let url = Url::parse(&raw).unwrap();
-        let (_, filter) = url.query_pairs().find(|(k, _)| k == "$filter").unwrap();
-        assert_eq!(filter, "displayName eq 'Ops'' own group'");
     }
 
     #[test]

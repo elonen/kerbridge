@@ -57,13 +57,11 @@ realm.resource_ou
 realm.services
 realm.ticket_lifetime_seconds
 realm.ticket_renewable_seconds
-sources.entra.admission_group
 sources.entra.admission_group_id
 sources.entra.authority
 sources.entra.bind_dn
 sources.entra.bind_password_file
 sources.entra.broker_api_client_id
-sources.entra.device_grant_group
 sources.entra.device_grant_group_id
 sources.entra.display_name
 sources.entra.extra_group_ids

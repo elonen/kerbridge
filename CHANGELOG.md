@@ -31,6 +31,15 @@ names the tag, and it stops if that section is absent or empty.
   read out, so there is no allowance to set. A read that stops making
   progress is abandoned on its own. Run `kbconfig upgrade` to remove the
   option, or edit the file.
+- Config `idp_<source>.toml`: a role group is bound by its object id only.
+  `admission_group` and `device_grant_group` are removed, and a file that
+  states one is refused at startup. Read the Object Id off the group's
+  Overview page in Entra and put it in `admission_group_id` or
+  `device_grant_group_id`. No tool can make this change for you: the
+  conversion needs a call to the tenant.
+- The `admission-group-misconfigured` notification is removed. Sync now
+  repoints the realm-admission marker onto the configured group, because an
+  object id says which group admits and a display name could not.
 
 ## 0.9.2
 

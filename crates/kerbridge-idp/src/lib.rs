@@ -404,15 +404,7 @@ mod tests {
     }
 
     /// The block this provider's own template carries, parsed.
-    fn template_settings(provider: Provider, mut block: toml::Table) -> IdpSettings {
-        // A template comments out every key the schema does not require, and
-        // neither half of an exactly-one-of pair is required. Choosing one is
-        // the operator's, so the test makes that choice to reach the parser.
-        match provider {
-            Provider::Entra => {
-                block.insert("admission_group".into(), "onprem-realm-users".into());
-            }
-        }
+    fn template_settings(provider: Provider, block: toml::Table) -> IdpSettings {
         IdpSettings::parse(provider, &block).expect("the block the envelope carried")
     }
 

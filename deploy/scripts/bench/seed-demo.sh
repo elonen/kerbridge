@@ -66,14 +66,12 @@ BASE=$(kbconfig get realm.base_dn)
 SOURCE_NAME=${SEED_SOURCE:-$(kbconfig sources | head -1)}
 [ -n "$SOURCE_NAME" ] || { echo "configs/main.toml lists no sources; nothing to seed" >&2; exit 1; }
 IDP_SPECIFIC_OU=$(kbconfig get "sources.$SOURCE_NAME.ou")
-# The two group names this seed creates, read from the config set rather than
-# stated here. A broker looking for a differently named admission group finds
-# none and refuses every login, so the seed and the source file cannot be
-# allowed to disagree, and need not: `kbconfig get` answers a provider path with
-# the adapter's resolved settings, so the source file is the one statement of
-# both names.
-ADMISSION_GROUP=$(kbconfig get "sources.$SOURCE_NAME.admission_group")
-GRANT_GROUP=$(kbconfig get "sources.$SOURCE_NAME.device_grant_group")
+# The two group names this seed creates. Names only, and this script's own: the
+# broker finds a role group by its marker, which the LDIF below stamps, and the
+# source file binds by object id -- so neither name has to agree with anything
+# in the config set.
+ADMISSION_GROUP=${SEED_ADMISSION_GROUP:-onprem-realm-users}
+GRANT_GROUP=${SEED_GRANT_GROUP:-onprem-device-grants}
 # Derived, not a fixture: a function of SEED_SERVICE_NAME, which bench.env
 # states. Overridable for a bench that already has a delegate group by another
 # name.
@@ -97,8 +95,8 @@ IDENTITY=$(identity_of "$SEED_USER_OID")
 # bench script should carry, so refuse the characters instead -- the same trade
 # the identity guard above makes. Production names come from `safe_name`, which
 # already excludes every one of these.
-for g in "sources.$SOURCE_NAME.admission_group=$ADMISSION_GROUP" \
-         "sources.$SOURCE_NAME.device_grant_group=$GRANT_GROUP" \
+for g in "SEED_ADMISSION_GROUP=$ADMISSION_GROUP" \
+         "SEED_GRANT_GROUP=$GRANT_GROUP" \
          "SEED_DELEGATE_GROUP=$DELEGATE_GROUP" "SEED_SERVICE_NAME=$SEED_SERVICE_NAME"; do
   case "${g#*=}" in
     *[,+\"\\\<\>\;=*\(\)]* | \#* | " "* | *" ")

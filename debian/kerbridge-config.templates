@@ -76,16 +76,13 @@ Template: kerbridge-config/sync_client_id
 Type: string
 _Description: UUID of the sync Entra app, usually named "KerBridge sync":
 
-Template: kerbridge-config/admission_group
+Template: kerbridge-config/admission_group_id
 Type: string
-Default: KerBridge Allowed On-prem Users
-_Description: Name of the cloud group whose members are admitted:
+_Description: Object Id of the cloud group whose members are admitted:
   Membership of this group admits an identity.
   KerBridge does not mirror the other users into the directory,
   and refuses each sign-in for them.
-  Nothing works until a group with this name exists in the Entra tenant.
  .
-  Any group is possible; this name is only a suggestion.
-  When the realm is live, replace the name with the object id
-  of the group in /etc/kerbridge/idp_entra.toml,
-  so that a rename cannot point it elsewhere.
+  Any group is possible. Create one in the Entra tenant, and read
+  the Object Id off its Overview page. The Id, and not the name:
+  a rename cannot point an Id at a different group.

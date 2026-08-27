@@ -39,8 +39,8 @@ broker_api_client_id = "$(tf entra_broker_api_client_id)"
 public_client_id = "$(tf entra_public_client_id)"
 scope = "$(tf entra_broker_scope)"
 sync_client_id = "$(tf entra_sync_client_id)"
-# The id is the binding sync follows; a name set beside it is a startup
-# refusal. The display name stays readable as the entra_admission_group output.
+# The id is the only binding sync takes. The display name stays readable as the
+# entra_admission_group output.
 admission_group_id = "$(tf entra_admission_group_id)"
 EOF
 
@@ -50,8 +50,8 @@ echo "configs/idp_<source>.toml, replacing tenant_id, broker_api_client_id," >&2
 echo "public_client_id, scope, sync_client_id and admission_group_id there." >&2
 echo "Some of those lines are commented out in that file. Paste over each one," >&2
 echo "or delete it: a line you leave commented out sets nothing." >&2
-echo "Delete any admission_group (name) line already in that file -- id and" >&2
-echo "name together are refused." >&2
+echo "Delete any admission_group (name) line already in that file -- that key" >&2
+echo "no longer exists, and a file that states it is refused at startup." >&2
 echo "" >&2
 echo "If the scope line above says \"access_as_user\", delete it. That is already" >&2
 echo "the default, and an option you set keeps your value even where a later" >&2

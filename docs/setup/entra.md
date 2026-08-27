@@ -22,7 +22,7 @@ id, denies every login — and usually no value in the config set looks wrong.
 | **Broker API** (`KerBridge broker API`) | The audience of every `/ticket` token. It exposes the `access_as_user` scope and issues v2 tokens. It holds no credential, and it only validates tokens. | `broker_api_client_id`, `scope` |
 | **Public client** (`KerBridge public client`) | The native app that does the browser sign-in with auth-code and PKCE. It is public, so it has no secret. | `public_client_id` |
 | **Sync app** (`KerBridge sync`) | It reads users and groups from Graph, app-only and read-only. It needs a credential. | `sync_client_id` |
-| **Admission group** (`KerBridge Allowed On-prem Users`) | Membership admits a user to the realm. Nothing works without this group: sync then mirrors no users, and every sign-in fails with a 403. | `admission_group` *or* `admission_group_id` — one, never both |
+| **Admission group** (`KerBridge Allowed On-prem Users`) | Membership admits a user to the realm. Nothing works without this group: sync then mirrors no users, and every sign-in fails with a 403. | `admission_group_id` — the group's Object Id |
 | The tenant | | `tenant_id` |
 
 Each display name is the key that it fills, without the `_id`. So
@@ -31,21 +31,16 @@ to select, and no config value holds one. But if you select your own, keep that
 relation: the name in the portal is what tells an operator which of three
 almost identical GUIDs goes in which key.
 
-**Bind the admission group by name, or by id, never by both.** If you set both,
-sync refuses to start.
+**Bind the admission group by its Object ID.** A display name is not a binding:
+a group that is renamed or recreated keeps its Object ID, but its name can come
+to belong to a group you did not select.
 
 <details>
-<summary>What the name binding does, and how to repoint it</summary>
+<summary>How to repoint the realm at a different group</summary>
 
-The name is for the initial binding only. After the realm is bound, sync does
-not bind it again because of a name: if a group is renamed or recreated, its
-name can resolve to a group that the operator did not select.
-
-To point the realm at a different group, or to correct an incorrect binding,
-put the Object ID of the correct group in `admission_group_id` and remove the
-name. The id is an explicit statement, and it lets sync ignore the changed
-name. Sync then retires every user that the new group does not admit. That
-retirement is what a repoint means.
+Put the Object ID of the new group in `admission_group_id`. Sync then moves the
+realm-admission marker onto it, and retires every user that the new group does
+not admit. That retirement is what a repoint means.
 
 </details>
 

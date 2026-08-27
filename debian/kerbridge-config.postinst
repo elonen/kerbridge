@@ -112,7 +112,7 @@ seed() {
             --set "idp_entra.provider_config.broker_api_client_id=$(answer broker_api_client_id)" \
             --set "idp_entra.provider_config.public_client_id=$(answer public_client_id)" \
             --set "idp_entra.provider_config.sync_client_id=$(answer sync_client_id)" \
-            --set "idp_entra.provider_config.admission_group=$(answer admission_group)"
+            --set "idp_entra.provider_config.admission_group_id=$(answer admission_group_id)"
     else
         # A realm-only set: legal, and exactly the administrator's host that
         # runs kbmanage and no daemon.

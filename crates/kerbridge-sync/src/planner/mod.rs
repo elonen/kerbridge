@@ -381,14 +381,6 @@ pub enum PlanError {
     /// The Graph read was incomplete. Planning is refused so no destructive op
     /// can follow a partial read.
     PartialRead,
-    /// Two or more directory groups carry the admission role marker. Sync only
-    /// ever stamps one, so the extras came from somewhere else and only a human
-    /// knows which is meant.
-    AdmissionAmbiguous(String),
-    /// The admission role marker sits on a group other than the one the
-    /// configuration resolves to, and the configuration named it by display name
-    /// -- which is not an identity to repoint a realm by.
-    AdmissionMisconfigured(String),
     /// One or more desired objects need a `sAMAccountName` that already belongs to
     /// a different object. The whole cycle is refused -- nothing is touched -- so
     /// a first deploy against a directory that already holds a same-named object
@@ -406,9 +398,6 @@ impl fmt::Display for PlanError {
         match self {
             PlanError::PartialRead => {
                 f.write_str("desired state read incomplete - refusing to plan (no destructive ops)")
-            }
-            PlanError::AdmissionAmbiguous(why) | PlanError::AdmissionMisconfigured(why) => {
-                write!(f, "{why}")
             }
             PlanError::NameCollision(names) => write!(
                 f,
@@ -441,11 +430,6 @@ pub struct PlanCtx<'a> {
     /// Whether a live account's login name follows its Entra display name after
     /// creation. Off means it is set once and never moves again.
     pub automatic_sam_renames: bool,
-    /// Whether the admission group was bound by id as `ENTRA_ADMISSION_GROUP_ID`
-    /// rather than resolved from a display name. An id is an identity -- the
-    /// vocabulary the role marker itself speaks -- so a marker elsewhere is moved
-    /// to obey it; a resolved name never moves a marker, only freezes.
-    pub admission_bound_by_id: bool,
     /// How this source's subjects become stored identity values.
     ///
     /// Adapter-owned, and reached through it rather than reimplemented here:
@@ -549,44 +533,24 @@ pub fn plan_sync(
         .filter(|(_, g)| g.markers.iter().any(|m| m == ROLE_ADMISSION))
         .map(|(oid, _)| oid.as_str())
         .collect();
-    // A marker somewhere other than the configured group forks on how that
-    // group was stated. An id it is bound by is an identity -- the vocabulary
-    // the marker itself speaks -- so the operator has said which object admits
-    // and the marker moves to obey, exactly as the device-grant marker does
-    // below. A name is not an identity: from a name alone, "the operator
-    // repointed the config" and "something in the tenant now answers to the
-    // configured name" are one observation with opposite correct responses, so
-    // the cycle freezes and the alert names the way out of each reading.
+    // A marker on a group other than the configured one is moved to obey the
+    // configuration. The configured group is stated by object id, which is an
+    // identity -- the vocabulary the role marker itself speaks -- so "the
+    // operator repointed the realm" is the only reading, exactly as for the
+    // device-grant marker below.
     //
     // The move is clear-then-stamp across the plan, so any partial apply
     // leaves too few markers rather than too many: the broker refuses logins
     // either way, but a shortfall is re-stamped by the next cycle unaided,
     // while a surplus would read as ambiguous. Emptying `marked` is what hands
     // the stamping to the same code that marks a fresh deployment.
-    let repointing = ctx.admission_bound_by_id && marked.iter().any(|m| *m != admission_oid);
-    if repointing {
-        for stale in marked.iter().filter(|m| **m != admission_oid) {
-            b.add(Op::ClearMarker {
-                dn: cur_groups[*stale].dn.clone(),
-                prefix: ROLE_ADMISSION.to_owned(),
-            });
-        }
-        marked.retain(|m| *m == admission_oid);
-    } else if marked.len() > 1 {
-        return Err(PlanError::AdmissionAmbiguous(format!(
-            "role-marker state ambiguous: {marked:?} all carry {ROLE_ADMISSION}; sync only \
-             ever stamps one, so the extras were written by something else and are removed \
-             the same way"
-        )));
-    } else if let Some(&foreign) = marked.first().filter(|m| **m != admission_oid) {
-        return Err(PlanError::AdmissionMisconfigured(format!(
-            "role marker sits on {foreign} while ENTRA_ADMISSION_GROUP resolves to \
-             {admission_oid}, and a name is not an identity to repoint a realm by. If the \
-             repoint is deliberate, replace the name with \
-             ENTRA_ADMISSION_GROUP_ID={admission_oid}; if it is not, the group answering to \
-             the configured name is no longer the one this realm admits through"
-        )));
+    for stale in marked.iter().filter(|m| **m != admission_oid) {
+        b.add(Op::ClearMarker {
+            dn: cur_groups[*stale].dn.clone(),
+            prefix: ROLE_ADMISSION.to_owned(),
+        });
     }
+    marked.retain(|m| *m == admission_oid);
 
     // ---- ambiguous external identity in current -> conflict, never touch ----
     // Iterated in receipt order (users then groups); an oid never spans kinds,
@@ -974,10 +938,10 @@ pub fn plan_sync(
             continue;
         }
         let cg = cur_groups[oid];
-        // Under a repoint the marker no longer means "this is the admission
-        // group" -- it is being cleared this cycle -- so its carrier is an
-        // ordinary leaver, quarantined below like any other.
-        if oid == admission_oid || (!repointing && cg.markers.iter().any(|m| m == ROLE_ADMISSION)) {
+        // A marker on any other group is cleared this cycle, so it no longer
+        // means "this is the admission group" and its carrier is an ordinary
+        // leaver, quarantined below like any other.
+        if oid == admission_oid {
             b.plan.alerts.push(Alert::admission(format!(
                 "ADMISSION GROUP {} vanished from desired state: FROZEN, operator escalation",
                 cg.dn

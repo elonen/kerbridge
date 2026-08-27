@@ -688,7 +688,7 @@ impl Answer {
     /// its example, its default, or the `# Example:` above a line that shows
     /// neither -- and it is where the type comes from. So a string option takes
     /// its answer as written and never as the integer, the boolean or the date
-    /// the text happens to read as: a group named `42` is a group named `42`.
+    /// the text happens to read as: a `group_suffix` of `42` is the text `42`.
     ///
     /// A non-string option parses its answer as TOML, which is what makes
     /// `main.sources=["entra"]` a list. Text that will not parse is refused
@@ -874,14 +874,7 @@ mod tests {
         for provider in Provider::ALL {
             let name = format!("idp_{}.toml", provider.name());
             let body = provider.source_template().expect("the source template renders");
-            // Neither half of an exactly-one-of pair is a required key, so a
-            // template comments both out and the source does not load until the
-            // operator picks one. `[provider_config]` is the last table in the
-            // file, so the choice appends to it.
-            let decision = match provider {
-                Provider::Entra => "admission_group = \"onprem-realm-users\"\n",
-            };
-            std::fs::write(dir.join(name), body + decision).unwrap();
+            std::fs::write(dir.join(name), body).unwrap();
         }
         Fixture(dir)
     }
@@ -1305,9 +1298,10 @@ mod tests {
             "main.sources=[\"entra\"]",
             "issuerd.socket_group=_kerbridge",
             "idp_entra.provider_config.tenant_id=aaaabbbb-0000-cccc-1111-dddd2222eeee",
-            // A group name that reads as an integer, which is the case that says
-            // the type comes from the option and not from the text.
-            "idp_entra.provider_config.admission_group=42",
+            "idp_entra.provider_config.admission_group_id=77778888-bbbb-9999-cccc-0000dddd1111",
+            // A suffix that reads as an integer, which is the case that says the
+            // type comes from the option and not from the text.
+            "idp_entra.group_suffix=42",
         ]
         .map(str::to_owned);
         assert!(init(&into, &answers, false).unwrap().is_empty(), "every answer places");
@@ -1320,7 +1314,11 @@ mod tests {
         assert_eq!(config.issuerd.socket_group.as_deref(), Some("_kerbridge"));
         let entra = &config.sources[0].provider_config;
         assert_eq!(entra["tenant_id"].as_str(), Some("aaaabbbb-0000-cccc-1111-dddd2222eeee"));
-        assert_eq!(entra["admission_group"].as_str(), Some("42"));
+        assert_eq!(
+            entra["admission_group_id"].as_str(),
+            Some("77778888-bbbb-9999-cccc-0000dddd1111")
+        );
+        assert_eq!(config.sources[0].group_suffix, "42");
 
         // The prose and the commented defaults are still the template's: this is
         // a line rewrite, and an operator opening the file has to find the file

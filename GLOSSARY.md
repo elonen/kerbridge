@@ -30,7 +30,7 @@ in the [`admission group`](#admission-group) gives admission. Admission does not
 The group whose members have [admission](#admission) to the [realm](#realm).
 [Sync](#sync) uses its cloud membership to select accounts. The [directory](#directory)
 must contain exactly one admission group.
-<!-- refs: `admission_group`, `admission_group_id` in `configs/idp_<source>.toml`'s `[provider_config]`, marker `kbrole1|realm-admission` -->
+<!-- refs: `admission_group_id` in `configs/idp_<source>.toml`'s `[provider_config]`, marker `kbrole1|realm-admission` -->
 <!-- avoid: realm group, the first gate, the users group -->
 
 ### agent
@@ -560,7 +560,7 @@ names and writes it at the mode its reader needs. It is asked for at a terminal
 rather than at install time because a value that passes through debconf is
 written to `/var/cache/debconf/config.dat` and again to the world-readable
 `config.dat-old` — so every install question is a realm, a URL, a public
-identifier or a group name, and none is a secret.
+identifier or a group's object id, and none is a secret.
 <!-- refs: `crates/kerbridge-setup/src/pasted.rs`; `<secrets-dir>/idp/<source name>/credential` -->
 <!-- user-facing: the credentials you supply -->
 <!-- avoid: operator secret, manual secret, the pasted secret -->

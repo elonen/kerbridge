@@ -260,7 +260,7 @@ wbinfo --ping-dc
 
 Two chains meet here, and the design keeps them separate:
 
-- **Realm admission** — membership of the admission group (`admission_group`,
+- **Realm admission** — membership of the admission group (`admission_group_id`,
   marked `extensionName: kbrole1|realm-admission`) is what permits the broker
   to issue a TGT. It grants a ticket and nothing else.
 - **Resource authorization** — what that ticket can reach. This part is fully

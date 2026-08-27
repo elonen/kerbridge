@@ -151,7 +151,7 @@ Create the security group that you selected in
 `KerBridge Allowed On-prem Users`.
 Add your pilot users to it. Record its **Object ID**.
 
-Nothing works without this group. If the group does not exist, sync resolves
+Nothing works without this group. If the group does not exist, sync finds
 no admission group and mirrors no users. Then every sign-in fails with a 403.
 
 ---
@@ -285,7 +285,7 @@ broker_api_client_id = "$broker_api_id"
 public_client_id = "$public_id"
 scope = "access_as_user"
 sync_client_id = "$sync_id"
-admission_group_id = "$group_id"   # the id is the binding; no name key beside it
+admission_group_id = "$group_id"   # the id is the only binding
 TOML
 ```
 

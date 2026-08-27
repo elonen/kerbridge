@@ -219,13 +219,11 @@ fn the_device_grant_marker_follows_the_setting_and_its_troubles_stay_local() {
     );
 }
 
-/// Repointing the realm forks on how the admission group was stated. An
-/// object id it is bound by is an identity, so the marker moves to obey it
-/// -- and the abandoned group, if it also left Entra, is an ordinary leaver,
-/// not a vanished-admission freeze. A resolved display name moves nothing:
-/// the cycle freezes, and the refusal names binding by id as the way out.
+/// Repointing the realm moves the marker: the configured group is an object id,
+/// which is an identity, so the marker obeys it -- and the abandoned group, if
+/// it also left Entra, is an ordinary leaver, not a vanished-admission freeze.
 #[test]
-fn an_admission_group_bound_by_id_moves_the_marker_where_a_name_only_freezes() {
+fn repointing_the_admission_group_moves_the_marker() {
     const OLD: &str = "0dd00000-1111-2222-3333-444455556666";
     let ident = |oid: &str| format!("kb1|entra|{oid}");
     let cur = || Current {
@@ -251,19 +249,10 @@ fn an_admission_group_bound_by_id_moves_the_marker_where_a_name_only_freezes() {
         unmanaged_dns: vec![],
     };
 
-    match plan_sync(&desired(vec![], vec![]), &cur(), &ctx()) {
-        Err(PlanError::AdmissionMisconfigured(why)) => {
-            assert!(why.contains("ENTRA_ADMISSION_GROUP_ID"), "names the exit: {why}");
-        }
-        other => panic!("expected a misconfigured-marker freeze, got {other:?}"),
-    }
-
-    let bound = PlanCtx { admission_bound_by_id: true, ..ctx() };
-
     // Old group still synchronized: exactly the move, cleared before stamped.
     let mut d = desired(vec![], vec![]);
     d.groups.insert(OLD.to_owned(), DesiredGroup { display_name: "old-realm-users".to_owned() });
-    let plan = plan_sync(&d, &cur(), &bound).unwrap();
+    let plan = plan_sync(&d, &cur(), &ctx()).unwrap();
     assert_eq!(
         plan.ops,
         vec![
@@ -281,7 +270,7 @@ fn an_admission_group_bound_by_id_moves_the_marker_where_a_name_only_freezes() {
 
     // Old group gone from Entra in the same breath: quarantined like any
     // other leaver, with no vanished-admission freeze.
-    let plan = plan_sync(&desired(vec![], vec![]), &cur(), &bound).unwrap();
+    let plan = plan_sync(&desired(vec![], vec![]), &cur(), &ctx()).unwrap();
     assert!(plan.alerts.is_empty(), "{:?}", plan.alerts);
     assert!(
         plan.ops

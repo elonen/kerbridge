@@ -73,9 +73,6 @@ REALM_IP=172.29.0.10
 NAS_IP=172.29.0.20
 PORT=${CI_HTTPS_PORT:-8443}
 USER_NAME=alice
-GRANT_GROUP=onprem-device-grants
-# seed-demo.sh's own default, restated because the config set has to name it.
-ADMISSION_GROUP=onprem-realm-users
 # The synthetic tenant and object ids make_fixtures.py generates its two positive
 # tokens with. seed-demo.sh writes the matching kb1| identities, which is the
 # whole join between a token and the directory.
@@ -263,8 +260,8 @@ SEED_SERVICE_OID=$SERVICE_OID
 SEED_SERVICE_NAME=$SERVICE_NAME
 SEED_DELEGATE_GROUP=$DELEGATE_GROUP
 # The two group names seed-demo.sh hand-provisions are deliberately absent: it
-# reads them out of configs/idp_$SOURCE.toml through kbconfig, and the step
-# after this one writes that file. Stating them here as well could only drift.
+# defaults both, and the broker finds either group by the marker the seed stamps
+# rather than by its name. Stating them here as well could only drift.
 
 # Its own subnet: Docker refuses a second network overlapping the bench's.
 KERBRIDGE_SUBNET=$SUBNET
@@ -333,9 +330,10 @@ sync_client_id = ""
 sync_credential_file = ""
 # Sync's, and unreachable from the broker -- which finds the group by its
 # marker. Stated anyway because a source file with no admission group admits
-# nobody, so the parser refuses one, and seed-demo.sh creates this name.
-admission_group = "$ADMISSION_GROUP"
-device_grant_group = "$GRANT_GROUP"
+# nobody, so the parser refuses one. No tenant answers to either id: sync does
+# not run here, and seed-demo.sh stamps the markers itself.
+admission_group_id = "77778888-bbbb-9999-cccc-0000dddd1111"
+device_grant_group_id = "88889999-cccc-0000-dddd-1111eeee2222"
 EOF
 
 # ---------------------------------------------------------------------------

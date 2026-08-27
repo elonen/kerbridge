@@ -54,7 +54,6 @@ fn matches_every_recorded_planner_fixture() {
         // conflict. Automatic renaming has its own tests below, where the before
         // and after are the point.
         automatic_sam_renames: false,
-        admission_bound_by_id: false,
         identity: ENCODE,
     };
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../testbench/fixtures/planner");

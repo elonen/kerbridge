@@ -160,10 +160,11 @@ bakes the realm identity into a durable database.
 - **`scripts/bench/seed-demo.sh` is bench only.** It hand-provisions the
   admission group, a demo user with its external identity, and the
   resource-group chain, so the broker's end-to-end path can be proven without
-  `sync` running. The admission and device-grant group names come out of the
-  source file through `kbconfig get` rather than from the environment: a bench
-  that named them itself could create groups the broker is not looking for, and
-  then admit nobody it just created. The accounts come from `bench.env`.
+  `sync` running. It names the admission and device-grant groups itself --
+  `SEED_ADMISSION_GROUP` and `SEED_GRANT_GROUP` override the defaults -- because
+  the broker finds a role group by the marker the seed stamps on it, and the
+  source file binds by object id and states no name. The accounts come from
+  `bench.env`.
 
 ## Readiness
 

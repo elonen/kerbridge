@@ -36,7 +36,6 @@ fn ctx() -> PlanCtx<'static> {
         now: "2026-07-21T12:00:00Z",
         sam_source: SamSource::DisplayName,
         automatic_sam_renames: true,
-        admission_bound_by_id: false,
         identity: ENCODE,
     }
 }

@@ -158,11 +158,11 @@ you already have.
 | UUID of the broker's Entra app, usually named "KerBridge broker API" | From [step 2](../../SETUP.md#2-register-three-applications-in-entra). |
 | UUID of the client's Entra app, usually named "KerBridge public client" | From step 2. |
 | UUID of the sync Entra app, usually named "KerBridge sync" | From step 2. |
-| Name of the cloud group whose members are admitted | Defaults to `KerBridge Allowed On-prem Users`. Nothing works until a group with that name exists in the tenant. |
+| Object Id of the cloud group whose members are admitted | Create the group in the tenant and read the Object Id off its Overview page. Nothing works without it. |
 
 Nothing secret passes through debconf. That is structural rather than careful:
 every secret in the config set is a *path*, never a value, and these answers
-are a realm, a URL, public OIDC identifiers and a group name.
+are a realm, a URL, public OIDC identifiers and a group's object id.
 
 <details>
 <summary>If you want to skip the questions</summary>
@@ -346,7 +346,7 @@ and confirms before it overwrites each.
 structural.** A value that passes through debconf is written to
 `/var/cache/debconf/config.dat` and again to `config.dat-old`, which is
 world-readable — so the questions ask for a realm, a URL, public application
-identifiers and a group name, and this command collects the rest.
+identifiers and a group's object id, and this command collects the rest.
 It reaches no argument list, no environment variable and no shell history
 either.
 

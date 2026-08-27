@@ -59,8 +59,7 @@ Two settings turn the feature on. Then run `make up`.
 device_grant_days = 30                 # 0 is off, and 0 is the default
 
 # configs/idp_entra.toml, inside [provider_config]
-device_grant_group = "KerBridge Device-Grant Grantees"
-#device_grant_group_id =               # alternative to the name
+device_grant_group_id = "88889999-cccc-0000-dddd-1111eeee2222"
 ```
 
 Two more settings change how the feature operates. Each is already at the value
@@ -73,12 +72,12 @@ different value.
 | `device_grant_days` | `configs/main.toml` |
 | `device_grant_max_per_user` | `configs/main.toml` |
 | `device_grant_notify` | `configs/sync.toml` |
-| `device_grant_group`, `device_grant_group_id` | `configs/idp_entra.toml`, `[provider_config]` |
-| `admission_group`, `admission_group_id` | `configs/idp_entra.toml`, `[provider_config]` |
+| `device_grant_group_id` | `configs/idp_entra.toml`, `[provider_config]` |
+| `admission_group_id` | `configs/idp_entra.toml`, `[provider_config]` |
 
 ### The device-grant group
 
-Create it in Entra adjacent to `admission_group`. Sync synchronizes the group
+Create it in Entra adjacent to the admission group. Sync synchronizes the group
 whether you nest it in the admission group or not.
 
 To give the feature to all users, put all users in the group. A shortcut: add the
@@ -88,13 +87,12 @@ then appoint a delegate for each person in the company. This can be what you wan
 It is how you let a person operate for a colleague who is on leave. But make it a
 decision, not an accident.
 
-Set the group name *or* `device_grant_group_id`, never both. If you set both, sync
-refuses to start. The ID stays correct when you rename the group in Entra. If you
-set neither, no device grant can be made or used. `device_grant_days` does not
-change this: the broker looks up the group, finds none, and denies each
-device-grant request.
+The group's Object Id is what binds it, and the Id stays correct when you rename
+the group in Entra. If you set no Id, no device grant can be made or used.
+`device_grant_days` does not change this: the broker looks up the group, finds
+none, and denies each device-grant request.
 
-If you point `device_grant_group` at a different group, the change applies at the
+If you point `device_grant_group_id` at a different group, the change applies at the
 next sync cycle. A user who is not in the new group loses each device they hold.
 Sync does not apply one change: when you unset the name, sync writes a message in
 its log and continues with the group stored in LDAP. Unsetting the name is not how

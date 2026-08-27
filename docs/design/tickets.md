@@ -382,7 +382,7 @@ insists on identities. It must be maintained, because sync moves the **DN**, and
 not only the login name, whenever an Entra display name changes.
 
 **No new Entra role group.** The tenant-side consent gate already exists: a
-target must be in `device_grant_group` (`configs/idp_<source>.toml`,
+target must be in `device_grant_group_id` (`configs/idp_<source>.toml`,
 `[provider_config]`). On-prem nobody can add to its mirror, because
 `svc-kerbridge-manage` holds delete-child only inside the IdP parent OU, and that
 is not enough to write `member`.

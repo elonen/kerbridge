@@ -72,7 +72,8 @@ deployment, edit the files.
 No secret is ever asked for through debconf. A value that passes through debconf
 is written to /var/cache/debconf/config.dat and again to the world-readable
 config.dat-old, so the install questions ask only for a realm, a URL, public
-application identifiers and a group name. `kbsetup secrets` collects the rest.
+application identifiers and a group's object id. `kbsetup secrets` collects the
+rest.
 
 Two states that are normal, and are not faults
 ----------------------------------------------

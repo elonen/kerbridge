@@ -285,17 +285,16 @@ flowchart LR
 
 Admission group:
 
-- The Entra group `KerBridge Allowed On-prem Users` is the default admission
-  group. The name is configurable for bootstrap, and the operator can configure
-  the group's immutable Entra object ID explicitly.
-- A display-name lookup must refuse an ambiguous result.
-- After selection, sync marks the Samba group with the unique `realm-admission`
+- The Entra group `KerBridge Allowed On-prem Users` is the documented admission
+  group. The source file states its immutable Entra object ID, which is the only
+  way the group is named: a display name is mutable, so it is not a binding.
+- Sync marks the Samba group with the unique `realm-admission`
   role. The immutable ID, the Samba mapping, the role marker and the effective
   broker membership check must survive a group rename and a loss of disposable
-  sync cursor state. An explicitly configured object ID must agree with Samba.
-- If the admission group is deleted or cannot be resolved, ticket issuance fails
-  closed: freeze and alert, and never recreate the group automatically. Only the
-  operator restores it, because a recreated group loses its SID.
+  sync cursor state. The configured object ID must agree with Samba.
+- If the admission group is deleted or is absent from the read, ticket issuance
+  fails closed: freeze and alert, and never recreate the group automatically.
+  Only the operator restores it, because a recreated group loses its SID.
 - A failed or incomplete Graph read never starts a destructive change.
 
 Deletion is conservative, because Samba SIDs can appear in durable ACLs:

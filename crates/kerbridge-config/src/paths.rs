@@ -146,8 +146,11 @@ mod tests {
             table["sources.entra.issuer"],
             format!("https://login.microsoftonline.com/{tenant_id}/v2.0")
         );
-        assert_eq!(table["sources.entra.admission_group"], "onprem-realm-users");
-        assert_eq!(table["sources.entra.admission_group_id"], "");
+        assert_eq!(
+            table["sources.entra.admission_group_id"],
+            "77778888-bbbb-9999-cccc-0000dddd1111"
+        );
+        assert_eq!(table["sources.entra.device_grant_group_id"], "");
         assert!(!table.keys().any(|path| path.contains("provider_config")));
     }
 
@@ -196,7 +199,7 @@ mod tests {
     fn an_unparseable_provider_block_leaves_the_envelope_answering() {
         let dir = fixture("unparseable-block");
         let path = dir.dir().join("idp_entra.toml");
-        let body = std::fs::read_to_string(&path).unwrap().replace("admission_group = ", "#");
+        let body = std::fs::read_to_string(&path).unwrap().replace("admission_group_id = ", "#");
         std::fs::write(&path, body).unwrap();
 
         let table = flatten(&dir.load()).unwrap();

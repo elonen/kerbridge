@@ -50,8 +50,8 @@ With no `--set` the files are this version's templates unchanged, which is what
 `deploy/configs/*.toml.example` holds under the reference names.
 
 A value is taken as the type the option holds, which the template names: a
-string option takes its answer as written, so a group named `42` is a group
-named `42`. Every other type parses its answer as TOML, which is what makes
+string option takes its answer as written, so a `group_suffix` of `42` is the
+text `42`. Every other type parses its answer as TOML, which is what makes
 `main.sources=["entra"]` a list, and text that will not parse is refused rather
 than written for the parser to reject later.
 

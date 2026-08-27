@@ -281,8 +281,8 @@ async fn resolving_an_unraised_condition_announces_nothing() {
 /// naming the condition that is actually true -- not a stale `missing` beside a
 /// live `ambiguous`, with the wrong instruction attached to the wrong one.
 ///
-/// This is the sequence sync and the broker both perform: raise the reading that
-/// holds, clear its siblings.
+/// This is the sequence the broker performs on every completed lookup: raise the
+/// reading that holds, clear its siblings.
 #[tokio::test]
 async fn a_condition_that_changes_arity_does_not_leave_the_earlier_reading_open() {
     let (url, seen, _served) = receiver(axum::http::StatusCode::OK).await;
@@ -307,7 +307,6 @@ async fn a_condition_that_changes_arity_does_not_leave_the_earlier_reading_open(
         ))
         .await;
     notifier.resolve("admission-group-missing").await;
-    notifier.resolve("admission-group-misconfigured").await;
 
     let after = text_seen(&seen);
     assert!(after.contains("admission-group-missing"), "no all-clear for the old reading: {after}");
