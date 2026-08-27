@@ -40,7 +40,8 @@ fn reconciliation_never_touches_a_stored_device_grant() {
     // applier will accept -- `directory::SETTABLE_ATTRS`, which refuses the
     // rest outright rather than trusting this to stay true.
     let mut renamed = want.clone();
-    renamed.users.get_mut(BUILDER).unwrap().display_name = "Renamed Builder".to_owned();
+    renamed.users.get_mut(&Subject::new(BUILDER)).unwrap().display_name =
+        "Renamed Builder".to_owned();
     let ops = plan_sync(&renamed, &cur, &ctx()).unwrap().ops;
     assert!(ops.iter().any(|o| matches!(o, Op::SetAttr { .. })), "{ops:?}");
     for op in &ops {
@@ -90,7 +91,7 @@ fn retirement_clears_every_grant_on_the_object() {
     let mut disabled = desired(steady_desired(), vec![]);
     disabled
         .users
-        .insert(CAROL.to_owned(), DesiredUser { enabled: false, ..des_user("Carol Cycle") });
+        .insert(Subject::new(CAROL), DesiredUser { enabled: false, ..des_user("Carol Cycle") });
     let ops = plan_sync(&disabled, &cur, &ctx()).unwrap().ops;
     assert_eq!(ops, vec![Op::DisableUser { dn: live }], "{ops:?}");
 }
@@ -103,20 +104,20 @@ fn retirement_clears_every_grant_on_the_object() {
 #[test]
 fn the_device_grant_marker_follows_the_setting_and_its_troubles_stay_local() {
     const GRANT: &str = "9c1d2e3f-4444-5555-6666-777788889999";
-    let with_grant_group = |grant_oid: Option<&str>| {
-        let mut d = desired(
+    let with_grant_group = || {
+        desired(
             steady_desired(),
             vec![(GRANT, DesiredGroup { display_name: "onprem-device-grants".to_owned() })],
-        );
-        d.grant_subject = grant_oid.map(str::to_owned);
-        d
+        )
     };
+    let grant = Subject::new(GRANT);
+    let configured = || PlanCtx { grant: Some(&grant), ..ctx() };
     let unmarked = current(
         steady_current(),
         vec![(GRANT, cur_group("onprem-device-grants", "onprem-device-grants"))],
     );
 
-    let plan = plan_sync(&with_grant_group(Some(GRANT)), &unmarked, &ctx()).unwrap();
+    let plan = plan_sync(&with_grant_group(), &unmarked, &configured()).unwrap();
     assert_eq!(
         plan.ops,
         vec![Op::SetRoleMarker {
@@ -137,15 +138,15 @@ fn the_device_grant_marker_follows_the_setting_and_its_troubles_stay_local() {
             },
         )],
     );
-    assert!(plan_sync(&with_grant_group(Some(GRANT)), &marked, &ctx()).unwrap().ops.is_empty());
+    assert!(plan_sync(&with_grant_group(), &marked, &configured()).unwrap().ops.is_empty());
 
     // A marker on a group that is not the configured one: moved -- cleared
     // there, stamped here -- with nothing alerted, because the plan is the fix.
     const OTHER: &str = "0000dead-4444-5555-6666-777788889999";
-    let mut repointed = with_grant_group(Some(GRANT));
+    let mut repointed = with_grant_group();
     repointed
         .groups
-        .insert(OTHER.to_owned(), DesiredGroup { display_name: "stale-grants".to_owned() });
+        .insert(Subject::new(OTHER), DesiredGroup { display_name: "stale-grants".to_owned() });
     let foreign = current(
         steady_current(),
         vec![
@@ -159,7 +160,7 @@ fn the_device_grant_marker_follows_the_setting_and_its_troubles_stay_local() {
             ),
         ],
     );
-    let plan = plan_sync(&repointed, &foreign, &ctx()).unwrap();
+    let plan = plan_sync(&repointed, &foreign, &configured()).unwrap();
     assert_eq!(
         plan.ops,
         vec![
@@ -196,7 +197,7 @@ fn the_device_grant_marker_follows_the_setting_and_its_troubles_stay_local() {
             ),
         ],
     );
-    let plan = plan_sync(&repointed, &both, &ctx()).unwrap();
+    let plan = plan_sync(&repointed, &both, &configured()).unwrap();
     assert_eq!(
         plan.ops,
         vec![Op::ClearMarker {
@@ -206,7 +207,7 @@ fn the_device_grant_marker_follows_the_setting_and_its_troubles_stay_local() {
     );
 
     // Unconfigured with a marker still out there: reported, never undone.
-    let plan = plan_sync(&with_grant_group(None), &marked, &ctx()).unwrap();
+    let plan = plan_sync(&with_grant_group(), &marked, &ctx()).unwrap();
     assert!(plan.ops.is_empty());
     // The class, not the wording: routing to the operator's channel is what this
     // alert is for, and a reworded message used to unroute it silently.
@@ -251,7 +252,7 @@ fn repointing_the_admission_group_moves_the_marker() {
 
     // Old group still synchronized: exactly the move, cleared before stamped.
     let mut d = desired(vec![], vec![]);
-    d.groups.insert(OLD.to_owned(), DesiredGroup { display_name: "old-realm-users".to_owned() });
+    d.groups.insert(Subject::new(OLD), DesiredGroup { display_name: "old-realm-users".to_owned() });
     let plan = plan_sync(&d, &cur(), &ctx()).unwrap();
     assert_eq!(
         plan.ops,

@@ -373,9 +373,9 @@ cannot touch another source's OU, cannot touch `OU=Resources`, and cannot touch
 **Sync's own planner cannot delete.** The plan type has no delete operation, so
 no plan — however wrong — destroys an object. Leavers are disabled, renamed with
 a `_retired-` prefix, and keep their SID. Removed groups are quarantined, not
-deleted. A partial Graph read produces no plan at all. A complete read that
-describes zero users, while Samba holds synchronized users, freezes the cycle
-and raises an alert.
+deleted. A Graph read that does not finish produces no plan at all. A whole read
+that describes zero users, while Samba holds synchronized users, freezes the
+cycle and raises an alert.
 
 **Precision worth stating.** "Sync cannot delete" is a property of the
 **program**, not of the **credential**. The ACE grants delete-child. A person who

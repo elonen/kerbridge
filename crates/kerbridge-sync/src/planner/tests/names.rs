@@ -214,7 +214,7 @@ fn a_sub_ou_object_is_renamed_inside_its_own_ou() {
     let proj = "77770001-0000";
     let mut des =
         desired(steady_desired(), vec![(proj, DesiredGroup { display_name: "proj-x".to_owned() })]);
-    des.membership.insert(proj.to_owned(), vec![]);
+    des.membership.insert(Subject::new(proj), vec![]);
     let cur = current(
         [
             vec![(CAROL, CurrentUser { dn: sub.clone(), ..cur_user("sub.user", "Sub User") })],

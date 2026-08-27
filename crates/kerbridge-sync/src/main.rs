@@ -165,7 +165,7 @@ impl SourceSync {
         snapshot: SourceSnapshot,
         notifier: &Notifier,
     ) -> Result<()> {
-        let SourceSnapshot { desired, refused } = snapshot;
+        let SourceSnapshot { desired, admission, grant, refused } = snapshot;
         let cfg = &self.cfg;
         let name = cfg.name();
         // The syncable rule narrows the admission-group closure, and silence about that is the
@@ -183,6 +183,8 @@ impl SourceSync {
         let identity = cfg.identity();
         let ctx = PlanCtx {
             idp_ou: &cfg.idp_ou,
+            admission: &admission,
+            grant: grant.as_ref(),
             upn_suffix: &shared.upn_suffix,
             group_suffix: &cfg.group_suffix,
             now: &now,
@@ -192,13 +194,6 @@ impl SourceSync {
         };
         let plan = match plan_sync(&desired, &current, &ctx) {
             Ok(p) => p,
-            Err(PlanError::PartialRead) => {
-                eprintln!(
-                    "[sync/{name}] planner refused a partial read (should not happen on a full \
-                     cycle)"
-                );
-                return Ok(());
-            }
             Err(PlanError::NameCollision(names)) => {
                 notifier
                     .send(

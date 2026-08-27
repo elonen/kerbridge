@@ -1,7 +1,6 @@
 {
+  "admission": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
   "desired": {
-    "complete": true,
-    "admission_subject": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
     "users": {
       "33334444-dddd-5555-eeee-6666ffff7777": {
         "display_name": "Alice Anderson",
@@ -269,6 +268,5 @@
       "object in the OU with no kb1 identity for this source: CN=pw noexpire,OU=Entra,DC=example,DC=site - left untouched"
     ],
     "alerts": []
-  },
-  "error": null
+  }
 }

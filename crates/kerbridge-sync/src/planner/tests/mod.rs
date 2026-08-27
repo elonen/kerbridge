@@ -10,20 +10,23 @@ mod grants;
 mod guards;
 mod names;
 
+use std::sync::LazyLock;
+
 use super::*;
 use kerbridge_core::ExternalIdentity;
 
 const ADMISSION: &str = "8689e2c1-3268-4744-a647-30d05e5c7b90";
+static ADMISSION_SUBJECT: LazyLock<Subject> = LazyLock::new(|| Subject::new(ADMISSION));
 const BASE: &str = "OU=Entra,DC=example,DC=site";
 
 /// The encoder every test plans with: the Entra adapter's, reached the way the
 /// service reaches it, so a fixture's expected `identity` is the same string the
 /// broker would search for.
-const ENCODE: &dyn Fn(&str) -> Result<String, kerbridge_core::IdentityError> = &|subject| {
+const ENCODE: &dyn Fn(&Subject) -> Result<String, kerbridge_core::IdentityError> = &|subject| {
     kerbridge_idp::encode_identity(
         kerbridge_idp::Provider::Entra,
         &kerbridge_core::Source::new("entra").unwrap(),
-        subject,
+        subject.as_str(),
     )
     .map(|id| id.encode())
 };
@@ -31,6 +34,8 @@ const ENCODE: &dyn Fn(&str) -> Result<String, kerbridge_core::IdentityError> = &
 fn ctx() -> PlanCtx<'static> {
     PlanCtx {
         idp_ou: BASE,
+        admission: &ADMISSION_SUBJECT,
+        grant: None,
         upn_suffix: "example.site",
         group_suffix: "",
         now: "2026-07-21T12:00:00Z",
@@ -43,17 +48,14 @@ fn ctx() -> PlanCtx<'static> {
 /// Desired state carrying the admission group plus whatever the test adds, so
 /// no test pays for admission-group invariants it is not about.
 fn desired(users: Vec<(&str, DesiredUser)>, groups: Vec<(&str, DesiredGroup)>) -> Desired {
-    let mut groups: BTreeMap<String, DesiredGroup> =
-        groups.into_iter().map(|(oid, g)| (oid.to_owned(), g)).collect();
+    let mut groups: BTreeMap<Subject, DesiredGroup> =
+        groups.into_iter().map(|(oid, g)| (Subject::new(oid), g)).collect();
     groups.insert(
-        ADMISSION.to_owned(),
+        Subject::new(ADMISSION),
         DesiredGroup { display_name: "onprem-realm-users".to_owned() },
     );
     Desired {
-        complete: true,
-        admission_subject: Some(ADMISSION.to_owned()),
-        grant_subject: None,
-        users: users.into_iter().map(|(oid, u)| (oid.to_owned(), u)).collect(),
+        users: users.into_iter().map(|(oid, u)| (Subject::new(oid), u)).collect(),
         groups,
         membership: BTreeMap::new(),
     }

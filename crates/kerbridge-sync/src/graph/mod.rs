@@ -20,6 +20,7 @@ use std::collections::{BTreeMap, HashSet};
 use serde::Deserialize;
 
 use crate::planner::{Desired, DesiredGroup, DesiredUser};
+use crate::source::Subject;
 
 /// A directory-object membership edge's object class, taken from `@odata.type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,10 +216,6 @@ fn user_syncable(u: &ShadowUser) -> Result<(), &'static str> {
 
 /// Turn the shadow into the planner's desired state.
 ///
-/// `complete` is the caller's assertion that the read finished -- a throttled or
-/// timed-out cycle passes `false`, which makes the planner refuse to plan rather
-/// than treat a partial read as ground truth.
-///
 /// Group selection is the closure reachable from the admission group through
 /// nested group membership, plus the configured allowlist. Direct edges are
 /// mirrored as-is; nesting is resolved by Samba, not flattened here.
@@ -227,7 +224,6 @@ fn user_syncable(u: &ShadowUser) -> Result<(), &'static str> {
 /// selected group holds that the syncable rule turned away.
 pub fn build_desired(
     shadow: &Shadow,
-    complete: bool,
     admission_oid: &str,
     allowlist: &[String],
 ) -> (Desired, Vec<String>) {
@@ -291,7 +287,7 @@ pub fn build_desired(
             match m.kind {
                 MemberKind::User if syncable.contains_key(&m.id) => {
                     held.insert(m.id.clone());
-                    mm.push(m.id.clone());
+                    mm.push(Subject::new(m.id.clone()));
                 }
                 // `selected`, not `shadow.groups`: a member group that exists in the
                 // tenant but was not selected has no directory object, so naming it
@@ -299,7 +295,9 @@ pub fn build_desired(
                 // `groups`. The planner drops such a reference silently when it
                 // fails to resolve a DN for it, which makes this an invariant held
                 // by accident two files away rather than stated here.
-                MemberKind::Group if selected.contains(&m.id) => mm.push(m.id.clone()),
+                MemberKind::Group if selected.contains(&m.id) => {
+                    mm.push(Subject::new(m.id.clone()))
+                }
                 // A held user the tenant has but the syncable rule refuses is the confusing
                 // case worth naming: the operator put them in the admission group and
                 // no account appeared. An *absent* member is not reported -- that is
@@ -319,10 +317,10 @@ pub fn build_desired(
             }
         }
         groups.insert(
-            gid.clone(),
+            Subject::new(gid.clone()),
             DesiredGroup { display_name: g.display_name.clone().unwrap_or_default() },
         );
-        membership.insert(gid.clone(), mm);
+        membership.insert(Subject::new(gid.clone()), mm);
     }
 
     // A directory object exists for someone a selected group holds, and for
@@ -334,23 +332,14 @@ pub fn build_desired(
     // The consequence is deliberate: leaving the admission-group closure retires the
     // account rather than only dropping its group memberships. Retention keeps
     // the SID, so file ACLs survive and a returning user takes their name back.
-    let users: BTreeMap<String, DesiredUser> =
-        syncable.into_iter().filter(|(oid, _)| held.contains(oid)).collect();
+    let users: BTreeMap<Subject, DesiredUser> = syncable
+        .into_iter()
+        .filter(|(oid, _)| held.contains(oid))
+        .map(|(oid, u)| (Subject::new(oid), u))
+        .collect();
 
     refused.sort();
-    (
-        Desired {
-            complete,
-            admission_subject: Some(admission_oid.to_owned()),
-            // Set by the caller, which is the only place that knows which of the
-            // closure roots is the device-grant group.
-            grant_subject: None,
-            users,
-            groups,
-            membership,
-        },
-        refused,
-    )
+    (Desired { users, groups, membership }, refused)
 }
 
 #[cfg(test)]

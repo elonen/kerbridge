@@ -38,7 +38,11 @@ fn desired_fixture(name: &str) -> serde_json::Value {
 
 fn built(shadow: &Shadow) -> serde_json::Value {
     let allow = [PROJX.to_owned()];
-    serde_json::to_value(build_desired(shadow, true, ADMISSION, &allow).0).unwrap()
+    serde_json::to_value(build_desired(shadow, ADMISSION, &allow).0).unwrap()
+}
+
+fn sub(id: &str) -> Subject {
+    Subject::new(id)
 }
 
 /// The admission rule, both halves. An account exists for someone a selected
@@ -230,11 +234,15 @@ fn mutual_nesting_terminates_and_expands_each_group_once() {
         ),
     );
 
-    let (d, _) = build_desired(&sh, true, "g-admission", &[]);
+    let (d, _) = build_desired(&sh, "g-admission", &[]);
 
     assert_eq!(d.groups.len(), 3, "each group once: {:?}", d.groups.keys().collect::<Vec<_>>());
-    assert!(d.users.contains_key("u-dana"), "an edge behind the cycle is still followed");
-    assert_eq!(d.membership["g-b"], vec!["g-a", "g-admission", "u-dana"], "edges preserved");
+    assert!(d.users.contains_key(&sub("u-dana")), "an edge behind the cycle is still followed");
+    assert_eq!(
+        d.membership[&sub("g-b")],
+        vec![sub("g-a"), sub("g-admission"), sub("u-dana")],
+        "edges preserved"
+    );
 }
 
 /// Every group named in `membership` has an object in `groups`.
@@ -253,13 +261,15 @@ fn membership_never_names_a_group_with_no_object() {
     );
     // Named as a member, not yet in the shadow: no object, so no membership edge.
 
-    let (d, _) = build_desired(&sh, true, "g-admission", &[]);
-    assert!(!d.groups.contains_key("g-unread"));
+    let (d, _) = build_desired(&sh, "g-admission", &[]);
+    assert!(!d.groups.contains_key(&sub("g-unread")));
     for (gid, members) in &d.membership {
         for m in members {
             assert!(
                 d.users.contains_key(m) || d.groups.contains_key(m),
-                "{gid} names {m}, which has no object in the desired state"
+                "{} names {}, which has no object in the desired state",
+                gid.as_str(),
+                m.as_str()
             );
         }
     }
@@ -288,7 +298,7 @@ fn a_held_but_unsyncable_user_is_reported() {
         ),
     );
 
-    let (d, refused) = build_desired(&sh, true, "g-admission", &[]);
+    let (d, refused) = build_desired(&sh, "g-admission", &[]);
     assert!(d.users.is_empty(), "neither is syncable");
     assert!(
         refused.iter().any(|r| r.contains("u-device-ish") && r.contains("userType")),

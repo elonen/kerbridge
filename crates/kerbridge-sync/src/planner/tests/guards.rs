@@ -85,7 +85,7 @@ fn the_base_landing_mid_component_is_not_containment() {
     );
 }
 
-/// The read said `complete`, so `PartialRead` does not fire -- and every
+/// The read finished, so a snapshot did reach the planner -- and every
 /// synchronized user is then absent from the desired state, which the
 /// retention path reads as "retire all of them".
 #[test]
@@ -116,8 +116,8 @@ fn a_subject_with_no_encodable_identity_is_a_conflict_and_creates_nothing() {
     let long = "s".repeat(kerbridge_core::MAX_IDENTITY_LEN);
     let des = desired(vec![(&long, des_user("Too Long"))], vec![]);
     let cur = current(vec![], vec![]);
-    let refuse: &dyn Fn(&str) -> Result<String, kerbridge_core::IdentityError> = &|subject| {
-        ExternalIdentity::new(&kerbridge_core::Source::new("entra").unwrap(), subject)
+    let refuse: &dyn Fn(&Subject) -> Result<String, kerbridge_core::IdentityError> = &|subject| {
+        ExternalIdentity::new(&kerbridge_core::Source::new("entra").unwrap(), subject.as_str())
             .map(|id| id.encode())
     };
     let plan = plan_sync(&des, &cur, &PlanCtx { identity: refuse, ..ctx() }).unwrap();

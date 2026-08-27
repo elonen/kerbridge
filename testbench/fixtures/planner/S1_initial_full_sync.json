@@ -1,7 +1,6 @@
 {
+  "admission": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
   "desired": {
-    "complete": true,
-    "admission_subject": "4e8a1c9d-5f6b-4d7e-b8a9-001122334455",
     "users": {
       "33334444-dddd-5555-eeee-6666ffff7777": {
         "display_name": "Alice Anderson",
@@ -228,6 +227,5 @@
         "message": "admission group must be created and marked; requires empty-marker precondition re-check at apply time"
       }
     ]
-  },
-  "error": null
+  }
 }

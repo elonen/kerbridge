@@ -91,15 +91,6 @@ Sync derives it from the display name, not from the login name, and unlike a
 `sAMAccountName` it carries no length limit worth enforcing.
 <!-- avoid: common name, new_cn -->
 
-### complete read
-
-The caller's assertion that the Graph read behind a `desired
-state` actually finished; false refuses the whole plan. A `200` with an empty
-page still asserts complete, which is why the empty-expansion freeze — no users
-desired while accounts are synchronized — is a separate guard in the planner.
-<!-- refs: `Desired::complete`, `PlanError::PartialRead`, `kerbridge_sync::planner::plan_sync` -->
-<!-- avoid: complete flag -->
-
 ### conflict
 
 A per-object finding sync reports but will not act on: an
@@ -156,7 +147,7 @@ object. Absent is not empty.
 
 The on-prem target: what the IdP-specific OU should contain once
 the syncable rule and the admission-group closure have been applied to the shadow —
-never the raw Graph read. Carries its own `complete read` assertion.
+never the raw Graph read.
 <!-- refs: `kerbridge_sync::graph::build_desired`, `planner::Desired` -->
 <!-- avoid: desired, target state, wanted state, cloud state, source state -->
 
@@ -374,9 +365,11 @@ removal reasons the same way — quarantine now.
 One `cycle`'s whole reading of a tenant: the `desired state`, and the refusals
 the `directory source`'s own rules produced. Its existence is the assertion — an
 adapter that cannot enumerate yields none — so a read that did not finish can
-never delete or disable anything.
+never delete or disable anything. A `200` with an empty page still yields one,
+which is why the empty-expansion freeze — no users desired while accounts are
+synchronized — is a separate guard in the planner.
 <!-- refs: `kerbridge_sync::source::SourceSnapshot` -->
-<!-- avoid: poll result, directory image, desired set -->
+<!-- avoid: poll result, directory image, desired set, complete read, complete flag -->
 
 ### stalled read
 
@@ -390,7 +383,7 @@ directory is large — how long a whole read takes is not bounded.
 
 ### throttle
 
-A Graph 429 with `Retry-After`. It makes a read incomplete — no
-plan may be produced from one — and says nothing about the directory.
+A Graph 429 with `Retry-After`. It stops a read from finishing — no
+`source snapshot` comes out of one — and says nothing about the directory.
 <!-- refs: `Outcome::Throttled` in `crates/kerbridge-sync/src/graphclient.rs` -->
 <!-- avoid: 429, throttling, rate limit -->

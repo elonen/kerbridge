@@ -16,23 +16,16 @@ const GROUP_B: &str = "bbbb0002-0000-0000-0000-000000000002";
 /// second, perfectly-createable group proves nothing else is planned either.
 #[test]
 fn a_group_sam_collision_refuses_the_whole_cycle() {
-    let admission = "8689e2c1-3268-4744-a647-30d05e5c7b90".to_owned();
+    let admission = Subject::new("8689e2c1-3268-4744-a647-30d05e5c7b90");
     let mut groups = BTreeMap::new();
     groups
         .insert(admission.clone(), DesiredGroup { display_name: "onprem-realm-users".to_owned() });
     // Fine on its own -- must still not be created, because the cycle is refused.
     groups.insert(
-        "47c8e0b4-c5e0-4c20-96a6-25f4c4632f18".to_owned(),
+        Subject::new("47c8e0b4-c5e0-4c20-96a6-25f4c4632f18"),
         DesiredGroup { display_name: "proj-x-staff".to_owned() },
     );
-    let desired = Desired {
-        complete: true,
-        admission_subject: Some(admission),
-        grant_subject: None,
-        users: BTreeMap::new(),
-        groups,
-        membership: BTreeMap::new(),
-    };
+    let desired = Desired { users: BTreeMap::new(), groups, membership: BTreeMap::new() };
     // The admission group's name is already occupied by an unmanaged/foreign
     // object.
     let current = Current {
@@ -43,6 +36,8 @@ fn a_group_sam_collision_refuses_the_whole_cycle() {
     };
     let ctx = PlanCtx {
         idp_ou: "OU=Entra,DC=example,DC=site",
+        admission: &admission,
+        grant: None,
         upn_suffix: "example.site",
         group_suffix: "",
         now: "2026-07-21T12:00:00Z",
@@ -66,29 +61,22 @@ fn a_group_sam_collision_refuses_the_whole_cycle() {
 /// AD rejects the duplicate name domain-wide, on every cycle, forever.
 #[test]
 fn a_new_group_reusing_a_managed_group_sam_refuses_the_cycle() {
-    let admission = "8689e2c1-3268-4744-a647-30d05e5c7b90".to_owned();
+    let admission = Subject::new("8689e2c1-3268-4744-a647-30d05e5c7b90");
     let mut groups = BTreeMap::new();
     groups
         .insert(admission.clone(), DesiredGroup { display_name: "onprem-realm-users".to_owned() });
     // Recreated in Entra under a fresh oid, with the same name as before.
     groups.insert(
-        "47c8e0b4-c5e0-4c20-96a6-25f4c4632f18".to_owned(),
+        Subject::new("47c8e0b4-c5e0-4c20-96a6-25f4c4632f18"),
         DesiredGroup { display_name: "proj-x".to_owned() },
     );
-    let desired = Desired {
-        complete: true,
-        admission_subject: Some(admission.clone()),
-        grant_subject: None,
-        users: BTreeMap::new(),
-        groups,
-        membership: BTreeMap::new(),
-    };
+    let desired = Desired { users: BTreeMap::new(), groups, membership: BTreeMap::new() };
     // The predecessor: gone from Entra, still held here, still owning the name.
     let current = Current {
         users: OrderedMap(vec![]),
         groups: OrderedMap(vec![
             (
-                admission,
+                admission.as_str().to_owned(),
                 CurrentGroup {
                     dn: "CN=onprem-realm-users,OU=Entra,DC=example,DC=site".to_owned(),
                     sam: "onprem-realm-users".to_owned(),
@@ -115,6 +103,8 @@ fn a_new_group_reusing_a_managed_group_sam_refuses_the_cycle() {
     };
     let ctx = PlanCtx {
         idp_ou: "OU=Entra,DC=example,DC=site",
+        admission: &admission,
+        grant: None,
         upn_suffix: "example.site",
         group_suffix: "",
         now: "2026-07-21T12:00:00Z",

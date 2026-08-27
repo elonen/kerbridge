@@ -15,7 +15,9 @@ use kerbridge_notify::{Event, Notifier, Severity};
 
 use crate::graph::{Shadow, build_desired};
 use crate::graphclient::{GraphClient, GraphReader, StreamResult, TokenError};
-use crate::source::{CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot};
+use crate::source::{
+    CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, Subject,
+};
 
 /// One Entra tenant, read over Graph.
 ///
@@ -211,10 +213,13 @@ impl EntraSource {
         // alternatives.
         let mut roots = self.allowlist.clone();
         roots.extend(self.grant_group_id.clone());
-        let (mut desired, refused) =
-            build_desired(&self.shadow, true, &self.admission_group_id, &roots);
-        desired.grant_subject = self.grant_group_id.clone();
-        SourceSnapshot { desired, refused }
+        let (desired, refused) = build_desired(&self.shadow, &self.admission_group_id, &roots);
+        SourceSnapshot {
+            desired,
+            admission: Subject::new(self.admission_group_id.clone()),
+            grant: self.grant_group_id.clone().map(Subject::new),
+            refused,
+        }
     }
 }
 

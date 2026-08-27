@@ -1,6 +1,7 @@
 //! The recorded scenarios in `testbench/fixtures/planner`, replayed op for op.
-//! S1-S11 were captured against a live disposable Samba by the directory-sync
-//! spike, so a match there is a match against measured directory behavior.
+//! The captured ones came off a live disposable Samba, recorded by the
+//! directory-sync spike, so a match there is a match against measured directory
+//! behavior.
 //!
 //! Two deliberate divergences from the behavior the fixtures were captured
 //! against. The planner refuses a whole cycle on a group `sAMAccountName`
@@ -20,10 +21,12 @@ use super::*;
 fn matches_every_recorded_planner_fixture() {
     #[derive(Deserialize)]
     struct Fixture {
+        admission: Subject,
+        #[serde(default)]
+        grant: Option<Subject>,
         desired: Desired,
         current: Current,
-        plan: Option<ExpectedPlan>,
-        error: Option<String>,
+        plan: ExpectedPlan,
     }
     #[derive(Deserialize)]
     struct ExpectedPlan {
@@ -39,23 +42,6 @@ fn matches_every_recorded_planner_fixture() {
         message: String,
     }
 
-    // The stamp the fixtures were generated with, and the naming mode they
-    // were generated in -- the sam derived from the UPN. Replay needs both.
-    let ctx = PlanCtx {
-        idp_ou: "OU=Entra,DC=example,DC=site",
-        upn_suffix: "example.site",
-        group_suffix: "",
-        now: "2026-07-21T12:00:00Z",
-        sam_source: SamSource::Upn,
-        // Off for the recorded scenarios. Their `current` blocks were authored when
-        // a login name never moved, so every one of them would otherwise gain
-        // rename ops and stop being about the thing it was recorded for --
-        // retention, quarantine, the admission-group freeze, the duplicate-identity
-        // conflict. Automatic renaming has its own tests below, where the before
-        // and after are the point.
-        automatic_sam_renames: false,
-        identity: ENCODE,
-    };
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../testbench/fixtures/planner");
     let mut count = 0;
     for entry in std::fs::read_dir(dir).expect("fixtures dir") {
@@ -65,25 +51,37 @@ fn matches_every_recorded_planner_fixture() {
         }
         let name = path.file_stem().unwrap().to_string_lossy().to_string();
         let fx: Fixture = serde_json::from_slice(&std::fs::read(&path).unwrap()).expect(&name);
-        let result = plan_sync(&fx.desired, &fx.current, &ctx);
-        match (result, fx.plan, fx.error) {
-            (Err(e), None, Some(expected)) => {
-                assert_eq!(e.to_string(), expected, "{name}: error text");
-            }
-            (Ok(plan), Some(expected), None) => {
-                let got: Vec<serde_json::Value> =
-                    plan.ops.iter().map(|o| serde_json::to_value(o).unwrap()).collect();
-                assert_eq!(got, expected.ops, "{name}: ops");
-                assert_eq!(plan.conflicts, expected.conflicts, "{name}: conflicts");
-                assert_eq!(plan.alerts.len(), expected.alerts.len(), "{name}: alert count");
-                for (got, want) in plan.alerts.iter().zip(&expected.alerts) {
-                    assert_eq!(got.message, want.message, "{name}: alert message");
-                    assert_eq!(got.kind, want.kind, "{name}: kind of alert {:?}", want.message);
-                }
-            }
-            (r, _, _) => panic!("{name}: result/fixture shape mismatch: {r:?}"),
+        // The stamp the fixtures were generated with, and the naming mode they
+        // were generated in -- the sam derived from the UPN. Replay needs both.
+        let ctx = PlanCtx {
+            idp_ou: "OU=Entra,DC=example,DC=site",
+            admission: &fx.admission,
+            grant: fx.grant.as_ref(),
+            upn_suffix: "example.site",
+            group_suffix: "",
+            now: "2026-07-21T12:00:00Z",
+            sam_source: SamSource::Upn,
+            // Off for the recorded scenarios. Their `current` blocks were authored when
+            // a login name never moved, so every one of them would otherwise gain
+            // rename ops and stop being about the thing it was recorded for --
+            // retention, quarantine, the admission-group freeze, the duplicate-identity
+            // conflict. Automatic renaming has its own tests below, where the before
+            // and after are the point.
+            automatic_sam_renames: false,
+            identity: ENCODE,
+        };
+        let plan = plan_sync(&fx.desired, &fx.current, &ctx)
+            .unwrap_or_else(|e| panic!("{name}: refused to plan: {e:?}"));
+        let got: Vec<serde_json::Value> =
+            plan.ops.iter().map(|o| serde_json::to_value(o).unwrap()).collect();
+        assert_eq!(got, fx.plan.ops, "{name}: ops");
+        assert_eq!(plan.conflicts, fx.plan.conflicts, "{name}: conflicts");
+        assert_eq!(plan.alerts.len(), fx.plan.alerts.len(), "{name}: alert count");
+        for (got, want) in plan.alerts.iter().zip(&fx.plan.alerts) {
+            assert_eq!(got.message, want.message, "{name}: alert message");
+            assert_eq!(got.kind, want.kind, "{name}: kind of alert {:?}", want.message);
         }
         count += 1;
     }
-    assert_eq!(count, 13, "expected all thirteen planner fixtures");
+    assert_eq!(count, 12, "expected all twelve planner fixtures");
 }

@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use kerbridge_idp::IdpSettings;
 use kerbridge_notify::Notifier;
+use serde::{Deserialize, Serialize};
 
 use crate::entra::EntraSource;
 use crate::planner::Desired;
@@ -27,9 +28,45 @@ pub enum Progress {
 /// read that did not finish can never delete or disable anything.
 pub struct SourceSnapshot {
     pub desired: Desired,
+    /// The group that admits people to the realm.
+    pub admission: Subject,
+    /// The device-grant group, if the deployment names one. Absent is ordinary:
+    /// a deployment with device grants off has no such group, and one with them
+    /// on but no group configured simply admits nobody to them -- the broker
+    /// looks the group up by its marker and fails closed when it is missing.
+    pub grant: Option<Subject>,
     /// Who the adapter's own rules left out, and why -- prose for the operator,
     /// not a fault.
     pub refused: Vec<String>,
+}
+
+/// One IdP's own key for an account or a group, as its adapter hands it over.
+///
+/// Opaque above the seam. It is compared for equality against the keys of the
+/// enumeration it arrived in, and nothing else is done with it; whether it is a
+/// UUID, a slug or a DN is the adapter's choice and the adapter's to document.
+///
+/// [`crate::planner::plan_sync`] wants the admission subject among the keys of
+/// `desired.groups` and freezes the cycle when it is absent, so an adapter whose
+/// key does not survive a rename freezes rather than repointing onto the wrong
+/// group. A key that moves reads as a different account: the stored identity is
+/// built from it, so the old object retires and a new one is created with a new
+/// SID.
+///
+/// `Ord` is derived for deterministic iteration, which the recorded fixtures
+/// depend on. It means nothing else; subjects have no order.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct Subject(String);
+
+impl Subject {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Why a cycle produced no snapshot.
@@ -82,12 +119,6 @@ pub enum CredentialState {
 }
 
 /// One cloud directory, reduced to what the mirror needs of it.
-///
-/// INVARIANT: the subject an adapter derives is stable for the life of the
-/// account -- unchanged from [`kerbridge_idp::IdentityProvider`], and for the
-/// same reason. It is otherwise opaque, and is compared for equality against
-/// the keys of the enumeration it came in; whether it is a UUID, a slug or a DN
-/// is the adapter's choice and the adapter's to document.
 ///
 /// INVARIANT: cursors do not survive a restart. An adapter must be correct when
 /// its first cycle after start is a full read.

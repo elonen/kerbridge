@@ -3,8 +3,8 @@
 //!
 //! Four safety properties are structural, not incidental:
 //!
-//! - A Graph read that does not assert `complete read` (`desired.complete ==
-//!   false`) produces no plan at all, so it can never delete or disable anything.
+//! - A read that did not finish yields no [`crate::source::SourceSnapshot`], so
+//!   there is nothing to plan from and nothing can be deleted or disabled.
 //! - Every op targets a DN inside the IdP-specific OU; [`Builder::add`] asserts it, so a
 //!   bug cannot make the applier write outside this source's own OU.
 //! - A `sAMAccountName` collision on any new group refuses the whole cycle rather
@@ -13,8 +13,7 @@
 //! - There is no delete op. [`Op`] cannot express one, so no plan -- however
 //!   wrong -- can destroy an object. Deletion is the operator's, through
 //!   `kbmanage`, which says what a lost SID costs. Adding an `Op::Delete` here
-//!   would weaken this deliberately and must re-verify the partial-read guard
-//!   against it.
+//!   would weaken this deliberately.
 //!
 //! Validated op for op against the recorded scenarios in
 //! `testbench/fixtures/planner/`, which `tests::corpus` replays and whose module
@@ -46,6 +45,8 @@ use kerbridge_core::state::{
 };
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::source::Subject;
 
 mod names;
 
@@ -87,28 +88,14 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OrderedMap<T> {
     }
 }
 
-/// Desired state, built from Graph. Maps are `BTreeMap` because the reference
-/// planner iterates every desired collection sorted by object id, and this makes
-/// that ordering automatic and total.
+/// The population the realm should hold, keyed by the adapter's own subjects.
+/// `BTreeMap` because the reference planner iterates every desired collection
+/// in subject order, and this makes that ordering automatic and total.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Desired {
-    #[serde(default)]
-    pub complete: bool,
-    #[serde(default)]
-    pub admission_subject: Option<String>,
-    /// The device-grant group, if the deployment names one. Absent is ordinary:
-    /// a deployment with device grants off has no such group, and one with them
-    /// on but no group configured simply admits nobody to them -- the broker
-    /// looks the group up by its marker and fails closed when it is missing.
-    ///
-    /// Omitted from the wire when absent rather than serialized as null, for the
-    /// reason [`DesiredUser::mail`] gives: it keeps the S1–S11 fixtures
-    /// byte-stable for every deployment that does not use the feature.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub grant_subject: Option<String>,
-    pub users: BTreeMap<String, DesiredUser>,
-    pub groups: BTreeMap<String, DesiredGroup>,
-    pub membership: BTreeMap<String, Vec<String>>,
+    pub users: BTreeMap<Subject, DesiredUser>,
+    pub groups: BTreeMap<Subject, DesiredGroup>,
+    pub membership: BTreeMap<Subject, Vec<Subject>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -368,19 +355,15 @@ pub struct Plan {
     pub alerts: Vec<Alert>,
 }
 
-/// A refusal to plan at all. Every case means the input is in a state where any
-/// reconciliation would risk the wrong thing, so the caller must stop, not
-/// proceed with a partial plan.
+/// A refusal to plan at all: the input is in a state where any reconciliation
+/// would risk the wrong thing, so the caller must stop rather than proceed with
+/// a partial plan.
 ///
-/// The two admission cases are separate variants rather than one blocked-with-a-
-/// sentence, because the caller routes them to different operator problems and
-/// deriving the class back out of the sentence is how a reworded message
-/// silently unroutes itself.
+/// A variant per case, never one blocked-with-a-sentence: the caller routes each
+/// to its own operator problem, and deriving the class back out of the sentence
+/// is how a reworded message silently unroutes itself.
 #[derive(Debug)]
 pub enum PlanError {
-    /// The Graph read was incomplete. Planning is refused so no destructive op
-    /// can follow a partial read.
-    PartialRead,
     /// One or more desired objects need a `sAMAccountName` that already belongs to
     /// a different object. The whole cycle is refused -- nothing is touched -- so
     /// a first deploy against a directory that already holds a same-named object
@@ -393,27 +376,15 @@ pub enum PlanError {
     NameCollision(Vec<String>),
 }
 
-impl fmt::Display for PlanError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PlanError::PartialRead => {
-                f.write_str("desired state read incomplete - refusing to plan (no destructive ops)")
-            }
-            PlanError::NameCollision(names) => write!(
-                f,
-                "sAMAccountName collision blocks the cycle (no changes applied): {}",
-                names.join(", ")
-            ),
-        }
-    }
-}
-
-impl std::error::Error for PlanError {}
-
 /// The parts of the deployment the planner needs to form DNs and stamp markers.
 pub struct PlanCtx<'a> {
     /// `OU=Entra,OU=CloudIdP,<base_dn>` -- the one OU the planner may write.
     pub idp_ou: &'a str,
+    /// The group that admits people to the realm. Absent from `desired.groups`
+    /// freezes the cycle: no ops at all.
+    pub admission: &'a Subject,
+    /// The device-grant group, if the deployment names one.
+    pub grant: Option<&'a Subject>,
     /// The AD DNS domain, used as the UPN suffix for created users.
     pub upn_suffix: &'a str,
     /// What every group's `sAMAccountName` ends with, keeping this source's
@@ -438,7 +409,7 @@ pub struct PlanCtx<'a> {
     /// synchronized" for everyone. `Err` for a subject the format cannot hold --
     /// a value past the attribute's ceiling -- which is reported and the object
     /// left alone, exactly like an identity this tool cannot read.
-    pub identity: &'a dyn Fn(&str) -> Result<String, kerbridge_core::IdentityError>,
+    pub identity: &'a dyn Fn(&Subject) -> Result<String, kerbridge_core::IdentityError>,
 }
 
 /// Accumulates ops while enforcing the source-OU invariant on every one.
@@ -456,13 +427,14 @@ struct Builder<'a> {
 /// For Entra the length never binds -- a GUID is 36 characters and the format
 /// holds 256 -- but the shape does: the adapter refuses an `oid` that is not a
 /// canonical GUID, here as at the broker.
-fn encoded_identity(b: &mut Builder<'_>, ctx: &PlanCtx<'_>, oid: &str) -> Option<String> {
+fn encoded_identity(b: &mut Builder<'_>, ctx: &PlanCtx<'_>, oid: &Subject) -> Option<String> {
     match (ctx.identity)(oid) {
         Ok(value) => Some(value),
         Err(why) => {
-            b.plan
-                .conflicts
-                .push(format!("{oid} has no encodable identity ({why}) - nothing created"));
+            b.plan.conflicts.push(format!(
+                "{} has no encodable identity ({why}) - nothing created",
+                oid.as_str()
+            ));
             None
         }
     }
@@ -485,31 +457,26 @@ pub fn plan_sync(
     current: &Current,
     ctx: &PlanCtx<'_>,
 ) -> Result<Plan, PlanError> {
-    if !desired.complete {
-        return Err(PlanError::PartialRead);
-    }
     let mut b = Builder { plan: Plan::default(), idp_ou: ctx.idp_ou };
 
     // ---- admission-group invariants (fail closed) ----
-    let admission_oid = match &desired.admission_subject {
-        Some(g) if desired.groups.contains_key(g) => g.as_str(),
-        _ => {
-            b.plan.alerts.push(Alert::admission(
-                "ADMISSION GROUP missing from desired state: reconciliation FROZEN; broker will \
-                 fail closed via role marker; operator escalation required"
-                    .to_owned(),
-            ));
-            return Ok(b.plan); // conservative freeze: no ops at all
-        }
-    };
+    let admission_oid = ctx.admission;
+    if !desired.groups.contains_key(admission_oid) {
+        b.plan.alerts.push(Alert::admission(
+            "ADMISSION GROUP missing from desired state: reconciliation FROZEN; broker will fail \
+             closed via role marker; operator escalation required"
+                .to_owned(),
+        ));
+        return Ok(b.plan); // conservative freeze: no ops at all
+    }
 
     let cur_users = current.users.lookup();
     let cur_groups = current.groups.lookup();
 
-    // ---- a complete read describing nobody is a fault, not a tenant ----
-    // `PartialRead` covers a read that *said* it was incomplete. This covers the
-    // one that did not: a 200 with an empty page, an admission group whose
-    // membership came back empty, a permissions change that quietly stopped
+    // ---- a whole read describing nobody is a fault, not a tenant ----
+    // A read that did not finish never gets here: it yields no snapshot. This
+    // covers the one that did finish: a 200 with an empty page, an admission
+    // group whose membership came back empty, a permissions change that quietly stopped
     // expanding it. Every one of those is indistinguishable from "the tenant has
     // no users", and acting on it retires every account in a single cycle --
     // recoverable only by restoring the directory, and a total outage until
@@ -544,13 +511,13 @@ pub fn plan_sync(
     // either way, but a shortfall is re-stamped by the next cycle unaided,
     // while a surplus would read as ambiguous. Emptying `marked` is what hands
     // the stamping to the same code that marks a fresh deployment.
-    for stale in marked.iter().filter(|m| **m != admission_oid) {
+    for stale in marked.iter().filter(|m| **m != admission_oid.as_str()) {
         b.add(Op::ClearMarker {
             dn: cur_groups[*stale].dn.clone(),
             prefix: ROLE_ADMISSION.to_owned(),
         });
     }
-    marked.retain(|m| *m == admission_oid);
+    marked.retain(|m| *m == admission_oid.as_str());
 
     // ---- ambiguous external identity in current -> conflict, never touch ----
     // Iterated in receipt order (users then groups); an oid never spans kinds,
@@ -604,7 +571,7 @@ pub fn plan_sync(
         ));
     }
 
-    let mut dn_of: HashMap<&str, String> = HashMap::new();
+    let mut dn_of: HashMap<&Subject, String> = HashMap::new();
     let mut taken_dns: HashSet<String> = current
         .users
         .iter()
@@ -639,9 +606,9 @@ pub fn plan_sync(
                     continue;
                 };
                 let (sam, upn, cn) =
-                    alloc_names(du, oid, &sam_keys, ctx.upn_suffix, ctx.sam_source)?;
+                    alloc_names(du, oid.as_str(), &sam_keys, ctx.upn_suffix, ctx.sam_source)?;
                 sam_keys.insert(sam::fold(&sam));
-                let dn = fresh_dn(&cn, oid, ctx.idp_ou, &mut taken_dns);
+                let dn = fresh_dn(&cn, oid.as_str(), ctx.idp_ou, &mut taken_dns);
                 dn_of.insert(oid, dn.clone());
                 b.add(Op::CreateUser {
                     dn,
@@ -668,12 +635,12 @@ pub fn plan_sync(
                     // do. Her own held name must read as free to her.
                     sam_keys.remove(&sam::fold(&cu.sam));
                     let (sam, upn, mut cn) =
-                        alloc_names(du, oid, &sam_keys, ctx.upn_suffix, ctx.sam_source)?;
+                        alloc_names(du, oid.as_str(), &sam_keys, ctx.upn_suffix, ctx.sam_source)?;
                     sam_keys.insert(sam::fold(&sam));
                     let parent = parent_of(&cu.dn);
                     let mut newdn = format!("CN={cn},{parent}");
                     if newdn != cu.dn && taken_dns.contains(&newdn) {
-                        cn = format!("{cn} ({})", oid4(oid));
+                        cn = format!("{cn} ({})", oid4(oid.as_str()));
                         newdn = format!("CN={cn},{parent}");
                     }
                     // Silent when nothing moved: an uncontested reappearance of a
@@ -717,7 +684,7 @@ pub fn plan_sync(
                     // and drifts into the `-<oid4>` fallback.
                     sam_keys.remove(&sam::fold(&cu.sam));
                     let (sam, upn, _) =
-                        alloc_names(du, oid, &sam_keys, ctx.upn_suffix, ctx.sam_source)?;
+                        alloc_names(du, oid.as_str(), &sam_keys, ctx.upn_suffix, ctx.sam_source)?;
                     sam_keys.insert(sam::fold(&sam));
                     if sam != cu.sam {
                         // The DN is left where it is: the CN follows the display
@@ -747,7 +714,8 @@ pub fn plan_sync(
                             value: du.display_name.clone(),
                         });
                     } else if taken_dns.contains(&newdn) {
-                        let sufdn = format!("CN={newcn} ({}),{}", oid4(oid), parent_of(&cu.dn));
+                        let sufdn =
+                            format!("CN={newcn} ({}),{}", oid4(oid.as_str()), parent_of(&cu.dn));
                         if sufdn == cu.dn {
                             b.add(Op::SetAttr {
                                 dn: cu.dn.clone(),
@@ -758,7 +726,7 @@ pub fn plan_sync(
                             taken_dns.insert(sufdn.clone());
                             b.add(Op::Rename {
                                 dn: cu.dn.clone(),
-                                new_cn: format!("{newcn} ({})", oid4(oid)),
+                                new_cn: format!("{newcn} ({})", oid4(oid.as_str())),
                                 set_display_name: Some(du.display_name.clone()),
                                 set_sam: None,
                                 set_upn: None,
@@ -781,10 +749,14 @@ pub fn plan_sync(
         }
     }
     // users present in Samba but gone from Entra: disable and start retention.
+    //
+    // `current` is keyed by the subject parsed back out of the stored identity,
+    // so the comparison is against text. Same in the group loop below.
+    let desired_users: HashSet<&str> = desired.users.keys().map(Subject::as_str).collect();
     let mut cur_user_oids: Vec<&str> = current.users.iter().map(|(oid, _)| oid.as_str()).collect();
     cur_user_oids.sort_unstable();
     for oid in cur_user_oids {
-        if desired.users.contains_key(oid) || dupes.contains(oid) {
+        if desired_users.contains(oid) || dupes.contains(oid) {
             continue;
         }
         let cu = cur_users[oid];
@@ -853,10 +825,10 @@ pub fn plan_sync(
         if dupes.contains(oid.as_str()) || cur_groups.contains_key(oid.as_str()) {
             continue;
         }
-        let (_, sam) = group_names(&dg.display_name, oid, ctx.group_suffix);
+        let (_, sam) = group_names(&dg.display_name, oid.as_str(), ctx.group_suffix);
         let key = sam::fold(&sam);
         if sam_keys.contains(&key) || !new_group_keys.insert(key) {
-            collisions.push(format!("{:?} (group {oid})", dg.display_name));
+            collisions.push(format!("{:?} (group {})", dg.display_name, oid.as_str()));
         }
     }
     if !collisions.is_empty() {
@@ -873,8 +845,8 @@ pub fn plan_sync(
                 let Some(identity) = encoded_identity(&mut b, ctx, oid) else {
                     continue;
                 };
-                let (cn, sam) = group_names(&dg.display_name, oid, ctx.group_suffix);
-                let dn = fresh_dn(&cn, oid, ctx.idp_ou, &mut taken_dns);
+                let (cn, sam) = group_names(&dg.display_name, oid.as_str(), ctx.group_suffix);
+                let dn = fresh_dn(&cn, oid.as_str(), ctx.idp_ou, &mut taken_dns);
                 dn_of.insert(oid, dn.clone());
                 let role_marker = if oid == admission_oid {
                     if marked.is_empty() {
@@ -900,11 +872,11 @@ pub fn plan_sync(
                     b.add(Op::ClearMarker { dn: cg.dn.clone(), prefix: ST_QUAR.to_owned() });
                 }
                 if dg.display_name != cg.display_name {
-                    let (cn, sam) = group_names(&dg.display_name, oid, ctx.group_suffix);
+                    let (cn, sam) = group_names(&dg.display_name, oid.as_str(), ctx.group_suffix);
                     let parent = parent_of(&cg.dn);
                     let mut newdn = format!("CN={cn},{parent}");
                     if newdn != cg.dn && taken_dns.contains(&newdn) {
-                        newdn = format!("CN={cn} ({}),{parent}", oid4(oid));
+                        newdn = format!("CN={cn} ({}),{parent}", oid4(oid.as_str()));
                     }
                     if newdn != cg.dn {
                         taken_dns.insert(newdn.clone());
@@ -930,18 +902,19 @@ pub fn plan_sync(
     }
     // groups present in Samba but gone from Entra: quarantine (or freeze if admission
     // group).
+    let desired_groups: HashSet<&str> = desired.groups.keys().map(Subject::as_str).collect();
     let mut cur_group_oids: Vec<&str> =
         current.groups.iter().map(|(oid, _)| oid.as_str()).collect();
     cur_group_oids.sort_unstable();
     for oid in cur_group_oids {
-        if desired.groups.contains_key(oid) || dupes.contains(oid) {
+        if desired_groups.contains(oid) || dupes.contains(oid) {
             continue;
         }
         let cg = cur_groups[oid];
         // A marker on any other group is cleared this cycle, so it no longer
         // means "this is the admission group" and its carrier is an ordinary
         // leaver, quarantined below like any other.
-        if oid == admission_oid {
+        if oid == admission_oid.as_str() {
             b.plan.alerts.push(Alert::admission(format!(
                 "ADMISSION GROUP {} vanished from desired state: FROZEN, operator escalation",
                 cg.dn
@@ -1004,7 +977,7 @@ pub fn plan_sync(
         .filter(|(_, g)| g.markers.iter().any(|m| m == ROLE_DEVICE_GRANT))
         .map(|(oid, _)| oid.as_str())
         .collect();
-    match desired.grant_subject.as_deref() {
+    match ctx.grant {
         // Nothing configured, but a group still carries the marker: the operator
         // has unset the group without unmarking it, so device grants keep
         // working for whoever is in it. Reported, never undone -- sync removing a
@@ -1017,8 +990,9 @@ pub fn plan_sync(
         None => {}
         Some(oid) if !desired.groups.contains_key(oid) => {
             b.plan.alerts.push(Alert::device_grant(format!(
-                "DEVICE-GRANT GROUP {oid} is not in the synchronized set: no device grant can be \
-                 created or used until it is"
+                "DEVICE-GRANT GROUP {} is not in the synchronized set: no device grant can be \
+                 created or used until it is",
+                oid.as_str()
             )))
         }
         // Exactly the configured group carries the marker when this converges.
@@ -1029,14 +1003,14 @@ pub fn plan_sync(
         Some(oid) => {
             if let Some(dn) = dn_of.get(oid) {
                 for marked in &grant_marked {
-                    if *marked != oid {
+                    if *marked != oid.as_str() {
                         b.add(Op::ClearMarker {
                             dn: cur_groups[*marked].dn.clone(),
                             prefix: ROLE_DEVICE_GRANT.to_owned(),
                         });
                     }
                 }
-                if !grant_marked.contains(&oid) {
+                if !grant_marked.contains(&oid.as_str()) {
                     b.add(Op::SetRoleMarker {
                         dn: dn.clone(),
                         value: ROLE_DEVICE_GRANT.to_owned(),
@@ -1065,11 +1039,11 @@ pub fn plan_sync(
         if dupes.contains(goid.as_str()) || !desired.groups.contains_key(goid) {
             continue;
         }
-        let Some(gdn) = dn_of.get(goid.as_str()).cloned() else {
+        let Some(gdn) = dn_of.get(goid).cloned() else {
             continue;
         };
         let want: HashSet<String> =
-            want_oids.iter().filter_map(|m| dn_of.get(m.as_str()).cloned()).collect();
+            want_oids.iter().filter_map(|m| dn_of.get(m).cloned()).collect();
         let have: HashSet<String> = match cur_groups.get(goid.as_str()) {
             Some(cg) => cg
                 .members

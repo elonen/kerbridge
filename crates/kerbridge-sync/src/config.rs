@@ -13,6 +13,7 @@ use kerbridge_core::config::SourceFile;
 use kerbridge_idp::{IdpSettings, Provider};
 
 use crate::planner::SamSource;
+use crate::source::Subject;
 
 /// What one process does, and for whom.
 ///
@@ -142,10 +143,11 @@ impl SourceConfig {
     /// How this source's subjects become stored identity values, for the
     /// planner. The adapter's own encoder, never a copy of it -- the broker's
     /// verifier emits the same bytes from the token side.
-    pub fn identity(&self) -> impl Fn(&str) -> Result<String, kerbridge_core::IdentityError> {
+    pub fn identity(&self) -> impl Fn(&Subject) -> Result<String, kerbridge_core::IdentityError> {
         let (provider, source) = (self.provider, self.source.clone());
         move |subject| {
-            kerbridge_idp::encode_identity(provider, &source, subject).map(|id| id.encode())
+            kerbridge_idp::encode_identity(provider, &source, subject.as_str())
+                .map(|id| id.encode())
         }
     }
 }
