@@ -63,7 +63,7 @@ import re
 import sys
 import urllib.parse
 
-SKIP_DIRS = {".git", "target", ".local-tmp", "dist", "node_modules", "secrets"}
+from _tree import walk
 
 # Where a doc path may be cited from. By extension, plus the two that are named
 # rather than suffixed.
@@ -165,13 +165,12 @@ def cited_paths(
 def main(root: str) -> int:
     files: list[str] = []
     sources: list[str] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-        for f in filenames:
-            if f.endswith(".md"):
-                files.append(os.path.join(dirpath, f))
-            elif os.path.splitext(f)[1] in SOURCE_EXT or f in SOURCE_NAMES:
-                sources.append(os.path.join(dirpath, f))
+    for path in walk(root):
+        name = os.path.basename(path)
+        if name.endswith(".md"):
+            files.append(path)
+        elif os.path.splitext(name)[1] in SOURCE_EXT or name in SOURCE_NAMES:
+            sources.append(path)
     files.sort()
     sources.sort()
 

@@ -1,29 +1,27 @@
 #!/usr/bin/env python3
 """Check that indexed research remains archived and deliberately accessed."""
 
-import os
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-SKIP_DIRS = {".git", "target", ".local-tmp", "dist", "node_modules", "secrets"}
+from _tree import walk
+
 ARCHIVE_REF = re.compile(r"^Archive: `([A-Za-z0-9._-]+\.zst)`\.$", re.MULTILINE)
 LINE_RANGE = re.compile(r"(?<!\w):(\d+)(?:-(\d+))?")
 
 
 def text_files(root: Path):
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [name for name in dirnames if name not in SKIP_DIRS]
-        for name in filenames:
-            path = Path(dirpath, name)
-            if path.suffix == ".zst":
-                continue
-            try:
-                yield path, path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                pass
+    for name in walk(root):
+        path = Path(name)
+        if path.suffix == ".zst":
+            continue
+        try:
+            yield path, path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            pass
 
 
 def index_ranges(body: str):

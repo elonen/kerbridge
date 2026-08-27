@@ -13,6 +13,8 @@ import re
 import sys
 from pathlib import Path
 
+from _tree import walk
+
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / ".github/workflows/apt.yml"
 
@@ -30,8 +32,9 @@ def has_letter(hex40: str) -> bool:
     return any(c in "ABCDEF" for c in hex40)
 
 
-# Binary, generated, or holding fingerprints of their own.
-SKIP_DIRS = {".git", "target", "dist", "node_modules", ".local-tmp", "research"}
+# The spike archives carry fingerprints of their own, so they are skipped here
+# and nowhere else. Everything binary or generated is skipped by `_tree`.
+SKIP_PREFIX = ROOT / "docs/research"
 
 
 def main() -> int:
@@ -44,8 +47,9 @@ def main() -> int:
 
     bad = []
     seen = 0
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or set(path.relative_to(ROOT).parts) & SKIP_DIRS:
+    for name in walk(ROOT):
+        path = Path(name)
+        if path.is_relative_to(SKIP_PREFIX):
             continue
         try:
             text = path.read_text()
