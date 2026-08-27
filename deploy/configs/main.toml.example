@@ -94,7 +94,7 @@ sources = ["entra"]
 
 # --- Operator notification ---
 # For conditions only a human can fix and nothing else will report: an expiring
-# Graph credential, a deleted admission group, a sync cycle that keeps failing.
+# sync credential, a deleted admission group, a sync cycle that keeps failing.
 #
 # With no url_file every event is still a `NOTIFY <severity> <event>:` line in
 # the service log, and state_dir keeps the currently-true conditions for your

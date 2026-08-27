@@ -106,7 +106,7 @@ hardening, and would last the life of the install. A container that vanishes is
 bounded by construction.
 
 What it is handed is `secrets/generated/` and nothing else — the whole of what
-this writes. The operator's IdP credentials sit under `secrets/idp/`, out of
+this writes. The operator's sync credentials sit under `secrets/idp/`, out of
 reach, because they are authorities in a cloud tenant rather than in this realm.
 
 `kerbridge-issuerd.service` carries `ExecStartPre=/usr/sbin/kbsetup verify`, so

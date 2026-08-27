@@ -356,7 +356,7 @@ pub fn require_ldaps(url: &str) -> anyhow::Result<()> {
 /// A shape check and deliberately not a parse: the two callers want opposite
 /// things from it and neither wants the value. The broker refuses a token whose
 /// `tid` or `oid` is not in this form, because those become directory
-/// coordinates; sync refuses a Graph credential file that *is* in it, because
+/// coordinates; sync refuses a credential file that *is* in it, because in Entra
 /// that is the portal's *Secret ID* pasted in place of the secret *Value*.
 /// Parsing with a UUID crate would accept the braced and URN forms too, which
 /// loosens the first check and breaks the second.

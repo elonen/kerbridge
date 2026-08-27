@@ -18,7 +18,7 @@ use crate::planner::SamSource;
 /// What one process does, and for whom.
 ///
 /// Everything here is deployment-wide; anything that could differ between two
-/// cloud tenants is in [`SourceConfig`]. The split is not cosmetic: the fields
+/// cloud IdPs is in [`SourceConfig`]. The split is not cosmetic: the fields
 /// below are read once and shared, and a value that belongs per source but sat
 /// here would silently make the second source a copy of the first.
 pub struct Config {
@@ -59,7 +59,7 @@ pub struct Config {
 }
 
 /// One source, as the mirror sees it: an identity to bind as, an OU to own, and
-/// a cloud tenant to read.
+/// a cloud IdP to read.
 pub struct SourceConfig {
     pub source: Source,
     provider: Provider,
@@ -74,7 +74,7 @@ pub struct SourceConfig {
     pub group_suffix: String,
     pub bind_dn: String,
     pub bind_password: String,
-    /// The adapter's half of the source file: the tenant, its credential and
+    /// The adapter's half of the source file: the IdP, its credential and
     /// its group ids. Handed to [`kerbridge_idp::sync::connect`] and never read
     /// above the seam.
     pub settings: IdpSettings,
@@ -154,8 +154,8 @@ impl SourceConfig {
 
 /// `sync.toml`'s `interval_seconds`, which is the pause between cycles.
 ///
-/// Zero is refused: it asks for no pause at all, which spends the tenant's
-/// Graph quota and the directory's write capacity on a loop that never rests.
+/// Zero is refused: it asks for no pause at all, which spends the IdP's request
+/// quota and the directory's write capacity on a loop that never rests.
 /// Nothing above zero is refused. Where a floor belongs is policy, and no
 /// measurement says where to put it.
 fn interval(seconds: u32) -> Result<Duration> {

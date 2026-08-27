@@ -1,7 +1,7 @@
 # kerbridge-notify — telling an operator what only they can fix
 
 Some conditions are invisible in a log nobody reads and actionable by nobody
-else: an expiring Graph credential, a deleted admission group, a sync cycle that
+else: an expiring sync credential, a deleted admission group, a sync cycle that
 keeps failing. This is the one channel they leave by.
 
 `DESIGN.md` § [Operator notification](../../docs/design/operations.md#operator-notification) is
@@ -18,7 +18,7 @@ both of which already have an HTTP client for their own reasons.
 
 ## What it guarantees
 
-**Nothing a tenant can name may reshape the payload.** The body is one JSON
+**Nothing the IdP can name may reshape the payload.** The body is one JSON
 template with `%PLACEHOLDER%` substitution, and every substituted value goes
 through `serde_json`'s own string escaper. Directory-derived text — a display
 name, a group name, an error quoting either — can carry quotes, backslashes and
@@ -86,7 +86,7 @@ test for exactly that.
 ```rust
 let notifier = Notifier::from_config("sync", &config.notify, &config.realm)?; // "sync" is %COMPONENT%
 notifier.send(
-    Event::new("graph-credential-expiring", Severity::Warning, "expires in 14 days")
+    Event::new("sync-credential-expiring", Severity::Warning, "expires in 14 days")
         .subject(&client_id)                        // keyed with the slug
         .countdown(14),                             // not the repeat interval
 ).await;
@@ -94,7 +94,7 @@ notifier.send(
 // Wherever the condition is disproved -- the point that would have raised it
 // and did not. Costs nothing when nothing is open, so a per-request caller may
 // call it unconditionally.
-notifier.resolve("graph-credential-expiring").await;
+notifier.resolve("sync-credential-expiring").await;
 ```
 
 `Notifier::from_config` warns and returns a working notifier when no URL is

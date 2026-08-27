@@ -9,6 +9,7 @@ Terms that apply to only one component are in these files:
 | Shared formats and rules. | [`crates/kerbridge-core/GLOSSARY.md`](crates/kerbridge-core/GLOSSARY.md) |
 | Configuration options, defaults and templates. | [`crates/kerbridge-config/GLOSSARY.md`](crates/kerbridge-config/GLOSSARY.md) |
 | Broker HTTP API. | [`crates/kerbridge-broker/GLOSSARY.md`](crates/kerbridge-broker/GLOSSARY.md) |
+| Cloud IdP adapters: tokens and directory reads. | [`crates/kerbridge-idp/GLOSSARY.md`](crates/kerbridge-idp/GLOSSARY.md) |
 | Cloud-to-directory synchronization. | [`crates/kerbridge-sync/GLOSSARY.md`](crates/kerbridge-sync/GLOSSARY.md) |
 | Operator commands and diagnostics. | [`crates/kerbridge-manage/GLOSSARY.md`](crates/kerbridge-manage/GLOSSARY.md) |
 | Ticket issuance and device grants. | [`crates/kerbridge-issuerd/GLOSSARY.md`](crates/kerbridge-issuerd/GLOSSARY.md) |

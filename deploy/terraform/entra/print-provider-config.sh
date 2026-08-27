@@ -73,10 +73,10 @@ expires=""
 printf '\nDo this next:\n\n'
 
 if [ -s "$cred" ]; then
-  printf '  1. Sync Graph credential -- already in place, nothing to do.\n\n'
+  printf '  1. Sync credential -- already in place, nothing to do.\n\n'
 elif expires="$(tf entra_sync_credential_expires 2>/dev/null)"; then
   cat <<EOF
-  1. Sync Graph credential -- Terraform created it (create_sync_secret = true).
+  1. Sync credential -- Terraform created it (create_sync_secret = true).
      Write it to its own directory, and put the expiry in
      configs/idp_<source>.toml:
 
@@ -93,7 +93,7 @@ elif expires="$(tf entra_sync_credential_expires 2>/dev/null)"; then
 EOF
 else
   cat <<EOF
-  1. Sync Graph credential -- yours to create; Terraform does not create it.
+  1. Sync credential -- yours to create; Terraform does not create it.
      Take the secret's **Value**, not its Secret ID, and write it to its file:
 
        (umask 077; az ad app credential reset --id $(tf entra_sync_client_id) \\

@@ -131,7 +131,7 @@ These parts hold something an attacker wants:
 | `issuerd` and the realm | Complete Samba domain and KDC authority. |
 | Caddy | The public TLS private key, and the DNS update credential. |
 | Broker | The power to ask `issuerd` for a ticket. Read-only directory access. |
-| Sync | Graph read authority, and write authority inside one directory OU. |
+| Sync | Read authority on the cloud directory, and write authority inside one directory OU. |
 | `svc-kerbridge-manage` | Delete authority in the IdP parent OU, and full authority in the resource OU. |
 
 The parts are separate on purpose. The broker faces the internet and holds no
@@ -373,7 +373,7 @@ cannot touch another source's OU, cannot touch `OU=Resources`, and cannot touch
 **Sync's own planner cannot delete.** The plan type has no delete operation, so
 no plan — however wrong — destroys an object. Leavers are disabled, renamed with
 a `_retired-` prefix, and keep their SID. Removed groups are quarantined, not
-deleted. A Graph read that does not finish produces no plan at all. A whole read
+deleted. A directory read that does not finish produces no plan at all. A whole read
 that describes zero users, while Samba holds synchronized users, freezes the
 cycle and raises an alert.
 
@@ -383,10 +383,10 @@ steals the bind password file and uses a raw LDAP client can delete any user or
 group object inside that source's OU. The planner is not in the path.
 
 **There is no percentage brake.** Only a complete wipe to zero triggers the
-freeze. If 40 % of your admitted users disappear from a *complete* Graph read in
+freeze. If 40 % of your admitted users disappear from a *complete* directory read in
 one cycle, sync retires 40 % of your directory that cycle.
 
-**Worst case.** A stolen Graph credential reads every user and every group in
+**Worst case.** A stolen sync credential reads every user and every group in
 your tenant, including the ones that KerBridge never syncs. It writes nothing.
 
 A stolen Samba bind password is worse. An attacker creates an account inside the
@@ -394,7 +394,7 @@ source OU. They stamp any external identity on it. They add it to the local
 admission group mirror. That admits them to every Kerberos-protected service in
 the realm. `DESIGN.md` names this accepted risk directly.
 
-The Graph credential is a **client secret**, not a certificate. A certificate
+The sync credential is a **client secret**, not a certificate. A certificate
 credential is the intended default and is not built. Set
 `sync_credential_expires` so that sync warns you before the secret lapses, and
 update the value each time you rotate.
@@ -533,7 +533,7 @@ install a CA, and so defeat risk 4's protection on that machine.
 **Risk.** `deploy/scripts/compose/backup.sh` collects `.env`, every config, **all
 of `secrets/`**, the audit logs, and the raw Samba volumes. That is the domain
 administrator password, the KDC keys, the TLS private key, every bind password,
-and the Graph credential, in one file.
+and the sync credential, in one file.
 
 **What limits it.** The script sets `umask 077` *before* it creates the file, not
 after. It refuses to run while the stack is up: a live Samba database would go

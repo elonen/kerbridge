@@ -4,7 +4,7 @@
 //! Directory-derived text reaches this -- a display name, a group name, an error
 //! quoting either -- and it can carry quotes, backslashes and newlines. So a
 //! template is not a format string with values pasted into it: every value goes
-//! through `serde_json`'s own string escaper, and nothing a tenant can name is
+//! through `serde_json`'s own string escaper, and nothing the IdP can name is
 //! able to close the JSON string it lands in and extend the payload.
 //!
 //! The content type is fixed for the same reason. A configurable one would let a
@@ -198,7 +198,7 @@ mod tests {
 
     fn values<'a>(message: &'a str, detail: &'a str) -> Values<'a> {
         Values {
-            event: "graph-credential-expiring",
+            event: "sync-credential-expiring",
             severity: "warning",
             component: "sync",
             realm: "EXAMPLE.SITE",
@@ -218,7 +218,7 @@ mod tests {
         let body = t.render(&values("m", "d"));
         assert_eq!(
             body,
-            r#"{"a":"graph-credential-expiring","b":"warning","c":"sync","d":"EXAMPLE.SITE","e":"2026-07-30T12:00:00Z","f":"m","g":"d","h":"🟠"}"#
+            r#"{"a":"sync-credential-expiring","b":"warning","c":"sync","d":"EXAMPLE.SITE","e":"2026-07-30T12:00:00Z","f":"m","g":"d","h":"🟠"}"#
         );
     }
 
@@ -232,7 +232,7 @@ mod tests {
         assert_eq!(parsed["text"], "\u{1f7e0} m");
     }
 
-    /// The whole point of the module. A display name is tenant-controlled text
+    /// The whole point of the module. A display name is IdP-controlled text
     /// that reaches the body, and a quote in it must not be able to close the
     /// string it sits in -- the payload stays one JSON object with one `text`.
     #[test]

@@ -47,7 +47,7 @@ pub const ST_NAME_PINNED: &str = "kbstate1|namepinned|";
 
 /// Name prefix for an object kept only for its SID. `sAMAccountName` is what
 /// winbind resolves a SID back to, so this is what `id`, `getent` and Explorer's
-/// *Security* tab show on a file server long after the Entra object is gone.
+/// *Security* tab show on a file server long after the cloud object is gone.
 ///
 /// The leading underscore marks the namespace but does not reserve it:
 /// [`crate::sam::allowed`] permits `_`, so a display name can sanitize to a live

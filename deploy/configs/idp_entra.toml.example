@@ -22,10 +22,10 @@
 # owner was resolved from the old SID loses its owner. Silent, and not
 # recoverable without a directory restore.
 #
-# Pointing an existing name at a different tenant costs the same. That one is at
-# least loud -- the new tenant's subjects share none of the old ones, so sync
+# Pointing an existing name at a different IdP costs the same. That one is at
+# least loud -- the new IdP's subjects share none of the old ones, so sync
 # retires every account and creates a replacement rather than confusing two
-# people -- but every SID is still new. A new tenant gets a new name and its own
+# people -- but every SID is still new. A new IdP gets a new name and its own
 # file. Detail: docs/setup/names-and-decisions.md.
 name = "entra"
 

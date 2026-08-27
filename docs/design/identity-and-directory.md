@@ -240,7 +240,7 @@ A realm can take identities from more than one cloud IdP. Each one is a separate
 - IdP-specific OU, under the shared parent
 - `svc-kerbridge-sync-<source>` account
 - `configs/idp_<source>.toml`
-- `secrets/idp/<name>/`, which holds the Graph `credential`
+- `secrets/idp/<name>/`, which holds the sync `credential`
 - `secrets/generated/idp/<name>/`, which holds the LDAP `bind_password`
 
 The processes do not multiply with the sources. One `broker` and one `sync`
@@ -296,7 +296,7 @@ Admission group:
 - If the admission group is deleted or is absent from the read, ticket issuance
   fails closed: freeze and alert, and never recreate the group automatically.
   Only the operator restores it, because a recreated group loses its SID.
-- A failed or incomplete Graph read never starts a destructive change.
+- A failed or incomplete directory read never starts a destructive change.
 
 Deletion is conservative, because Samba SIDs can appear in durable ACLs:
 
@@ -437,7 +437,7 @@ object, and not enough to alter one. Thus the operator CLI cannot race the
 reconciliation loop. It was measured on the bench (2026-07-28): sufficient for
 deletes, and insufficient for writes.
 
-### Graph credential lifetime
+### Sync credential lifetime
 
 - Entra application credentials never renew themselves. A client secret and a
   certificate both carry a fixed `endDateTime`. The portal caps a new secret at
@@ -491,7 +491,7 @@ it is refused for the same least-privilege reason as `Directory.Read.All`.
 - Each cycle reports the days that remain. It gives a warning below a
   configurable threshold (`credential_warn_before_days` in `configs/sync.toml`,
   30 by default), and an error below seven days. It raises the
-  `graph-credential-expiring` event that
+  `sync-credential-expiring` event that
   [Operator notification](operations.md#operator-notification) describes, which
   delivers the event as a countdown and not on a repeat interval.
 - An expired or refused credential is its own categorized failure, separate from

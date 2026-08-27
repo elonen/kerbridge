@@ -89,7 +89,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OrderedMap<T> {
     }
 }
 
-/// Which Entra attribute a **new** account's `sAMAccountName` is derived from.
+/// Which cloud attribute a **new** account's `sAMAccountName` is derived from.
 ///
 /// Consulted only at creation. A live account's name is never recomputed, so
 /// changing this renames nobody -- see the crate README.
@@ -97,7 +97,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for OrderedMap<T> {
 /// None of the three is correct in general, which is why it is a choice: a
 /// display name is what users recognize but is not unique; a mail local part is
 /// usually hand-made, ASCII and stable, but not every account has one; a UPN
-/// always exists and is unique tenant-wide, but a guest's carries the source
+/// always exists and is unique across the IdP, but a guest's carries the source
 /// domain (`alice.anderson_gmail.com#EXT#@…`) and `.`/`_` are legal in a sam, so
 /// that domain cannot be told from a surname.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -107,7 +107,7 @@ pub enum SamSource {
     DisplayName,
     /// The local part of the mail address -- what the person already answers to.
     EmailUsername,
-    /// The local part of the UPN. Unique tenant-wide; least pretty.
+    /// The local part of the UPN. Unique across the IdP; least pretty.
     Upn,
 }
 
@@ -365,10 +365,10 @@ pub struct PlanCtx<'a> {
     pub group_suffix: &'a str,
     /// RFC 3339 timestamp stamped into retire/quarantine markers.
     pub now: &'a str,
-    /// Which Entra attribute a newly created account's `sAMAccountName` comes
+    /// Which cloud attribute a newly created account's `sAMAccountName` comes
     /// from. Existing accounts keep the name they were created with.
     pub sam_source: SamSource,
-    /// Whether a live account's login name follows its Entra display name after
+    /// Whether a live account's login name follows its cloud display name after
     /// creation. Off means it is set once and never moves again.
     pub automatic_sam_renames: bool,
     /// How this source's subjects become stored identity values.
@@ -443,11 +443,11 @@ pub fn plan_sync(
     let cur_users = current.users.lookup();
     let cur_groups = current.groups.lookup();
 
-    // ---- a whole read describing nobody is a fault, not a tenant ----
+    // ---- a whole read describing nobody is a fault, not an empty IdP ----
     // A read that did not finish never gets here: it yields no snapshot. This
     // covers the one that did finish: a 200 with an empty page, an admission
     // group whose membership came back empty, a permissions change that quietly stopped
-    // expanding it. Every one of those is indistinguishable from "the tenant has
+    // expanding it. Every one of those is indistinguishable from "the IdP has
     // no users", and acting on it retires every account in a single cycle --
     // recoverable only by restoring the directory, and a total outage until
     // someone does. The first deployment is unaffected: nothing is synchronized
@@ -718,7 +718,7 @@ pub fn plan_sync(
             }
         }
     }
-    // users present in Samba but gone from Entra: disable and start retention.
+    // users present in Samba but gone from the IdP: disable and start retention.
     //
     // `current` is keyed by the subject parsed back out of the stored identity,
     // so the comparison is against text. Same in the group loop below.
@@ -870,7 +870,7 @@ pub fn plan_sync(
             }
         }
     }
-    // groups present in Samba but gone from Entra: quarantine (or freeze if admission
+    // groups present in Samba but gone from the IdP: quarantine (or freeze if admission
     // group).
     let desired_groups: HashSet<&str> = desired.groups.keys().map(Subject::as_str).collect();
     let mut cur_group_oids: Vec<&str> =
@@ -938,9 +938,9 @@ pub fn plan_sync(
     // device grants are an optional convenience that already fails closed on its
     // own -- the broker looks the group up by marker and refuses every grant when
     // it cannot find exactly one. And a marker on the wrong group is moved, not
-    // frozen on: the configured name resolved through Graph to exactly one group
-    // this cycle, which is as explicit as an operator statement gets, and a typo
-    // in it fails resolution and lands in the `None` arm below instead.
+    // frozen on: the configured group is an object id, which is as explicit as an
+    // operator statement gets, and an id naming no synchronized group is alerted
+    // on below instead.
     let grant_marked: Vec<&str> = current
         .groups
         .iter()

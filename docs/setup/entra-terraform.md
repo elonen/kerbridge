@@ -124,7 +124,7 @@ into `terraform.tfstate`. The state file then becomes a secret.
 <summary>Why secrets only — <code>kerbridge-sync</code> has no certificate support yet</summary>
 
 A certificate credential is the intended default in
-[Graph credential lifetime (`DESIGN.md`)](../../docs/design/identity-and-directory.md#graph-credential-lifetime).
+[Sync credential lifetime (`DESIGN.md`)](../../docs/design/identity-and-directory.md#sync-credential-lifetime).
 But `kerbridge-sync` does not support one yet. Thus this module follows the
 running code and uses only secrets. When the certificate path is implemented,
 the natural design is this: Terraform uploads a *public* certificate that the

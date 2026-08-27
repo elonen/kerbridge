@@ -247,7 +247,7 @@ use*. Teardown surprising the operator was the higher price.
 ## Operator notification
 
 A few conditions are only actionable by a human and are invisible in a log
-nobody reads: the Graph credential expiring, the admission group deleted or
+nobody reads: the sync credential expiring, the admission group deleted or
 duplicated, a sync cycle that keeps failing, device grants coming up on their
 deadline. Each one is a
 `NOTIFY <severity> <event>: <message>` line in the service log **always** — that

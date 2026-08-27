@@ -58,8 +58,8 @@ impl EntraSource {
         }
     }
 
-    /// This source's Graph credential, or `None` while the operator has yet to
-    /// paste one in.
+    /// This source's sync credential -- the app-only client secret Graph is read
+    /// with -- or `None` while the operator has yet to paste one in.
     ///
     /// A compose secret is a bind mount, so the file has to exist before the
     /// container starts and `prepare-state` creates it empty. Empty means
@@ -119,14 +119,14 @@ impl EntraSource {
             Ok(token) => {
                 // A token came back, so the credential the operator was told
                 // about has been rotated or was never the problem.
-                self.notifier.resolve_subject("graph-credential-expired", &subject).await;
+                self.notifier.resolve_subject("sync-credential-expired", &subject).await;
                 token
             }
             Err(e @ (TokenError::Expired(_) | TokenError::Invalid(_))) => {
                 let why = e.to_string();
                 self.notifier
                     .send(
-                        Event::new("graph-credential-expired", Severity::Error, why.clone())
+                        Event::new("sync-credential-expired", Severity::Error, why.clone())
                             .subject(&subject),
                     )
                     .await;
@@ -227,7 +227,7 @@ impl DirectorySource for EntraSource {
             Ok(Some(secret)) => secret,
             Ok(None) => {
                 return Ok(Progress::Idle(format!(
-                    "no Graph credential in {}: source {} is idle until one appears",
+                    "no sync credential in {}: source {} is idle until one appears",
                     self.credential_file.display(),
                     self.source
                 )));

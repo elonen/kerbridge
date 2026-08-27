@@ -115,7 +115,7 @@ kbmanage cloud list users
 
 No other system reports these events:
 
-- the Graph credential comes near its expiry;
+- the sync credential comes near its expiry;
 - the admission group is deleted or duplicated;
 - a sync cycle fails repeatedly.
 
@@ -239,7 +239,7 @@ a live Samba database, which prevents a torn copy. `--config-only` skips the
 volumes, and it is safe while the stack is up.
 
 The tarball is the authority of the deployment in one file: the account
-passwords, the KDC keys, the TLS private key and the Graph credential. The
+passwords, the KDC keys, the TLS private key and the sync credential. The
 script writes it with mode `0600`. `backup.sh -` writes the tarball to stdout,
 so you can pipe it directly into `age` or `gpg` and land no plaintext copy on
 disk. Scheduling, retention and off-site copies are yours.

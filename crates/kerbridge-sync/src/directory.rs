@@ -254,7 +254,7 @@ impl Directory {
     ///
     /// Stamping the role marker is what makes a group *the* admission group, and
     /// the planner only plans it after seeing no marker anywhere. That read
-    /// happened a whole cycle earlier -- a Graph read, a plan, and every op before
+    /// happened a whole cycle earlier -- a source read, a plan, and every op before
     /// this one ago -- and the only thing that could have marked a group in
     /// between is a writer the planner cannot see: an operator, or a second sync.
     /// Two marked groups is the ambiguity the broker fails closed on, so the

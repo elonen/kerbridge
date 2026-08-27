@@ -105,7 +105,7 @@ that the client depends on.
   source, two client ids for `aud`/`azp`). Thus any scheme in which the broker
   proves itself *to* the client must start by giving it one, with the renewal
   problem of
-  [Graph credential lifetime](identity-and-directory.md#graph-credential-lifetime).
+  [Sync credential lifetime](identity-and-directory.md#sync-credential-lifetime).
 
 The general result: **a bearer token authenticates one direction only.** To
 authenticate the broker, you need one of two things — key material that the
@@ -179,14 +179,14 @@ The broker has none of:
 
 ### `kerbridge-sync`
 
-A separate static musl-linked Rust service. The separation keeps the Graph
+A separate static musl-linked Rust service. The separation keeps the sync
 credentials and the Samba write privileges out of the interactive
 authentication path. One process serves each source and reconciles one source at
 a time, under that source's own OU and bind account.
 
 Responsibilities:
 
-- Read the configured users and groups from Microsoft Graph.
+- Read the configured users and groups from each configured cloud IdP.
 - Read the Entra realm-admission group the source file names by object id. The
   documented group is `KerBridge Allowed On-prem Users`.
 - Reconcile the IdP-controlled users and groups into dedicated Samba AD OUs.
@@ -197,7 +197,7 @@ Responsibilities:
   policy specifies.
 - Keep the locally managed Samba objects and the local group memberships.
 - Hold only its own synchronization cursors and reconciliation state, in memory.
-- Monitor the expiry of its own Graph credential and give a warning well before
+- Monitor the expiry of its own sync credential and give a warning well before
   the credential lapses.
 
 Samba AD is the single source of truth for the external-to-realm mappings. There

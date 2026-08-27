@@ -66,7 +66,7 @@ pub fn read(path: &Path) -> Result<String> {
 /// The same diagnosis, for a caller that meets the denial before it reaches
 /// [`read`].
 ///
-/// Sync's Graph credential and notify's `notify_url` are both read once before
+/// The sync credential and notify's `notify_url` are both read once before
 /// this module sees them, to tell a secret that is empty (a deployment that has
 /// not got there yet) from one that is absent. `EACCES` arrives at that read,
 /// not at ours, and it is the same failure with the same audience -- so it gets

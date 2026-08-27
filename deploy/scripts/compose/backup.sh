@@ -31,7 +31,7 @@
 # those paths are not discoverable by label and this backs up none of them.
 #
 # The result carries the domain administrator password, the KDC keys, the TLS
-# private key and the Graph credential -- the whole authority of the deployment
+# private key and the sync credential -- the whole authority of the deployment
 # in one file. It is written 0600, and `-` as the output path writes to stdout,
 # so piping into age or gpg needs no plaintext copy on disk.
 set -euo pipefail
@@ -195,6 +195,6 @@ fi
 
 say ""
 say "This file is the deployment's authority in one place: the realm's account"
-say "passwords, the TLS private key, the Graph credential -- and in a full backup"
+say "passwords, the TLS private key, the sync credential -- and in a full backup"
 say "the KDC keys themselves. Encrypt it at rest, and delete any copy you no"
 say "longer need."

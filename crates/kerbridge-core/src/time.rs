@@ -76,7 +76,7 @@ pub fn epoch_from_rfc3339(s: &str) -> Option<u64> {
 /// not what it is. Negative before 1970.
 ///
 /// This one is an operator's assertion rather than something this workspace
-/// wrote -- the Graph credential's expiry, typed into a `.env` -- so the whole
+/// wrote -- the sync credential's expiry, typed into a `.env` -- so the whole
 /// string has to be validated rather than trusted.
 pub fn days_from_ymd(date: &str) -> Option<i64> {
     let mut parts = date.split('-');

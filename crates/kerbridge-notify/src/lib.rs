@@ -1,7 +1,7 @@
 //! `kerbridge-notify` -- telling an operator about the things only they can fix.
 //!
 //! Some conditions are invisible in a log nobody reads and actionable by nobody
-//! else: an expiring Graph credential, a deleted admission group, a sync cycle
+//! else: an expiring sync credential, a deleted admission group, a sync cycle
 //! that keeps failing. This is the one channel they leave by.
 //!
 //! **The only delivery method is an HTTP webhook**, enabled by the presence of
@@ -14,7 +14,7 @@
 //! Three rules keep the channel trustworthy, and each has its own module or
 //! section here:
 //!
-//! - **Nothing a tenant can name may reshape the payload.** [`template`] renders
+//! - **Nothing the IdP can name may reshape the payload.** [`template`] renders
 //!   one JSON body with every substituted value escaped as a JSON string.
 //! - **Nothing may flood it.** [`problems`] holds a durable last-notified stamp,
 //!   keyed on event and subject, with a different repeat policy for a condition
@@ -77,7 +77,7 @@ fn severity_icon(severity: Severity) -> &'static str {
 
 /// One operator-actionable thing that happened.
 pub struct Event {
-    /// Stable slug, e.g. `graph-credential-expiring`. `DESIGN.md` lists the set.
+    /// Stable slug, e.g. `sync-credential-expiring`. `DESIGN.md` lists the set.
     pub event: &'static str,
     pub severity: Severity,
     /// What *this instance* is about -- the credential, the group, the account.
@@ -432,7 +432,7 @@ pub const TEST_NOTIFICATION_FLAG: &str = "--test-notification";
 
 /// The webhook URL, or `None` when the deployment has not configured one.
 ///
-/// Present-but-empty reads as unconfigured, the same way sync treats its Entra
+/// Present-but-empty reads as unconfigured, the same way sync treats the sync
 /// credential: a Compose secret is a bind mount, so the file has to exist before
 /// the container starts and is created empty. `EACCES` is the one error that does
 /// not mean "not yet" -- the file exists and the deployment meant this process to

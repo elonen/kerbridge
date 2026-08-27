@@ -40,6 +40,14 @@ names the tag, and it stops if that section is absent or empty.
 - The `admission-group-misconfigured` notification is removed. Sync now
   repoints the realm-admission marker onto the configured group, because an
   object id says which group admits and a display name could not.
+- The notifications `graph-credential-expiring` and
+  `graph-credential-expired` are renamed to `sync-credential-expiring` and
+  `sync-credential-expired`. Sync reads more than one cloud IdP, and only
+  Entra speaks Graph. Change any monitoring rule that matches the old
+  slug, and delete the stale problem files named below.
+- The documentation calls the secret sync reads the cloud directory with
+  the "sync credential" everywhere. It was also called the "Graph
+  credential", which named a thing only Entra has.
 
 ## 0.9.2
 

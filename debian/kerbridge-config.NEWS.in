@@ -13,4 +13,9 @@ kerbridge (@VERSION@) unstable; urgency=@URGENCY@
   Delete /var/lib/kerbridge/sync/problem-admission-group-misconfigured*.json
   if it exists. Nothing clears it now.
 
+  Delete /var/lib/kerbridge/sync/problem-graph-credential-*.json also. The
+  two events are named sync-credential-expiring and sync-credential-expired
+  now, so a problem left under the old name never clears. Change any
+  monitoring rule that matches the old name.
+
  -- @MAINTAINER@  @DATE@

@@ -13,7 +13,7 @@ allocating one at the same moment would each see the other's name as free.
 
 ## Why it is a separate service
 
-- **Credentials.** A Graph read token and directory *write* privileges have no
+- **Credentials.** The read-only sync credential and directory *write* privileges have no
   business in the interactive authentication path. The broker reads the
   directory; only this service changes it.
 - **No second database.** Samba AD is the single source of truth for the
@@ -27,23 +27,22 @@ allocating one at the same moment would each see the other's name as free.
 
 ## How a cycle runs
 
-- App-only token, then per-stream delta reads for users and groups. Delta entries
-  are sparse patches merged into a local shadow, never whole objects; only an
-  `@odata.deltaLink` ends a stream, and a `410` resync is handled apart from a
-  `400` on a corrupt cursor.
-- The shadow becomes a desired state: the syncable rule, the group closure
-  reachable from the admission group, and any configured allowlist. **An account
-  is created for a user a selected group holds and for nobody else** — everyone
-  else in the tenant is read and dropped. Members and guests both qualify; an
-  unrecognized `userType` fails closed. Leaving the closure therefore retires
-  the account, which is what makes the OU readable as the admitted set. A
-  pure planner diffs that against the current directory and emits an ordered op
-  list — every op asserted to target a DN inside that OU, and a
-  `sAMAccountName` collision refusing the whole cycle rather than half-applying
-  it.
-- **Any read that was not complete produces no plan at all** — including a 200
-  with an empty page, which would otherwise look exactly like an emptied tenant
-  and retire everyone. Freeze and alert instead.
+- The source's adapter advances its read and returns a snapshot. The protocol,
+  the credential, the cursors and which accounts the IdP's own rules accept are
+  all below the seam, in `kerbridge-idp`; Entra's are written out in
+  [`entra.md`](../kerbridge-idp/entra.md).
+- The realm's own rules narrow that enumeration to a desired state: the group
+  closure reachable from the admission group, any configured allowlist, and the
+  accounts a selected group holds. **An account is created for a user a selected
+  group holds and for nobody else** — everyone else the adapter read is dropped.
+  Leaving the closure therefore retires the account, which is what makes the OU
+  readable as the admitted set. A pure planner diffs that against the current
+  directory and emits an ordered op list — every op asserted to target a DN
+  inside that OU, and a `sAMAccountName` collision refusing the whole cycle
+  rather than half-applying it.
+- **A read that did not finish produces no plan at all**, and one that finished
+  and described nobody freezes instead of applying: it would otherwise look
+  exactly like an emptied IdP and retire everyone. Freeze and alert.
 - Users no longer in the admitted set go ACTIVE → DISABLED → RETIRED, renamed into a `_retired-`
   namespace that frees the live name and UPN. Retention holds the SID, not the
   name. Retirement also clears every device grant on the object, because a
@@ -56,7 +55,7 @@ allocating one at the same moment would each see the other's name as free.
   whether anyone gets a ticket at all; device grants are optional and already
   fail closed on their own, so an ambiguous marker there is an event and not an
   outage.
-- Login names for **new** accounts are derived from one of the Entra
+- Login names for **new** accounts are derived from one of the cloud
   attributes named by `sam_source` in `configs/sync.toml`: `displayname` (default, every
   whitespace token joined by dots), `email_username` (the local part of Email, or of the first Other email — an
   account invited from another tenant has no Email in this tenant) or
@@ -72,7 +71,7 @@ allocating one at the same moment would each see the other's name as free.
   paternal one that identifies the person. It imposes no ordering of its own:
   `山田 太郎` stays family-first. `deploy/configs/sync.toml.example` carries the
   full reasoning and `planner/tests/names.rs` pins each case with a test.
-- **A live account's login name follows its Entra display name**
+- **A live account's login name follows its cloud display name**
   (`automatic_sam_renames` in `configs/sync.toml`, default on). It is what
   Windows shows as the file owner and in the *Security* tab, so a person who
   changes their name and keeps the old login name has been failed by the
@@ -104,12 +103,13 @@ allocating one at the same moment would each see the other's name as free.
   auto-disambiguated: it is what a share ACL may name, so sync refuses instead of
   renaming. The suffix is on the `sAMAccountName` only; the CN needs no help,
   being unique within its own OU already.
-- Every cycle reports days remaining on the Graph credential; Entra credentials
-  never auto-renew, and an expired one stops every read at once.
+- Every cycle reports days remaining on the source's credential; an Entra
+  application credential never auto-renews, and an expired one stops every read
+  at once.
 
 `DESIGN.md`
 § [Directory ownership and synchronization](../../docs/design/identity-and-directory.md#directory-ownership-and-synchronization)
-and § [Graph credential lifetime](../../docs/design/identity-and-directory.md#graph-credential-lifetime).
+and § [Sync credential lifetime](../../docs/design/identity-and-directory.md#sync-credential-lifetime).
 Operator configuration is the `[provider_config]` block in
 `configs/idp_<source>.toml`, the `secrets/idp/<name>/credential` file (empty
 means "not configured yet" — that source idles), and [`SETUP.md`](../../SETUP.md)

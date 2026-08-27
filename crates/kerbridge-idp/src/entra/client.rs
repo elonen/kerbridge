@@ -88,8 +88,8 @@ pub enum TokenError {
 impl std::fmt::Display for TokenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TokenError::Expired(d) => write!(f, "Graph credential expired: {d}"),
-            TokenError::Invalid(d) => write!(f, "Graph credential rejected: {d}"),
+            TokenError::Expired(d) => write!(f, "sync credential expired: {d}"),
+            TokenError::Invalid(d) => write!(f, "sync credential rejected: {d}"),
             TokenError::Other(e) => write!(f, "{e:#}"),
         }
     }

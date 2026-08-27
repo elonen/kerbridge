@@ -328,10 +328,10 @@ const SOURCE_ENVELOPE_SRC: &str = r#"# One cloud IdP, as this realm stores it.
 # owner was resolved from the old SID loses its owner. Silent, and not
 # recoverable without a directory restore.
 #
-# Pointing an existing name at a different tenant costs the same. That one is at
-# least loud -- the new tenant's subjects share none of the old ones, so sync
+# Pointing an existing name at a different IdP costs the same. That one is at
+# least loud -- the new IdP's subjects share none of the old ones, so sync
 # retires every account and creates a replacement rather than confusing two
-# people -- but every SID is still new. A new tenant gets a new name and its own
+# people -- but every SID is still new. A new IdP gets a new name and its own
 # file. Detail: docs/setup/names-and-decisions.md.
 {{name}}
 
@@ -461,7 +461,7 @@ const MAIN_SRC: &str = r#"# KerBridge, entry point.
 
 # --- Operator notification ---
 # For conditions only a human can fix and nothing else will report: an expiring
-# Graph credential, a deleted admission group, a sync cycle that keeps failing.
+# sync credential, a deleted admission group, a sync cycle that keeps failing.
 #
 # With no url_file every event is still a `NOTIFY <severity> <event>:` line in
 # the service log, and state_dir keeps the currently-true conditions for your
@@ -824,7 +824,7 @@ const SYNC_SRC: &str = r#"# Sync: what the mirror does, and how it names what it
 # than discover afterwards that they did.
 {{device_grant_notify}}
 
-# How far ahead of a source's stated Graph credential expiry to start warning.
+# How far ahead of a source's stated credential expiry to start warning.
 # Local policy, not a portal value -- the expiry date itself is per source, in
 # idp_<source>.toml.
 {{credential_warn_before_days}}

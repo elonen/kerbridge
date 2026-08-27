@@ -333,7 +333,7 @@ the mode that the file needs, see
 - An empty value is a supported choice. Sync then relies on the owner-email
   notice from Entra, and it reports this one time at startup.
 - See its note in `idp_entra.toml.example` and
-  [Graph credential lifetime (`DESIGN.md`)](../../docs/design/identity-and-directory.md#graph-credential-lifetime).
+  [Sync credential lifetime (`DESIGN.md`)](../../docs/design/identity-and-directory.md#sync-credential-lifetime).
 
 ---
 

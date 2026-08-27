@@ -1,8 +1,9 @@
 # kerbridge-sync glossary
 
 The cloud-IdP-to-IdP-specific-OU reconciliation loop: planning and applying —
-the read/plan/apply cycle and the directory state it reasons about. How a tenant
-is read is the adapter's, below the seam in `kerbridge-idp`.
+the read/plan/apply cycle and the directory state it reasons about. How an IdP
+is read is the adapter's, below the seam — see
+[`crates/kerbridge-idp/GLOSSARY.md`](../kerbridge-idp/GLOSSARY.md).
 
 Part of the repo-wide vocabulary in [`GLOSSARY.md`](../../GLOSSARY.md) — a term
 means the same thing there and here. It lives in this file, closest to where
@@ -67,9 +68,9 @@ hands the name back.
 ### bind by id
 
 Naming the admission or device-grant group by its immutable
-Entra object id, which is the only way either is stated. An id is an identity,
+cloud object id, which is the only way either is stated. An id is an identity,
 so sync moves a role marker found on the wrong group to obey it, and a rename
-in the tenant cannot point the binding at a different group. A different
+at the IdP cannot point the binding at a different group. A different
 operation from a `name pin`, which freezes a value against recomputation rather
 than selecting by a key.
 <!-- refs: `admission_group_id`, `device_grant_group_id` in `configs/idp_<source>.toml`'s `[provider_config]` -->
@@ -102,20 +103,11 @@ that still applies — freeze at per-object radius, unlike the whole-run freeze 
 <!-- refs: `Plan::conflicts` -->
 <!-- avoid: warning, issue -->
 
-### corrupt cursor
-
-A stored `delta cursor` Graph rejects with `400` on a
-request that carried one; sync discards it and reads fresh. Distinct from a
-`resync` (`410`) and from a `400` on a URL built here from constants, which is a
-fault to surface rather than a cursor to throw away.
-<!-- refs: `StreamResult::CursorCorrupt` -->
-<!-- avoid: cursorcorrupt, corrupt, rejected cursor, bad token -->
-
 ### current state
 
 What the directory actually holds: everything under
 the IdP-specific OU plus a domain-wide `sAMAccountName` scan for collision-safe naming.
-Only objects carrying a `kb1` identity for the configured `tenant` reach the
+Only objects carrying a `kb1` identity for the configured `source` reach the
 user and group maps; the rest land in the unmanaged set, reported and never
 touched.
 <!-- refs: `kerbridge_sync::planner::Current`, field `unmanaged_dns` -->
@@ -124,31 +116,18 @@ touched.
 ### cycle
 
 One read / plan / apply pass, repeated after a pause. A cycle plans
-whole or is discarded — a `stalled read` or a `sAMAccountName` collision refuses
+whole or is discarded — a [stalled read](../kerbridge-idp/GLOSSARY.md#stalled-read)
+or a `sAMAccountName` collision refuses
 the entire plan — but once applying has started a failed op is recorded and the
 remaining ops still run.
 <!-- refs: `SourceSync::tick` in `crates/kerbridge-sync/src/main.rs` -->
 <!-- avoid: run, pass, iteration, tick -->
 
-### delta cursor
-
-The `@odata.deltaLink` stored at the end of a completed
-stream read and replayed at the start of the next `cycle`. Cursors are per
-stream — a groups cursor is not a users cursor — and nothing a login depends on.
-<!-- avoid: cursor, delta token, deltalink, resumption cursor, sync state -->
-
-### delta entry
-
-One object as it arrives on a delta stream: a *sparse* patch
-carrying only the properties and membership edges that changed, never a whole
-object. Absent is not empty.
-<!-- avoid: delta slice, sparse patch, change -->
-
 ### desired state
 
-The on-prem target: what the IdP-specific OU should contain once
-the syncable rule and the admission-group closure have been applied to the shadow —
-never the raw Graph read.
+The on-prem target: what the IdP-specific OU should contain once the
+admission-group closure and the held-narrowing have been applied to the
+`enumeration` — never the raw read.
 <!-- refs: `kerbridge_idp::sync::build_desired`, `kerbridge_idp::sync::Desired` -->
 <!-- avoid: desired, target state, wanted state, cloud state, source state -->
 
@@ -156,7 +135,8 @@ never the raw Graph read.
 
 One cloud IdP behind the seam, reduced to what the mirror needs of it: it
 advances, and yields a `source snapshot` or says why it could not. How it reads
-— the protocol, the credential, the `delta cursor`s — is its own, and
+— the protocol, the credential, the
+[cursors](../kerbridge-idp/GLOSSARY.md#delta-cursor) — is its own, and
 reconciliation never enters one.
 <!-- refs: `kerbridge_idp::sync::DirectorySource` -->
 <!-- avoid: connector, provider interface, source trait, reader -->
@@ -223,29 +203,10 @@ is withheld while the rest of the plan applies.
 <!-- refs: `kerbridge_sync::planner::plan` -->
 <!-- avoid: blocked, block, halt, guard, conservative freeze -->
 
-### graph credential
-
-The app-only client secret sync authenticates to
-Microsoft Graph with, read from a secret file: an empty file
-is the whole of "sync not configured", and writing content into it starts
-synchronization on the next poll, with no switch and no restart. It never auto-
-renews, an expired one stops every read at once, and its expiry is an operator's
-configured assertion rather than a measurement.
-<!-- refs: `secrets/idp/<name>/credential`, `SourceConfig::credential` in `crates/kerbridge-sync/src/config.rs`, `sync_credential_expires` in `configs/idp_<source>.toml`'s `[provider_config]` -->
-<!-- avoid: sync credential, the sync credential, entra credential, graph secret, secret value, secret id -->
-
-### hard delete
-
-Graph's permanent, non-restorable removal, reported as
-`@removed.reason: "deleted"`. The same reason string also marks a membership
-removal inside `members@delta` where the member object still exists, so the
-reason alone does not say an object is gone.
-<!-- avoid: harddeleted, purge, permanent delete -->
-
 ### held (group membership)
 
-Said of an Entra user a selected group actually
-contains; everyone else in the tenant is read and dropped, so an account exists
+Said of a cloud user a selected group actually
+contains; everyone else the adapter read is dropped, so an account exists
 for a held user and for nobody else. Held is independent of `syncable` — a
 held but unsyncable user is reported as a refusal, not created.
 <!-- avoid: member, in the closure, admitted -->
@@ -299,26 +260,12 @@ itself on re-adoption, so `issuerd` refuses every grant verb on a retired
 account; the group equivalent is `quarantined`. Sync itself never deletes.
 <!-- avoid: deleted, deprovisioned, deactivated, archived, tombstoned, soft-deleted, offboard -->
 
-### recycle bin
-
-Graph's `/directory/deletedItems`, where a soft-deleted object
-waits out its 30 days. Soft-deleted security groups report `securityEnabled:
-false` there, so they are told apart by `groupTypes` being empty.
-<!-- avoid: deleteditems, deleted items -->
-
 ### repoint
 
 Moving the admission role marker to the group the operator has newly
 bound by id. The move is clear-then-stamp, so a partial apply leaves too few
 markers rather than too many.
 <!-- avoid: remark, re-stamp, marker move, redirect -->
-
-### resync
-
-A full read from scratch with no cursor, forced when Graph answers
-`410` because the stored cursor aged out (>7 days). Both streams resync
-together, from an emptied shadow, and the cycle retries at most once.
-<!-- avoid: full read, full resync, fresh delta -->
 
 ### retention
 
@@ -341,7 +288,7 @@ is what lets DN handling split on a plain comma instead of becoming escape-aware
 
 ### sam source
 
-Which Entra attribute a **new** account's `login name` is
+Which cloud attribute a **new** account's `login name` is
 derived from: display name, mail local part, or UPN local part. The chosen one
 leads a fixed fallback order through the
 other two, and a source counts as spent only when it *sanitizes* to a name — not
@@ -350,31 +297,9 @@ and leave a good mail address unread.
 <!-- refs: `sam_source` in `configs/sync.toml` -->
 <!-- avoid: name source, sam strategy -->
 
-### secret ID
-
-The Entra portal's identifier for an app credential, which is
-GUID-shaped where the secret *Value* is not, and is routinely pasted in its
-place. Sync refuses a GUID-shaped credential file for exactly that reason.
-
-### shadow
-
-The locally accumulated copy of the Entra directory that delta
-pages patch. It belongs to the Entra adapter, below the seam, and lives in
-memory alone: a full read starts from an empty one, a full resync rebuilds it,
-and a restart loses it.
-<!-- refs: `kerbridge_idp::entra::wire::Shadow` -->
-<!-- avoid: mirror, local copy, read model, directory copy -->
-
-### soft delete
-
-Graph's restorable removal, reported as `@removed.reason:
-"changed"`; the object waits in the `recycle bin`. For a group, sync treats both
-removal reasons the same way — quarantine now.
-<!-- avoid: softdeleted, reason changed -->
-
 ### source snapshot
 
-One `cycle`'s whole reading of a tenant: the `desired state`, and the refusals
+One `cycle`'s whole reading of an IdP: the `desired state`, and the refusals
 the `directory source`'s own rules produced. Its existence is the assertion — an
 adapter that cannot enumerate yields none — so a read that did not finish can
 never delete or disable anything. A `200` with an empty page still yields one,
@@ -383,19 +308,13 @@ synchronized — is a separate guard in the planner.
 <!-- refs: `kerbridge_idp::sync::SourceSnapshot` -->
 <!-- avoid: poll result, directory image, desired set, complete read, complete flag -->
 
-### stalled read
+### sync credential
 
-A Graph stream read abandoned because no page arrived for long enough to call
-it dead, and therefore no evidence that anything is absent. Nothing may be
-planned from one: the `cycle` is discarded and counted toward the consecutive-
-failure alert. It says Graph is unreachable or refusing, never that the
-directory is large — how long a whole read takes is not bounded.
-<!-- refs: `StreamResult::Stalled` -->
-<!-- avoid: incomplete read, partial read, partial-read refusal, incomplete, timeout, read deadline -->
-
-### throttle
-
-A Graph 429 with `Retry-After`. It stops a read from finishing — no
-`source snapshot` comes out of one — and says nothing about the directory.
-<!-- refs: `Outcome::Throttled` in `crates/kerbridge-idp/src/entra/client.rs` -->
-<!-- avoid: 429, throttling, rate limit -->
+What a `directory source` authenticates to its own IdP with, read from a secret
+file: an empty file is the whole of "sync not configured", and writing content
+into it starts synchronization on the next poll, with no switch and no restart.
+Read-only, and never a user's token. Entra's is an app-only client secret, which
+never auto-renews, stops every read at once when it expires, and states its
+expiry as an operator assertion rather than a measurement.
+<!-- refs: `secrets/idp/<name>/credential`, `EntraSource::credential` in `crates/kerbridge-idp/src/entra/sync.rs`, `sync_credential_expires` in `configs/idp_<source>.toml`'s `[provider_config]` -->
+<!-- avoid: graph credential, idp credential, entra credential, graph secret, secret value, secret id -->

@@ -1,18 +1,19 @@
 //! `kerbridge-sync` -- cloud directory synchronization.
 //!
-//! Reads configured users and groups from Microsoft Graph and reconciles them
+//! Reads configured users and groups from each cloud IdP and reconciles them
 //! into dedicated Samba AD OUs over delegated LDAPS, stamping each object with
 //! its [`ExternalIdentity`](kerbridge_core::ExternalIdentity). Separate from the
-//! broker so Graph credentials and directory write privileges stay out of the
+//! broker so sync credentials and directory write privileges stay out of the
 //! interactive authentication path.
 //!
 //! Samba AD is the single source of truth for external-to-realm mappings; this
-//! service persists only sync cursors and reconciliation state.
+//! service persists nothing of its own. What a read has to carry across cycles
+//! is the adapter's, below the seam.
 //!
 //! One process serves every source the config set lists, one after another. A
 //! cycle per source: ask that source's adapter to advance, diff the snapshot it
 //! returns against the current directory with the [`planner`], and apply the
-//! plan over delegated LDAPS as that source's own account. How a tenant is read
+//! plan over delegated LDAPS as that source's own account. How an IdP is read
 //! is the adapter's own business, behind
 //! [`kerbridge_idp::sync::DirectorySource`]; a cycle that produced no whole
 //! enumeration is discarded rather than planned from, so
@@ -130,7 +131,7 @@ impl SourceSync {
                 match applied {
                     Ok(()) => {
                         // Cleared once the whole cycle has concluded, not on the read
-                        // above. A cycle that reads the tenant perfectly and then cannot
+                        // above. A cycle that reads the IdP perfectly and then cannot
                         // write to the directory has not succeeded, and clearing it there
                         // makes a standing LDAP outage alternate 1, 0, 1, 0 -- never
                         // reaching the threshold, however long it lasts.
@@ -169,7 +170,7 @@ impl SourceSync {
         // The syncable rule narrows the admission-group closure, and silence about that is the
         // failure an operator cannot debug: they nominated a group or a person, nothing
         // appeared, and the plan they read is simply smaller than they expected. Logged
-        // every cycle rather than on change, because this is the state of the tenant and
+        // every cycle rather than on change, because this is the state of the IdP and
         // there is no cheap way to know which cycle the operator is reading.
         for why in &refused {
             eprintln!("[sync/{name}] refused: {why}");
@@ -369,8 +370,8 @@ async fn main() -> Result<()> {
     };
     let (mut shared, warnings) = Config::load(&dir)
         .with_context(|| format!("reading the configuration under {}", dir.display()))?;
-    // Built before the tenant and the directory: it is what reports a deployment
-    // that has no Graph credential yet, and `--test-notification` must work on
+    // Built before the IdP and the directory: it is what reports a deployment
+    // that has no sync credential yet, and `--test-notification` must work on
     // exactly that deployment -- proving the channel is a step of installing,
     // not of running.
     let notifier = Arc::new(
@@ -415,7 +416,7 @@ async fn main() -> Result<()> {
         if matches!(s.source.credential_state(), CredentialState::Unknown) {
             eprintln!(
                 "[sync/{}] no credential expiry stated: no advance warning is possible; relying \
-                 on the tenant's owner email",
+                 on whatever notice the IdP itself sends",
                 s.cfg.name()
             );
         }
@@ -483,7 +484,7 @@ fn reopen_audit_on_sigusr1() -> Result<()> {
 ///
 /// Every path that discards a cycle comes through here, which is the whole point
 /// of it existing. A counter on the incomplete-read arm alone would miss the
-/// failures an operator most needs to hear about -- no route to Entra, a rejected
+/// failures an operator most needs to hear about -- no route to the IdP, a rejected
 /// LDAP bind, a rotated secret -- which return `Err` straight past that arm and
 /// would repeat forever behind nothing but a log line.
 ///
@@ -536,9 +537,9 @@ async fn report_credential(
     let subject = source.credential_subject();
     let expiring = |days: i64, severity| {
         Event::new(
-            "graph-credential-expiring",
+            "sync-credential-expiring",
             severity,
-            format!("Graph credential for source {name} expires in {days} days"),
+            format!("sync credential for source {name} expires in {days} days"),
         )
         .subject(&subject)
         .countdown(days)
@@ -553,12 +554,12 @@ async fn report_credential(
             notifier.send(expiring(days, Severity::Warning)).await;
         }
         days => {
-            eprintln!("[sync/{name}] Graph credential: {days} days remaining");
+            eprintln!("[sync/{name}] sync credential: {days} days remaining");
             // Rotated: the deadline moved back out of every warning band, so the
             // condition an operator was told about is over. The countdown itself
             // re-arms on its own, but the open problem has to be closed by hand
             // or it stands until the *next* credential expires.
-            notifier.resolve_subject("graph-credential-expiring", &subject).await;
+            notifier.resolve_subject("sync-credential-expiring", &subject).await;
         }
     }
 }

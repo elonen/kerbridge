@@ -155,7 +155,7 @@ mod tests {
         let dir = Dir::new("classes");
         dir.record("sync", "sync-cycle-failing", "error", 1_000);
         dir.record("broker", "admission-group-missing", "warning", 500);
-        dir.write("sync", "recent-graph-credential-expiring.json", r#"{"open":false}"#);
+        dir.write("sync", "recent-sync-credential-expiring.json", r#"{"open":false}"#);
         dir.write("sync", "notes.txt", "the operator's own");
         let scan = dir.scan();
         assert!(scan.warnings.is_empty(), "{:?}", scan.warnings);

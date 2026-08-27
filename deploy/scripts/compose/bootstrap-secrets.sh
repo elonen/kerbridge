@@ -28,7 +28,7 @@
 #                       provider, tls/ from your CA.
 #
 # Nothing writes into both halves, which is what lets the setup service be
-# handed secrets/generated/ alone: it holds KDC authority, and an IdP credential
+# handed secrets/generated/ alone: it holds KDC authority, and a sync credential
 # is an authority in your cloud tenant rather than in this realm.
 #
 # No password is generated here. `kbsetup realm` draws the realm

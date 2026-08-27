@@ -75,8 +75,8 @@ sudo kbsetup status
 
 It marks each step of the procedure done or outstanding, and prints the command
 for the next one. Most of what looks like a fault on a new host is a step that
-was never run — a realm that was never provisioned, or a cloud IdP credential
-that was never pasted in. `status` changes nothing, so it is safe to run at any
+was never run — a realm that was never provisioned, or a sync credential that
+was never pasted in. `status` changes nothing, so it is safe to run at any
 point.
 
 It answers some steps with `[?]` rather than a verdict, because they cannot be

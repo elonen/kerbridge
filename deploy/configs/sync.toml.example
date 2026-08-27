@@ -68,7 +68,7 @@
 # than discover afterwards that they did.
 #device_grant_notify = "off"
 
-# How far ahead of a source's stated Graph credential expiry to start warning.
+# How far ahead of a source's stated credential expiry to start warning.
 # Local policy, not a portal value -- the expiry date itself is per source, in
 # idp_<source>.toml.
 #credential_warn_before_days = 30

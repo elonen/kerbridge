@@ -73,7 +73,7 @@ fn a_deadline_past_the_last_step_is_silent() {
 }
 
 /// An expiry that has already passed is in the last step, not out of the
-/// schedule: `graph-credential-expiring` is raised with negative headroom.
+/// schedule: `sync-credential-expiring` is raised with negative headroom.
 #[test]
 fn a_deadline_already_passed_lands_in_the_last_step() {
     let mut p = problems();

@@ -16,17 +16,17 @@ use super::{DesiredUser, PlanError, SamSource};
 
 /// First four characters of an object id -- the collision-disambiguation suffix.
 ///
-/// By character, not by byte. An object id is remote input: Graph returns GUIDs
-/// here and a GUID is ASCII, but nothing on the path *enforces* that, and a byte
-/// slice through the middle of a codepoint is a panic rather than a bad name. This
-/// runs while planning a retirement, so the panic would take down the cycle that
-/// was trying to tidy up.
+/// By character, not by byte. An object id is remote input: Entra's is an ASCII
+/// GUID, but nothing on the path *enforces* that, and a byte slice through the
+/// middle of a codepoint is a panic rather than a bad name. This runs while
+/// planning a retirement, so the panic would take down the cycle that was trying
+/// to tidy up.
 pub(super) fn oid4(oid: &str) -> String {
     oid.chars().take(4).collect()
 }
 
 /// `(sAMAccountName, CN)` for an object being retired: the live name is released
-/// for a returning Entra object, this one keeps a recognizable, obviously-retired
+/// for a returning cloud object, this one keeps a recognizable, obviously-retired
 /// form of it. `RETIRED_PREFIX` is 9 of `sanitize_sam`'s 20-char budget, so the
 /// kept part is 11 -- or 6 plus `-<oid4>` when an earlier retirement already took
 /// the short form, mirroring `alloc_names`. The CN has no length limit and is what
@@ -63,8 +63,8 @@ const NAME_RESERVED: &[char] =
 
 /// A display name reduced to something usable as an RDN value.
 ///
-/// These strings come from Entra, where a **group owner** -- an ordinary user,
-/// not an administrator -- sets them. Unescaped, a comma in one splits the DN
+/// These strings come from the cloud IdP, where a **group owner** -- an ordinary
+/// user, not an administrator -- sets them. Unescaped, a comma in one splits the DN
 /// into components the planner did not intend, and the rest of the set is
 /// simply rejected by AD, which turns one hostile or careless name into a
 /// permanent apply failure every cycle.

@@ -35,7 +35,7 @@ what let that happen unnoticed.
 Secret files:
 
 - The initial Samba domain administrator password.
-- Per source: the Graph synchronization application `credential`, in
+- Per source: the sync `credential`, in
   `secrets/idp/<name>/`, and the `bind_password` of the delegated Samba sync
   account `svc-kerbridge-sync-<name>`, in `secrets/generated/idp/<name>/`. There
   are two directories, because the two files have different writers. Each
@@ -144,14 +144,14 @@ Logs never include:
 - ccaches
 - session keys
 - temporary keytab contents
-- Graph credentials
+- sync credentials
 - LDAP passwords
 - the notification webhook URL
 
 ### Operator notification
 
 Some conditions are actionable by a human only, and are invisible in a log that
-nobody reads: an expiring Graph credential, a deleted admission group, a sync
+nobody reads: an expiring sync credential, a deleted admission group, a sync
 cycle that fails again and again.
 
 Built, in the `kerbridge-notify` crate. Each event is a structured, greppable
@@ -179,7 +179,7 @@ to each event:
 
 | Placeholder | Value |
 |---|---|
-| `%EVENT%` | Stable slug, e.g. `graph-credential-expiring`. |
+| `%EVENT%` | Stable slug, e.g. `sync-credential-expiring`. |
 | `%SEVERITY%` | `info`, `warning` or `error`. |
 | `%COMPONENT%` | Emitting service, e.g. `sync`. |
 | `%REALM%` | Configured Kerberos realm. |
@@ -311,9 +311,9 @@ v1 events, and their repeat policy:
 
 | Event | Raised by | Repeat |
 |---|---|---|
-| `sync-not-configured` — no Entra credential yet, so sync is idle | sync | persisting |
-| `graph-credential-expiring` | sync | countdown |
-| `graph-credential-expired` | sync | persisting |
+| `sync-not-configured` — no credential for the source's IdP yet, so sync is idle | sync | persisting |
+| `sync-credential-expiring` | sync | countdown |
+| `sync-credential-expired` | sync | persisting |
 | `admission-group-missing` — no group carries the realm-admission marker, so nobody can be admitted | sync **and the broker** | persisting |
 | `admission-group-ambiguous` — two or more groups carry the realm-admission marker, so which group admits is undefined | the broker | persisting |
 | `grant-group-missing` — no group carries the device-grant marker, so every device grant is refused. Not a freeze: ordinary sign-in is unaffected | broker | persisting |
@@ -340,9 +340,9 @@ Thus a service that concludes one of them clears the rest of the family in the
 same breath. If it did not, an operator would read a stale instruction beside a
 live one.
 
-`admission-group-missing` is the freeze-and-alert case. It also covers a Graph
-read that came back complete but empty, which is indistinguishable from a tenant
-that genuinely emptied. To freeze is the side to be wrong on.
+`admission-group-missing` is the freeze-and-alert case. It also covers a
+directory read that came back complete but empty, which is indistinguishable
+from an IdP that genuinely emptied. To freeze is the side to be wrong on.
 
 `test-notification` is emitted too, and is deliberately not in these tables. It
 is the `--test-notification` self-test: an `info` event that reports nothing, is
@@ -360,8 +360,8 @@ before this list was written, and were missing from it. They are recorded here
 and not dropped from the code, because both are conditions that only an operator
 can clear.
 
-Each event is keyed on the subject that it is about: the Graph client id for the
-two credential events; the reason for a `<role>-group-*` problem; and the
+Each event is keyed on the subject that it is about: the client id the sync
+credential belongs to, for the two credential events; the reason for a `<role>-group-*` problem; and the
 colliding names for `sync-name-collision`. Two groups that carry a marker and
 three that carry it are one condition, but a reworded reason must not sit behind
 the first one's repeat interval. `sync-cycle-failing` and `sync-cursor-corrupt`
@@ -373,8 +373,8 @@ condition can clear it:
 | Event | Cleared by |
 |---|---|
 | `sync-not-configured` | the credential file having content |
-| `graph-credential-expiring` | a deadline back beyond 30 days |
-| `graph-credential-expired` | a token acquisition that succeeds |
+| `sync-credential-expiring` | a deadline back beyond 30 days |
+| `sync-credential-expired` | a token acquisition that succeeds |
 | `admission-group-missing` | a plan that built with no admission-group alert (sync); a directory lookup that completed (broker) |
 | `admission-group-ambiguous` | a directory lookup that completed |
 | `grant-group-missing`, `grant-group-ambiguous` | a directory lookup that completed |
@@ -446,7 +446,7 @@ the answer. Conflicts and skipped destructive actions stay on the console for th
 same reason: they changed nothing. A source that has discarded three cycles in a
 row records that crossing and its recovery, and thus a stretch during which the
 directory was not updated can be dated afterwards. The days that remain on the
-Graph credential are a notification and not a record, at warning severity after
+sync credential are a notification and not a record, at warning severity after
 the configured threshold is crossed.
 
 ## Test architecture

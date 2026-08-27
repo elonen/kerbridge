@@ -115,7 +115,7 @@ have user svc-kerbridge-broker || { echo "run \`make directory\` first -- the OU
 
 # The "bench only" at the top of this file, as something other than a comment.
 #
-# There is one honest signal for the difference, and it is the Graph credential:
+# There is one honest signal for the difference, and it is the sync credential:
 # this source's `credential` file is absent or empty until an operator pastes the
 # portal value in, at which point sync starts owning every object
 # under its IdP-specific OU. Everything this script writes is then a hand-made object in

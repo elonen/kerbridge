@@ -26,7 +26,7 @@ output — stays on `issuerd`'s own log.
 ### credential
 
 One entry in a ccache: a client principal, a server principal, four timestamps
-and the ticket flags. The cloud-side sense of the word is `graph credential`
+and the ticket flags. The cloud-side sense of the word is `sync credential`
 and the on-disk sense is `secret file`; these senses do not overlap.
 <!-- refs: `ccache::Credential` -->
 

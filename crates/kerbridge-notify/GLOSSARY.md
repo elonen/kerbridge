@@ -34,7 +34,7 @@ it, and is listed as an open problem until then. Almost every event is one.
 ### event
 
 The stable kebab-case slug naming which operator-actionable condition this is:
-`graph-credential-expiring`, `identity-ambiguous`, `admission-group-missing`.
+`sync-credential-expiring`, `identity-ambiguous`, `admission-group-missing`.
 The word means the slug, not the payload — its durable record is a `problem`,
 and the slug is half that record's key and half its file name. Not the
 user-facing `notification` an agent raises on a workstation.
@@ -76,7 +76,7 @@ message says both what changed and what is still wrong.
 A `%NAME%` in the notification `template` naming one of the substitutable
 values: `%EVENT%`, `%SEVERITY%`, `%COMPONENT%`, `%REALM%`, `%TIMESTAMP%`,
 `%MESSAGE%`, `%DETAIL%`, `%ICON%`. Every substituted value is escaped as a JSON string,
-so nothing a tenant can name can reshape the body.
+so nothing the IdP can name can reshape the body.
 <!-- refs: `crates/kerbridge-notify/src/template.rs` -->
 <!-- avoid: field, substituted value, substitution set -->
 

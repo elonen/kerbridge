@@ -31,11 +31,11 @@ use crate::IdentityError;
 /// `docs/setup/names-and-decisions.md` for where an operator is told.
 ///
 /// The name-to-source binding is a configuration invariant the stored value does
-/// not enforce on its own, so pointing an existing name at a *different*
-/// tenant is a second way to pay the same bill. That one is at least loud -- the
-/// new tenant's subjects share none of the old ones, so sync retires every
-/// account and creates a replacement rather than confusing two people -- but
-/// every SID is still new. A new tenant gets a new name and its own OU.
+/// not enforce on its own, so pointing an existing name at a *different* IdP is
+/// a second way to pay the same bill. That one is at least loud -- the new IdP's
+/// subjects share none of the old ones, so sync retires every account and
+/// creates a replacement rather than confusing two people -- but every SID is
+/// still new. A new IdP gets a new name and its own OU.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Source(String);
 
