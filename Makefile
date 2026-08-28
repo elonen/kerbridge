@@ -188,6 +188,9 @@ test-fast:
 	cargo fmt --all --check
 	cd client && cargo fmt --all --check
 	cd website && cargo fmt --all --check
+	@stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT; \
+		python3 testbench/fixtures/graph-sync/make_fixtures.py --out "$$stage" >/dev/null; \
+		diff -ru --exclude=make_fixtures.py --exclude=__pycache__ testbench/fixtures/graph-sync "$$stage"
 	cargo test --workspace
 	cargo clippy --workspace --all-targets -- -D warnings
 	@# Run the client core on Darwin or Linux. Darwin links Kerberos.framework;

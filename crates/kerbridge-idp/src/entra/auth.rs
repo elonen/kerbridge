@@ -371,7 +371,7 @@ mod tests {
     /// The rest of the allowlist. Entra signs RS256, so nothing else in the
     /// suite would ever reach the other primitives -- and an algorithm nobody
     /// verifies a real signature with is an algorithm whose padding and digest
-    /// pairing nobody has checked.
+    /// pairing nobody has checked. This covers the workspace-wide allowlist.
     #[tokio::test]
     async fn accepts_every_allowlisted_algorithm() {
         for name in [
