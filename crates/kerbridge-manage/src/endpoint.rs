@@ -1,11 +1,8 @@
 //! The endpoint half: one `GET /config` over the path a client would use.
 //!
-//! This is the readiness question both deployments share, and the only piece of
-//! it that is not about Docker. `deploy/scripts/compose/wait-ready.sh` used to own it,
-//! beside four `docker inspect` checks and a Caddy TLS-strategy branch that
-//! cannot survive off Compose; `ci-stack.sh` grew a second, weaker copy that
-//! would have passed a broker answering an unrouted 404. What both need is here
-//! once: connect, judge the certificate, ask, and tell the two 404s apart.
+//! This module contains the readiness check that does not depend on Docker.
+//! Both Compose and Debian deployments use it. It connects, validates the
+//! certificate, requests `/config`, and distinguishes the two 404 responses.
 //!
 //! Blocking I/O, like the LDAPS preflight beside it in [`crate::directory`] and
 //! for the same reason: this is one request with a deadline, run by a human or a

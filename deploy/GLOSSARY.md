@@ -46,13 +46,13 @@ the clear and a non-loopback bind puts the API on the network.
 
 ### CI stack
 
-The second, disposable stack its script runs
-from a gitignored copy of the tracked tree under its own Compose project,
-with its own container names, subnet and single published port. It exercises
-what a unit test cannot reach — provisioning, the bootstrap scripts, the LDAPS
-bind, the issuer socket, the KDC and a member's PAC — and is not a way to run a
-real deployment.
-<!-- refs: `deploy/scripts/bench/ci-stack.sh`, project `kerbridge-ci` -->
+A disposable stack that a stack tier runs from a gitignored copy of the tracked
+tree. It uses a separate Compose project, container names, subnet, and published
+port. It tests provisioning, bootstrap scripts, the LDAPS bind, the issuer
+socket, the KDC, and a member's PAC. It is not a deployment method.
+`scripts/bench/provision.sh` creates the stack and waits for `/config`; each
+[stack tier](#stack-tier) sources it.
+<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/provision.sh`, project `kerbridge-ci` -->
 <!-- avoid: the test stack -->
 
 ### config set
@@ -202,11 +202,13 @@ external file server can join.
 
 ### overlay
 
-A `compose.*.yaml` layered onto the base compose file through
-the compose-file environment variable: today the file-server, mock-IdP and CI
-overlays. Never selected with `-f`, because the scripts all call plain
-`docker compose` and only the environment variable reaches them.
-<!-- refs: `COMPOSE_FILE`, `compose.nas.yaml`, `compose.mockidp.yaml`, `compose.ci.yaml` -->
+A `compose.*.yaml` file applied to the base Compose file through the compose-file
+environment variable. The repository has file-server, mock-IdP, CI isolation,
+and stack-tier overlays. Order is significant because a later overlay narrows an
+earlier one. Each [stack tier](#stack-tier) states its complete list. Scripts do
+not use `-f`; they call plain `docker compose`, so only the environment variable
+selects overlays.
+<!-- refs: `COMPOSE_FILE`, `compose.nas.yaml`, `compose.mockidp.yaml`, `compose.ci.yaml`, `compose.ci-entra.yaml` -->
 <!-- avoid: compose file, extension file, fragment, profile -->
 
 ### provisioning
@@ -294,6 +296,17 @@ together. One make target brings it all up once the realm is bootstrapped, and
 the readiness script reports "Stack is up."
 <!-- refs: `COMPOSE_FILE`, `make stack`, `deploy/scripts/compose/wait-ready.sh` -->
 <!-- avoid: the cluster -->
+
+### stack tier
+
+A script that sources `scripts/bench/provision.sh` for one identity source and
+then runs source-specific assertions. A stack tier provides the prerequisites,
+the `.env` fragment, the `idp_<source>.toml` body, and the final Compose overlay.
+`ci-stack.sh`, which implements `make test-stack`, is the Entra stack tier.
+Stack tiers use vendor names because the supported source types form a closed
+set.
+<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/provision.sh`, `idp_prepare`, `idp_env_lines`, `idp_source_toml` -->
+<!-- avoid: the CI profile, the idp profile, the test driver -->
 
 ### `state/`
 

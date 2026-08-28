@@ -37,15 +37,11 @@ identifiers in the fixtures are synthetic.
 
 ## `deploy/bench.env` — the bench's own fixtures, and why they are not here
 
-The development bench has a cast too — seeded accounts with their object
-ids, `mockidp`'s tenant id, and the example file server's name and address — and
-it is tracked, in [`../deploy/bench.env`](../deploy/bench.env). Fixtures in this
-directory's sense: every identifier synthetic, the same on every bench that has
-ever run, and read by nothing production runs. Until they had a file of their own
-they were split between `deploy/.env.example` and defaults inside
-`seed-demo.sh` — values nobody chooses, sitting in a gitignored per-operator file
-in front of everyone deploying a real realm, and defaulted a second time wherever
-a script happened to need one.
+The development bench also uses seeded accounts, object IDs, the `mockidp`
+tenant ID, and the example file server's name and address. These values are in
+[`../deploy/bench.env`](../deploy/bench.env). All identifiers are synthetic and
+production does not read this file. Keeping them together prevents duplicate
+defaults in `deploy/.env.example` and `seed-demo.sh`.
 
 They are in `deploy/` rather than under `testbench/` for two mechanical reasons:
 
@@ -56,12 +52,11 @@ They are in `deploy/` rather than under `testbench/` for two mechanical reasons:
   project directory: `COMPOSE_ENV_FILES=bench.env,.env`, and the scripts source
   the same pair in the same order.
 
-Overriding one needs no edit to the tracked file. The last file read wins, so a
-line in `deploy/.env` beats it, and a variable in the environment beats both —
-which is how `ci-stack.sh` hands its throwaway realm a different subnet and a
-different cast without touching the fixtures. `SEED_USER_OID` is the value a
-bench against a live tenant has to override: it must be the `oid` that tenant's
-token actually carries, or the broker refuses every login.
+An override does not require an edit to the tracked file. The last file read
+wins: `deploy/.env` overrides `bench.env`, and an environment variable overrides
+both. The stack test uses this order to set an isolated subnet and test accounts.
+A live-tenant bench must set `SEED_USER_OID` to the `oid` in that tenant's token.
+Otherwise, the broker refuses each sign-in.
 
 ## `entra-tenant/` — operating a live tenant
 

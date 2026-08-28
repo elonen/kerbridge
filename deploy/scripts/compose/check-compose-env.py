@@ -295,7 +295,13 @@ def run_example_realm_flag(root):
 
 # --- No component is configured through the environment -----------------------
 
-FILES = ["compose.yaml", "compose.ci.yaml", "compose.mockidp.yaml", "compose.nas.yaml"]
+FILES = [
+    "compose.yaml",
+    "compose.ci.yaml",
+    "compose.ci-entra.yaml",
+    "compose.mockidp.yaml",
+    "compose.nas.yaml",
+]
 
 
 def run_no_kb_keys(root):

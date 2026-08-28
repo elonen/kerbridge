@@ -1,9 +1,8 @@
 # The `kerbridge` CLI, as a binary the bench containers can run.
 #
-# `scripts/bench/ci-stack.sh` is the only caller. It exists so the stack test can
-# drive the *real* client through the last leg -- sign in, exchange, inject, read
-# a file over SMB -- instead of re-implementing those steps in shell, which is a
-# test of the shell.
+# `scripts/bench/provision.sh` is the only caller. It builds the client so the
+# stack test uses the real sign-in, exchange, ticket injection, and SMB path.
+# Reimplementing that path in shell would not test the client.
 #
 # **Not a release artifact, and not a supported Linux client.** What the Linux
 # arm is and is not is written out in `src/linux/os.rs`; this file only says how

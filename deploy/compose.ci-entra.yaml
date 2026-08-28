@@ -1,0 +1,42 @@
+# Source-specific overlay for the Entra stack tier. ci-stack.sh layers it last:
+# compose.yaml:compose.nas.yaml:compose.mockidp.yaml:compose.ci.yaml:compose.ci-entra.yaml.
+# It is not part of a deployment.
+#
+# This overlay connects the stand-in authority and a generated key document.
+# Another tier must not inherit these mounts because it does not generate their
+# source files. Docker fails when a bind-mount source does not exist.
+#
+# configs/idp_entra.toml points the broker at the generated key document.
+# testbench/fixtures/entra-token/make_fixtures.py generates a current token for
+# each run. The test can verify, resolve, and issue without a tenant or secret.
+
+services:
+  broker:
+    volumes:
+      # Generate this key document for each run. The committed corpus is expired.
+      # Use a separate mount point because /etc/kerbridge and /run/kerbridge are
+      # read-only mounts. Do not mount it under the read-only /etc/jwks volume;
+      # Docker cannot create a nested file mount there. idp_entra.toml points the
+      # broker at this path.
+      - ${CI_FIXTURE_DIR}/jwks.json:/etc/kerbridge-ci-jwks/entra.json:ro
+
+  # This stand-in authority lets the client test authorization code with PKCE
+  # without an Entra tenant.
+  mockidp:
+    container_name: kerbridge-ci-mockidp
+    # Nothing outside the network talks to it: the only client is inside nas1.
+    # The overlay publishes :8443 for a bench, and that is also the port this
+    # run publishes the broker on -- so leaving it would make the two collide
+    # on any host running both.
+    ports: !reset []
+    environment:
+      # Use the corpus key so issued tokens match the jwks.json mounted by the
+      # broker. make_fixtures.py writes the key beside the corpus.
+      IDP_SIGNING_KEY: /etc/jwks/signing-key.pem
+    volumes:
+      - ${CI_FIXTURE_DIR}/signing-key.pem:/etc/jwks/signing-key.pem:ro
+    networks:
+      kerbridge:
+        # The authority needs a separate name in the shared certificate SAN.
+        # Otherwise, the client can resolve the broker instead of the authority.
+        aliases: ["idp.${AD_DNS_DOMAIN}"]

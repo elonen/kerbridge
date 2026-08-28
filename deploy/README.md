@@ -94,6 +94,11 @@ deletes everything. Safe to run while this stack is up — it works in a gitigno
 copy of the tree with its own compose project, container names, subnet and
 published port, and never reads or writes your `.env` or `secrets/`.
 
+The test has a shared provisioning script and a stack tier.
+`scripts/bench/provision.sh` creates the isolated stack and waits for `/config`.
+It does not name an identity source. `ci-stack.sh` selects Entra, provides the
+source-specific configuration, and runs the assertions.
+
 ## `make up`, step by step
 
 ```mermaid

@@ -31,7 +31,7 @@ services:
   #
   # KB_VERSION has no default on purpose. debian/Dockerfile carries no `.git`
   # and can derive nothing, so the value has to arrive from a caller that can:
-  # `make up` and `ci-stack.sh` both export it from
+  # `make up` and the bench's `provision.sh` both export it from
   # `debian/make-changelog --print-version`.
   debs:
     build:

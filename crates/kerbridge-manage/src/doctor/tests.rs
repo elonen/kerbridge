@@ -704,9 +704,8 @@ fn a_served_path_is_the_whole_of_a_pass() {
     assert!(report.summary().contains("answered 200"), "{}", report.summary());
 }
 
-/// The distinction this link exists for. Both are 404, and a criterion that
-/// does not read the body calls one of them wrong -- which is how the readiness
-/// copy in ci-stack.sh could have passed a broker nothing routed to.
+/// Both responses are 404. The body distinguishes a configured multi-source
+/// broker from an unrouted path.
 #[test]
 fn the_two_404s_are_opposite_verdicts() {
     let listed = Endpoint {

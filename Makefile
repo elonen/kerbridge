@@ -370,6 +370,31 @@ test-fast:
 				exit 1; }; \
 		done; \
 	done
+	@# provision.sh must not depend on one identity source. Otherwise, one tier can
+	@# pass while the shared provisioning code is no longer reusable.
+	@#
+	@# In ci-stack.sh, source-specific terms are valid only in comments, SOURCE and
+	@# TENANT declarations, COMPOSE_FILE, and the three idp_* hook bodies.
+	@if grep -inE 'mock-?idp|entra' deploy/scripts/bench/provision.sh; then \
+		echo "FAIL: deploy/scripts/bench/provision.sh contains the source-specific lines above" >&2; \
+		echo "      shared provisioning code must not name an identity source" >&2; \
+		exit 1; \
+	fi
+	@body=$$(sed -e '/^idp_prepare()/,/^}$$/d' -e '/^idp_env_lines()/,/^}$$/d' \
+		-e '/^idp_source_toml()/,/^}$$/d' -e '/^[[:space:]]*#/d' \
+		-e '/^SOURCE=/d' -e '/^TENANT=/d' -e '/^export COMPOSE_FILE=/d' \
+		deploy/scripts/bench/ci-stack.sh); \
+	for line in 'seed-demo.sh' 'PASS -- provisioned'; do \
+		printf '%s\n' "$$body" | grep -qF "$$line" || { \
+			echo "FAIL: the idp_* hook ranges include ci-stack.sh's \"$$line\" line" >&2; \
+			echo "      this check no longer covers the complete tier body; check the closing braces" >&2; \
+			exit 1; }; \
+	done; \
+	if printf '%s\n' "$$body" | grep -inE 'mock-?idp|entra'; then \
+		echo "FAIL: ci-stack.sh contains source-specific lines outside its idp_* hooks" >&2; \
+		echo "      move the lines above into the applicable hook" >&2; \
+		exit 1; \
+	fi
 	@# Every shell script the repository ships. Enumerated from git, not globbed:
 	@# a glob silently stops covering a script that moves into a subdirectory.
 	@# read-result, prepare-state and everything under debian/ are listed by

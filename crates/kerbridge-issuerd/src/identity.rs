@@ -110,11 +110,8 @@ mod tests {
         }
     }
 
-    /// The three answers each key has, for both keys: a stated name resolves, a
-    /// stated number alone is that number, and a file stating neither gets the
-    /// documented default -- which is what `ci-stack.sh`'s empty `issuerd.toml`
-    /// runs on, and the reason this landed as two added keys rather than a
-    /// rename.
+    /// Each key accepts a name, a numeric ID, or its documented default.
+    /// `provision.sh` exercises the defaults with an empty `issuerd.toml`.
     #[test]
     fn a_name_resolves_a_number_stands_and_a_file_stating_neither_gets_the_default() {
         let dir = Path::new(CONFIG_DIR);
