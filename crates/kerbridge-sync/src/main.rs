@@ -101,7 +101,8 @@ impl SourceSync {
             LDAP_TIMEOUT,
         )
         .with_context(|| format!("configuring the directory client for {}", cfg.name()))?;
-        let source = connect(&cfg.settings, cfg.name(), notifier);
+        let source = connect(&cfg.settings, cfg.name(), notifier)
+            .with_context(|| format!("connecting to the cloud directory for {}", cfg.name()))?;
         Ok(Self { cfg, dir, source, consecutive_failures: 0 })
     }
 

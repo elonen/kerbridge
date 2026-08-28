@@ -21,6 +21,7 @@ use serde::Deserialize;
 
 use super::{DEFAULT_LEEWAY_SECONDS, Settings, identity};
 use crate::jwks::{self, Jwks, RsaKey};
+use crate::jwt::Audience;
 use crate::{IdentityProvider, OidcDiscovery, Reject, b64url, reject};
 
 /// Everything about a configured Entra tenant that verification compares
@@ -106,22 +107,6 @@ impl IdentityProvider for Entra {
 struct Header {
     alg: String,
     kid: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Audience {
-    One(String),
-    Many(Vec<String>),
-}
-
-impl Audience {
-    fn accepts(&self, want: &str) -> bool {
-        match self {
-            Self::One(a) => a == want,
-            Self::Many(all) => all.iter().any(|a| a == want),
-        }
-    }
 }
 
 #[derive(Deserialize)]

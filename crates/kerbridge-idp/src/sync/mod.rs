@@ -148,16 +148,23 @@ pub trait DirectorySource: Send {
 
 /// The one place a configured source becomes an adapter.
 ///
-/// Destructured rather than passed whole: a second `IdpSettings` variant makes
-/// this line refutable, so adapter #2 arrives as a compile error here instead of
-/// as a Graph client pointed at a tenant that does not speak Graph.
+/// Fallible, because a build can carry an adapter's token face and not its
+/// directory one. The refusal stops the process rather than idling the source:
+/// a source silently skipped is a source whose whole population is absent from
+/// the desired state, and absence is how this design spells a departure.
 pub fn connect(
     settings: &IdpSettings,
     source: &str,
     notifier: Arc<Notifier>,
-) -> Box<dyn DirectorySource> {
-    let IdpSettings::Entra(entra) = settings;
-    Box::new(EntraSource::new(entra, source, notifier))
+) -> anyhow::Result<Box<dyn DirectorySource>> {
+    match settings {
+        IdpSettings::Entra(entra) => Ok(Box::new(EntraSource::new(entra, source, notifier))),
+        IdpSettings::Authentik(_) => anyhow::bail!(
+            "source {source}: the authentik adapter reads no directory in this build, so this \
+             source would mirror nobody -- remove {source:?} from main.sources, or run a build \
+             that carries its directory face"
+        ),
+    }
 }
 
 // ---- the population ----------------------------------------------------

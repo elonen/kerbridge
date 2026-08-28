@@ -22,7 +22,7 @@ use kerbridge_core::{ExternalIdentity, IdentityError, Source, is_guid};
 use serde::Deserialize;
 
 use crate::jwks::JwksSource;
-use crate::{Probe, Verdict};
+use crate::{Probe, discovery_url, get};
 
 pub(crate) use auth::Entra;
 
@@ -366,13 +366,6 @@ const DISCOVERY: &str = "discovery document";
 const ISSUER: &str = "issuer";
 const KEYS: &str = "signing keys";
 
-/// OIDC fixes the suffix. Hung off the authority rather than assembled from the
-/// tenant, so the document fetched is the one a client signing in here would
-/// find.
-fn discovery_url(authority: &str) -> String {
-    format!("{}/.well-known/openid-configuration", authority.trim_end_matches('/'))
-}
-
 /// The two claims a probe compares. Everything else the document carries is a
 /// client's business rather than this deployment's.
 #[derive(Deserialize)]
@@ -420,56 +413,6 @@ fn issuer_probe(derived: &str, published: &str) -> Probe {
             format!("the tenant publishes {published:?}, this file derives {derived:?}"),
         )
     }
-}
-
-/// A failed GET, sorted into the two kinds but not yet attached to a question.
-struct Trouble(Verdict, String);
-
-impl Trouble {
-    fn at(self, check: &'static str) -> Probe {
-        Probe { check, verdict: self.0, detail: self.1 }
-    }
-}
-
-/// One GET, bounded the same way the signing-key fetch is -- the IdP is remote
-/// and outside the deployment either way.
-///
-/// **Only the status is classified here.** Anything that stopped the exchange
-/// from completing is the world; a document that arrived and does not say what
-/// it should is the caller's to judge, because only the caller knows what it was
-/// reading for.
-async fn get(url: &str, timeout: Duration) -> Result<String, Trouble> {
-    let response = crate::jwks::http_client(timeout)
-        .map_err(|e| Trouble(Verdict::Warn, format!("{e:#}")))?
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| Trouble(Verdict::Warn, format!("{url} did not answer: {}", root_cause(&e))))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(Trouble(status_verdict(status.as_u16()), format!("{url} answered {status}")));
-    }
-    crate::jwks::bounded_body(response)
-        .await
-        .map_err(|e| Trouble(Verdict::Warn, format!("{url} answered, the body did not: {e:#}")))
-}
-
-/// The bottom of an error chain. `reqwest`'s own `Display` repeats the URL the
-/// line already names and says nothing about why; the DNS or connect failure is
-/// the last link.
-fn root_cause(error: &dyn std::error::Error) -> String {
-    let mut cause = error;
-    while let Some(next) = cause.source() {
-        cause = next;
-    }
-    cause.to_string()
-}
-
-/// Which side of the line a status falls on. A 4xx is the server answering
-/// *about the request*, which settles the question against the configuration; a
-/// 5xx is the server failing to answer it at all.
-fn status_verdict(status: u16) -> Verdict {
-    if (500..600).contains(&status) { Verdict::Warn } else { Verdict::Fail }
 }
 
 /// The template source for the `[provider_config]` half of
@@ -616,6 +559,8 @@ pub(crate) const ENTRA_SRC: &str = r#"# Entra: the three app registrations from 
 pub mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    use crate::Verdict;
 
     pub fn fixture_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testbench/fixtures/entra-token")
@@ -787,19 +732,6 @@ pub mod tests {
         assert!(err.contains("jwks_url") && err.contains("jwks_file"), "{err}");
     }
 
-    /// The distinction the verdict table rests on, and nothing here touches the
-    /// network: an answer about the request settles it against the file, and no
-    /// answer settles nothing.
-    #[test]
-    fn a_4xx_names_the_config_and_a_5xx_names_the_world() {
-        for definitive in [400, 401, 403, 404, 410] {
-            assert_eq!(status_verdict(definitive), Verdict::Fail, "{definitive}");
-        }
-        for transient in [500, 502, 503, 504] {
-            assert_eq!(status_verdict(transient), Verdict::Warn, "{transient}");
-        }
-    }
-
     #[test]
     fn a_published_issuer_that_disagrees_is_a_hard_fail() {
         let derived = v2_endpoint(TENANT);
@@ -827,12 +759,5 @@ pub mod tests {
                 .is_err()
         );
         assert!(serde_json::from_str::<Discovery>("<html>sign in</html>").is_err());
-    }
-
-    #[test]
-    fn the_discovery_url_hangs_off_the_authority() {
-        let want = "https://idp.example.site/tenant/.well-known/openid-configuration";
-        assert_eq!(discovery_url("https://idp.example.site/tenant"), want);
-        assert_eq!(discovery_url("https://idp.example.site/tenant/"), want);
     }
 }

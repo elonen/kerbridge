@@ -60,8 +60,10 @@
 #![forbid(unsafe_code)]
 
 mod auth;
+pub mod authentik;
 pub mod entra;
 mod jwks;
+mod jwt;
 #[cfg(feature = "sync")]
 pub mod sync;
 
@@ -83,19 +85,21 @@ pub use jwks::JwksSource;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provider {
     Entra,
+    Authentik,
 }
 
 impl Provider {
     /// Every adapter this build carries. A caller that writes or checks one file
     /// per provider iterates this rather than naming the arms, which is what
     /// keeps a second adapter to one arm in one match.
-    pub const ALL: [Self; 1] = [Self::Entra];
+    pub const ALL: [Self; 2] = [Self::Entra, Self::Authentik];
 
     /// From a source file's `provider = "..."`. The caller names the file; this
     /// knows only the word it was handed.
     pub fn from_name(name: &str) -> Result<Self> {
         match name {
             "entra" => Ok(Self::Entra),
+            "authentik" => Ok(Self::Authentik),
             other => bail!("{other:?} is not an adapter this build carries"),
         }
     }
@@ -105,6 +109,7 @@ impl Provider {
     pub fn name(self) -> &'static str {
         match self {
             Self::Entra => "entra",
+            Self::Authentik => "authentik",
         }
     }
 
@@ -117,6 +122,11 @@ impl Provider {
                 "provider_config",
                 entra::ENTRA_SRC,
                 &entra::schema()?,
+            ),
+            Self::Authentik => kerbridge_core::config::render(
+                "provider_config",
+                authentik::AUTHENTIK_SRC,
+                &authentik::schema()?,
             ),
         }
     }
@@ -145,6 +155,7 @@ impl Provider {
     pub fn source_schema(self) -> Result<serde_json::Value, String> {
         let mut block = match self {
             Self::Entra => entra::schema()?,
+            Self::Authentik => authentik::schema()?,
         };
         // `$schema` names a document's own dialect, and this one stops being a
         // document here. `title` is the private struct's name, which is
@@ -172,12 +183,14 @@ impl Provider {
 #[derive(Debug, PartialEq)]
 pub enum IdpSettings {
     Entra(entra::Settings),
+    Authentik(authentik::Settings),
 }
 
 impl IdpSettings {
     pub fn parse(provider: Provider, table: &toml::Table) -> Result<Self> {
         match provider {
             Provider::Entra => Ok(Self::Entra(entra::Settings::parse(table)?)),
+            Provider::Authentik => Ok(Self::Authentik(authentik::Settings::parse(table)?)),
         }
     }
 
@@ -194,6 +207,7 @@ impl IdpSettings {
     pub fn paths(&self) -> BTreeMap<String, String> {
         match self {
             Self::Entra(settings) => entra::paths(settings),
+            Self::Authentik(settings) => authentik::paths(settings),
         }
     }
 }
@@ -235,6 +249,64 @@ impl Probe {
     }
 }
 
+/// OIDC fixes the suffix. Hung off the authority rather than assembled from the
+/// provider's own derivation inputs, so the document fetched is the one a client
+/// signing in here would find.
+pub(crate) fn discovery_url(authority: &str) -> String {
+    format!("{}/.well-known/openid-configuration", authority.trim_end_matches('/'))
+}
+
+/// A failed GET, sorted into the two kinds but not yet attached to a question.
+pub(crate) struct Trouble(Verdict, String);
+
+impl Trouble {
+    pub(crate) fn at(self, check: &'static str) -> Probe {
+        Probe { check, verdict: self.0, detail: self.1 }
+    }
+}
+
+/// One GET, bounded the same way the signing-key fetch is -- the IdP is remote
+/// and outside the deployment either way.
+///
+/// **Only the status is classified here.** Anything that stopped the exchange
+/// from completing is the world; a document that arrived and does not say what
+/// it should is the caller's to judge, because only the caller knows what it was
+/// reading for. That split is why this is shared: what a document *means* is
+/// provider-specific, and what a refused connection means is not.
+pub(crate) async fn get(url: &str, timeout: Duration) -> Result<String, Trouble> {
+    let response = jwks::http_client(timeout)
+        .map_err(|e| Trouble(Verdict::Warn, format!("{e:#}")))?
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| Trouble(Verdict::Warn, format!("{url} did not answer: {}", root_cause(&e))))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(Trouble(status_verdict(status.as_u16()), format!("{url} answered {status}")));
+    }
+    jwks::bounded_body(response)
+        .await
+        .map_err(|e| Trouble(Verdict::Warn, format!("{url} answered, the body did not: {e:#}")))
+}
+
+/// The bottom of an error chain. `reqwest`'s own `Display` repeats the URL the
+/// line already names and says nothing about why; the DNS or connect failure is
+/// the last link.
+fn root_cause(error: &dyn std::error::Error) -> String {
+    let mut cause = error;
+    while let Some(next) = cause.source() {
+        cause = next;
+    }
+    cause.to_string()
+}
+
+/// Which side of the line a status falls on. A 4xx is the server answering
+/// *about the request*, which settles the question against the configuration; a
+/// 5xx is the server failing to answer it at all.
+pub(crate) fn status_verdict(status: u16) -> Verdict {
+    if (500..600).contains(&status) { Verdict::Warn } else { Verdict::Fail }
+}
+
 /// Ask this source's IdP the questions only it can answer.
 ///
 /// Which document to fetch and which claim to compare are provider facts, so
@@ -247,6 +319,7 @@ impl Probe {
 pub async fn probe(settings: &IdpSettings, timeout: Duration) -> Vec<Probe> {
     match settings {
         IdpSettings::Entra(settings) => entra::probe(settings, timeout).await,
+        IdpSettings::Authentik(settings) => authentik::probe(settings, timeout).await,
     }
 }
 
@@ -263,6 +336,7 @@ pub fn encode_identity(
 ) -> Result<ExternalIdentity, IdentityError> {
     match provider {
         Provider::Entra => entra::identity(source, subject),
+        Provider::Authentik => authentik::identity(source, subject),
     }
 }
 
@@ -391,6 +465,26 @@ mod tests {
                  `KB_WRITE_CONFIG_TEMPLATES=1 cargo test -p kerbridge-idp`."
             );
         }
+    }
+
+    /// The distinction the verdict table rests on, and nothing here touches the
+    /// network: an answer about the request settles it against the file, and no
+    /// answer settles nothing.
+    #[test]
+    fn a_4xx_names_the_config_and_a_5xx_names_the_world() {
+        for definitive in [400, 401, 403, 404, 410] {
+            assert_eq!(status_verdict(definitive), Verdict::Fail, "{definitive}");
+        }
+        for transient in [500, 502, 503, 504] {
+            assert_eq!(status_verdict(transient), Verdict::Warn, "{transient}");
+        }
+    }
+
+    #[test]
+    fn the_discovery_url_hangs_off_the_authority() {
+        let want = "https://idp.example.site/tenant/.well-known/openid-configuration";
+        assert_eq!(discovery_url("https://idp.example.site/tenant"), want);
+        assert_eq!(discovery_url("https://idp.example.site/tenant/"), want);
     }
 
     #[test]

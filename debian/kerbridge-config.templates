@@ -60,7 +60,7 @@ _Description: Invalid LDAPS URL
 # crates/kerbridge-config holds it to Provider::ALL.
 Template: kerbridge-config/provider
 Type: select
-Choices: none, entra
+Choices: none, entra, authentik
 Default: entra
 _Description: Cloud identity provider for this deployment:
   KerBridge admits the users of one cloud IdP per source.

@@ -37,6 +37,19 @@ alone and compile no reader at all. One directory per provider holds both —
 `src/entra/{mod,auth}.rs` is the token face, `src/entra/{sync,client,wire}.rs`
 the directory one — and `src/sync/` is the seam they meet the mirror at.
 
+## The adapters this build carries
+
+**Entra** is complete on both faces, and is the one measured against a live
+tenant.
+
+**authentik** is being built face by face, so this build refuses what it cannot
+yet do rather than half-doing it. It carries the source file's
+`[provider_config]`, the derivations every URL hangs off, and the subject rule
+— enough for `kbconfig` to load and check a source, and for `kbconfig check
+--online` to ask the provider the three questions that catch the settings a token
+never shows. It carries no token verification and no directory reader, and both
+`connect`s say so by name rather than starting.
+
 ## What is provider-specific, and therefore lives here
 
 - Token verification: which algorithm, which issuer, which audience, which claim
@@ -52,7 +65,16 @@ the directory one — and `src/sync/` is the seam they meet the mirror at.
   authorization request puts them there. One field beats an IdP branch in the
   client.
 - The **subject encoding** — what goes in field 3 of `kb1|<name>|<subject>`.
-  Opaque to everything else. Entra's is the bare `oid`.
+  Opaque to everything else. Entra's is the bare `oid`; authentik's is the
+  user's `uuid`, chosen for being the only identifier its REST API can *filter*
+  on — a subject the directory cannot be queried by makes the two faces
+  impossible to hold together, whatever else recommends it.
+- **Whether a subject not in that shape is refused, and in whose words.** Nothing
+  normalizes: a transformation over a value that is unrecoverable if wrong
+  becomes a second thing that may never change. An adapter that can tell two
+  causes apart says which — authentik's separates "the provider is on the
+  wrong subject mode", which an operator fixes, from "the IdP changed how it
+  spells a uuid", which is not theirs to fix.
 - Reading the directory: the protocol, the credential, the cursors, and which
   accounts the IdP's own rules accept. What comes back is a `SourceSnapshot`, and
   reconciliation never enters an adapter. The realm's own rules — the group
@@ -68,16 +90,27 @@ the directory one — and `src/sync/` is the seam they meet the mirror at.
   hands it here without looking inside — parsed anywhere else, core, and
   therefore `issuerd`, would carry a struct describing what an Entra deployment
   needs. The example block is provider prose ("from the app registration's
-  Overview blade"), so the day a second adapter lands its
-  `deploy/configs/idp_<name>.toml.example` appears with no change outside this
+  Overview blade"), so the second adapter's
+  `deploy/configs/idp_<name>.toml.example` appeared with no change outside this
   crate.
-- The `kbconfig check --online` probe: which document to fetch, and which claim
+- **What the block derives, and from what.** Entra hangs its issuer, authority
+  and key document off `tenant_id`; authentik hangs them off an instance URL plus
+  the *application slug*. Each derived value stays overridable, because the
+  deployment that has to state one is the deployment behind a proxy that rewrites
+  what the IdP publishes about itself.
+- The `kbconfig check --online` probe: which document to fetch, and which claims
   in it to compare against what the adapter derived. Entra's compares the
   published `issuer`, because that and every stored subject both come from
   `tenant_id` — a wrong one misfiles every account rather than failing loudly.
-  An answer *about* the request (4xx, an unreadable document, a mismatch) is a
-  hard fail; no answer at all (DNS, a refused connection, a timeout, 5xx) is a
-  warning about the world.
+  authentik's compares the issuer for the same reason, and reads two more claims
+  out of the same document because two of its provider defaults are wrong for
+  KerBridge and neither is visible in a token: with no Signing Key it signs
+  symmetrically, and without the `offline_access` mapping attached it drops the
+  scope in silence and issues no refresh token. An answer *about* the request
+  (4xx, an unreadable document, a mismatch) is a hard fail; no answer at all
+  (DNS, a refused connection, a timeout, 5xx) is a warning about the world. The
+  fetch itself is shared: what a document *means* is provider-specific and what a
+  refused connection means is not.
 
 ## Two rules that are not negotiable
 
@@ -117,8 +150,15 @@ Then run the shared conformance suite
 adapter that does not run it is one whose algorithm handling nobody has checked,
 and the failure mode there is a silent authentication bypass.
 
-Nothing here has been measured against any IdP but Entra, so read that IdP's own
-documentation rather than assuming it resembles Entra's. The interface is
+Two things follow from the arms being a match rather than a registry. An adapter
+can land face by face, with the faces it has not got refusing by name in their
+own arm; and a helper two adapters come to share moves to a private module here
+— `src/jwt.rs` for the JOSE shapes, `src/lib.rs` for the probe's HTTP — rather
+than becoming a public type, which would make every future adapter's protocol a
+commitment the trait never asked for.
+
+Read the IdP's own documentation rather than assuming it resembles Entra's or
+authentik's. The interface is
 shaped so that the likely differences are absorbable inside your arm of the
 match:
 
