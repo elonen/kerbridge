@@ -1,6 +1,6 @@
 # A minimal, pinned Authentik for the autonomous test tier.
 #
-#   cd testbench/authentik && ./authcode.sh
+# Run `make test-authentik`. See authcode.sh for manual iteration.
 #
 # Three containers and no Redis -- caching, the embedded outpost and the
 # WebSocket layer moved into Postgres in 2025.10 (#4). Any recipe that adds a

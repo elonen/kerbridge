@@ -38,6 +38,23 @@ The committed JWTs are time-bound and already expired, so the verifier tests
 inject a fixed clock — which is the right shape for a verifier test anyway. All
 identifiers in the fixtures are synthetic.
 
+## `authentik/` — live blueprint proof
+
+`make test-authentik` starts the pinned three-container Authentik stack, waits for
+its default blueprints, applies the KerBridge bench blueprint, and completes an
+authorization-code flow. It checks the discovery document, the provider settings,
+and the issued tokens. It tests Authentik fixture data and runs no KerBridge
+container or Rust code. The default run removes the stack and its volume. Use
+`make test-authentik ARGS=--keep` to preserve them.
+
+For manual iteration:
+
+```sh
+testbench/authentik/authcode.sh up
+testbench/authentik/authcode.sh flow
+testbench/authentik/authcode.sh down
+```
+
 ## `deploy/bench.env` — the bench's own fixtures, and why they are not here
 
 The development bench also uses seeded accounts, object IDs, the `mockidp`

@@ -20,7 +20,7 @@ CLIENT_WIN := $(MAKE) -C client/kerbridge-agent-windows
 .PHONY: all build-docker build-local docker windows macos macos-zip installer kbmanage kbconfig cli-dist debian-docker up down \
         clean clean-docker-images clean-docker-volumes \
         setup setup-rustfmt setup-clippy setup-tools \
-        test test-fast test-win test-mac test-build test-stack test-deb test-all
+        test test-fast test-win test-mac test-build test-authentik test-stack test-deb test-all
 
 # Compatibility alias for the containerized build.
 all: build-docker
@@ -357,6 +357,11 @@ test-mac:
 # parsing when the deployment file is absent.
 test-build: build-docker installer
 
+# This target runs no KerBridge container or Rust. ARGS=--keep preserves its
+# disposable stack.
+test-authentik:
+	testbench/authentik/authcode.sh $(ARGS)
+
 # Test sign-in through an SMB file read against a new realm without a tenant or
 # secret. The disposable stack uses a separate project, container names, and
 # subnet under .local-tmp/. Its HTTPS port defaults to 8443; CI_HTTPS_PORT
@@ -372,4 +377,4 @@ test-stack:
 test-deb: debian-docker
 	debian/check-install $(DIST)/debian
 
-test-all: test-fast test-win test-build test-stack test-deb
+test-all: test-fast test-win test-build test-authentik test-stack test-deb

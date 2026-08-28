@@ -1,17 +1,17 @@
 # Everything here is `make` underneath, so a green run means the same
 # commands pass on a developer's machine.
 #
-#   changes  Whether the push touched anything but prose. Gates every job
-#            that compiles something -- all of them but `fast` and `audit` --
-#            because a compile cannot be affected by an edit to a `.md` file.
-#            It answers `true` for a pull request, so the gate only ever skips
-#            work on a push to main.
+#   changes  Whether the push touched anything but prose. Gates every test or
+#            build job except `fast` and `audit`. It answers `true` for a pull
+#            request, so the gate only ever skips work on a push to main.
 #   fast     Fast checks without Docker. Ungated: it runs the doc checks, which
 #            a prose-only push is exactly the thing that can break.
 #   windows  The cross-build gate for the client.
 #   macos    The gate for the other client half, on a Mac runner. Its tests
 #            link the real Kerberos.framework, so they run rather than compile.
 #            Billed at ten times an ubuntu runner, so the gate earns most here.
+#   authentik  The pinned blueprint and authorization-code proof, with no Rust
+#              or KerBridge container.
 #   build    Main, manual. Every shipping artifact still builds.
 #   stack    Main, manual. A realm provisioned from scratch, a TGT issued
 #            against it, and a file read over SMB with that ticket.
@@ -138,6 +138,16 @@ jobs:
       # is on the runner image; `make icon` is what would want librsvg, and the
       # .icns it writes is committed.
       - run: make test-mac
+
+  authentik:
+    name: authentik (blueprint, authorization code)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test-authentik
 
   build:
     name: artifacts (images, exes, MSI)

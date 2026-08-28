@@ -37,11 +37,12 @@ entries:
     attrs:
       client_type: public
       client_id: kerbridge-bench-client
-      # A loopback callback: nothing listens on it. The script reads the code
-      # out of the Location header rather than letting curl follow it.
+      # The client binds an ephemeral port and sends no path. Authentik does not
+      # implement RFC 8252 loopback matching, so use its full-match regex mode.
+      # Plain-YAML backslashes are literal.
       redirect_uris:
-        - matching_mode: strict
-          url: http://127.0.0.1:8765/callback
+        - matching_mode: regex
+          url: http://127\.0\.0\.1:[0-9]{1,5}
       # MEASURED ON 2026.8.0, AND THE SECOND DEFAULT THAT IS WRONG FOR US: a
       # blueprint-created provider gets `grant_types: []`, and
       # `views/authorize.py:233` refuses anything not in that list. Without

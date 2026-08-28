@@ -3,10 +3,11 @@
 # Drive Authentik's authorization-code + PKCE flow to a verified token with
 # nothing but curl and a cookie jar. No browser, no human, no headless driver.
 #
-#   ./authcode.sh            # up, wait, blueprint, sign in, exchange, verify
-#   ./authcode.sh up         # containers only, leave them running
-#   ./authcode.sh flow       # just the sign-in against an already-up stack
-#   ./authcode.sh down       # tear down, volume included
+#   make test-authentik           # cold stack, proof, tear down with volume
+#   ./authcode.sh --keep          # run the proof and leave the stack intact
+#   ./authcode.sh up              # provision the fixture, leave it running
+#   ./authcode.sh flow            # sign in against an already-provisioned stack
+#   ./authcode.sh down            # tear down, volume included
 #
 # MEASURED against ghcr.io/goauthentik/server:2026.8.0 (kerbridge #17). Read the
 # comment on each step before changing it: the long ones are all there because
@@ -25,18 +26,48 @@ COMPOSE=(docker compose -f "$HERE/compose.authentik.yaml")
 BASE="${AK_BASE:-http://127.0.0.1:9000}"
 APP_SLUG=kerbridge-bench
 CLIENT_ID=kerbridge-bench-client
-REDIRECT_URI=http://127.0.0.1:8765/callback
-SCOPE="openid profile email offline_access"
+REDIRECT_URI=http://127.0.0.1:8765
+REDIRECT_PATTERN='http://127\.0\.0\.1:[0-9]{1,5}'
+SCOPE="openid profile offline_access"
 USERNAME=benchuser
 PASSWORD=bench-user-password
 BOOTSTRAP_TOKEN=kerbridge-bench-bootstrap-token
 
 WORK="$(mktemp -d)"
 JAR="$WORK/cookies.txt"
-trap 'rm -rf "$WORK"' EXIT
 
 say() { printf '\n== %s\n' "$*" >&2; }
 die() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+
+KEEP=0
+if [ "${1:-}" = --keep ]; then
+  KEEP=1
+  shift
+fi
+ACTION="${1:-all}"
+[ "$#" -le 1 ] || die "usage: $0 [--keep] [all|up|flow|down]"
+
+cleanup() {
+  local rc=$?
+  rm -rf "$WORK"
+  [ "$ACTION" = all ] || return "$rc"
+
+  if [ "$rc" != 0 ]; then
+    say "the stack as it stood when this failed"
+    "${COMPOSE[@]}" ps || true
+    "${COMPOSE[@]}" logs --no-color --tail 80 || true
+  fi
+  if [ "$KEEP" = 1 ]; then
+    say "leaving the stack up (--keep). Tear it down with:"
+    echo "  $0 down" >&2
+  else
+    say "tearing down"
+    "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
+  fi
+  [ "$rc" = 0 ] || echo "${0##*/}: FAILED (exit $rc)" >&2
+  return "$rc"
+}
+trap cleanup EXIT
 
 # --- helpers ---------------------------------------------------------------
 
@@ -103,17 +134,56 @@ apply_blueprint() {
   "${COMPOSE[@]}" exec -T worker \
     ak apply_blueprint /blueprints/kerbridge/kerbridge-bench.yaml >"$WORK/blueprint.log" 2>&1 \
     || { tail -40 "$WORK/blueprint.log" >&2; die "ak apply_blueprint failed"; }
+}
 
-  # Prove the two settings a default provider gets wrong, before signing in --
-  # both failures are silent-ish and one of them only surfaces as a generic
-  # invalid_request 302 much later.
-  curl -sf "$BASE/application/o/$APP_SLUG/jwks/" -o "$WORK/jwks.json" || die "no JWKS"
-  python3 - "$WORK/jwks.json" <<'PY' || die "provider is not signing asymmetrically -- signing_key did not take"
-import json,sys
-keys = json.load(open(sys.argv[1])).get("keys", [])
-assert keys, "JWKS is {} with no `keys` array at all: the provider is signing HS256 with its client secret"
-assert keys[0]["alg"] == "RS256", keys[0]["alg"]
-print("JWKS: %s %s kid=%s..." % (keys[0]["kty"], keys[0]["alg"], keys[0]["kid"][:12]), file=sys.stderr)
+assert_provider() {
+  say "checking the discovery document and provider settings"
+  curl -sf "$BASE/application/o/$APP_SLUG/.well-known/openid-configuration" \
+    -o "$WORK/discovery.json" || die "no discovery document at the application slug"
+  curl -sf -H "Authorization: Bearer $BOOTSTRAP_TOKEN" -G \
+    "$BASE/api/v3/providers/oauth2/" --data-urlencode "name=$APP_SLUG" \
+    -o "$WORK/provider.json" || die "could not read the OAuth2 provider"
+  curl -sf -H "Authorization: Bearer $BOOTSTRAP_TOKEN" -G \
+    "$BASE/api/v3/propertymappings/provider/scope/" \
+    --data-urlencode "managed=goauthentik.io/providers/oauth2/scope-offline_access" \
+    -o "$WORK/offline.json" || die "could not read the offline_access mapping"
+  curl -sf "$BASE/application/o/$APP_SLUG/jwks/" \
+    -o "$WORK/jwks.json" || die "could not read the provider JWKS"
+
+  python3 - "$WORK/discovery.json" "$WORK/provider.json" "$WORK/offline.json" \
+    "$WORK/jwks.json" "$BASE" "$APP_SLUG" "$REDIRECT_PATTERN" <<'PY'
+import json, sys
+
+discovery, providers, mappings, jwks = (json.load(open(path)) for path in sys.argv[1:5])
+base, slug, redirect_pattern = sys.argv[5:8]
+fails = []
+
+def check(name, got, want):
+    ok = got == want
+    print("  %-28s %s" % (name, "ok" if ok else "MISMATCH got=%r want=%r" % (got, want)))
+    if not ok: fails.append(name)
+
+issuer = "%s/application/o/%s/" % (base, slug)
+check("discovery issuer", discovery.get("issuer"), issuer)
+check("discovery JWKS", discovery.get("jwks_uri"), issuer + "jwks/")
+check("discovery signing alg", discovery.get("id_token_signing_alg_values_supported"), ["RS256"])
+check("offline scope published", "offline_access" in discovery.get("scopes_supported", []), True)
+keys = jwks.get("keys", [])
+check("JWKS non-empty", bool(keys), True)
+check("JWKS keys use RS256", {key.get("alg") for key in keys}, {"RS256"})
+
+provider_rows = providers.get("results", [])
+mapping_rows = mappings.get("results", [])
+check("one OAuth2 provider", len(provider_rows), 1)
+check("one offline mapping", len(mapping_rows), 1)
+provider = provider_rows[0] if len(provider_rows) == 1 else {}
+offline_pk = mapping_rows[0].get("pk") if len(mapping_rows) == 1 else None
+check("UUID subject mode", provider.get("sub_mode"), "user_uuid")
+check("signing key present", bool(provider.get("signing_key")), True)
+check("offline mapping attached", offline_pk in provider.get("property_mappings", []), True)
+redirects = [(item.get("matching_mode"), item.get("url")) for item in provider.get("redirect_uris", [])]
+check("loopback redirect regex", redirects, [("regex", redirect_pattern)])
+sys.exit(1 if fails else 0)
 PY
 }
 
@@ -358,13 +428,14 @@ PY
 
 # ---------------------------------------------------------------------------
 
-case "${1:-all}" in
-  up)   stack_up; wait_for_defaults; apply_blueprint ;;
+case "$ACTION" in
+  up)   stack_up; wait_for_defaults; apply_blueprint; assert_provider ;;
   flow) flow; verify ;;
-  down) "${COMPOSE[@]}" down -v ;;
+  down) "${COMPOSE[@]}" down -v --remove-orphans ;;
   all)
-    stack_up; wait_for_defaults; apply_blueprint; flow; verify
-    say "PASS -- authorization code and verified tokens, no browser"
+    "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
+    stack_up; wait_for_defaults; apply_blueprint; assert_provider; flow; verify
+    say "PASS -- blueprint settings and verified tokens, no browser"
     ;;
-  *) die "usage: $0 [all|up|flow|down]" ;;
+  *) die "usage: $0 [--keep] [all|up|flow|down]" ;;
 esac

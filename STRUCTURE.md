@@ -139,6 +139,10 @@ Python reference implementations and the spike bring-up scripts are gone.
 - `fixtures/` — the corpora `cargo test` loads, and the two generators that are
   the only way to regenerate them. `entra-token/make_fixtures.py` is also *run*
   by `make test-stack`.
+- `authentik/` — the pinned live-Authentik blueprint and authorization-code
+  proof that `make test-authentik` runs.
+- `mock-idp/` — the fake OIDC server and approval hook that `make test-stack`
+  runs instead of a live tenant.
 - `entra-tenant/` — the tools for driving a live Entra tenant. Kept because they
   implement nothing KerBridge ships and the work they serve is still open.
 - `wire.py` — decodes a tcpdump capture without tshark, which
