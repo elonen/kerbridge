@@ -6,6 +6,7 @@ Claim shapes follow the v2.0 access-token examples and claim reference:
 - https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens
 - https://learn.microsoft.com/en-us/entra/identity-platform/access-token-claims-reference
 """
+import argparse
 import base64
 import hashlib
 import hmac
@@ -18,11 +19,19 @@ import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-HERE = Path(__file__).parent
-# Write in place. This used to be HERE/"fixtures", one level below where the
-# corpus actually lives and where the broker's tests read it from, so a
-# regeneration silently landed nowhere and the stale corpus kept passing.
-FIX = HERE
+# The corpus directory by default: this is where the broker's tests read it from.
+# A wrong destination fails silently -- the regeneration lands elsewhere and the
+# stale corpus keeps passing.
+#
+# --out is for the live run (deploy/scripts/bench/ci-stack.sh), which needs a
+# corpus inside its own validity window without touching the committed one. The
+# signing key follows it: compose.ci.yaml mounts the key into mockidp from the
+# same directory.
+_cli = argparse.ArgumentParser(description=__doc__)
+_cli.add_argument("--out", type=Path, default=Path(__file__).parent,
+                  help="directory to write the corpus into")
+FIX = _cli.parse_args().out
+FIX.mkdir(parents=True, exist_ok=True)
 
 # ---- Configured broker policy (mirrors .env keys in DESIGN.md) ----
 TENANT_ID = "aaaabbbb-0000-cccc-1111-dddd2222eeee"          # configured tenant
@@ -54,7 +63,7 @@ KID_BY_ALG = {"RS384": "fixture-key-rs384", "RS512": "fixture-key-rs512",
 key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 rogue = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-(HERE / "signing-key.pem").write_bytes(
+(FIX / "signing-key.pem").write_bytes(
     key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.PKCS8,

@@ -55,12 +55,12 @@ export COMPOSE_FILE=compose.yaml:compose.nas.yaml:compose.mockidp.yaml:compose.c
 
 # Generate the corpus in a scratch directory so positive tokens are current.
 # The committed corpus is intentionally expired, and tests pin its time window.
+# make_fixtures.py defaults to the corpus it lives in, so --out is not optional.
 idp_prepare() {
   local fixtures=testbench/fixtures/entra-token
   say "generating a token corpus"
   FIXDIR=$ROOT/.local-tmp/ci-fixtures
   rm -rf "$FIXDIR"; mkdir -p "$FIXDIR"
-  cp "$ROOT/$fixtures/make_fixtures.py" "$FIXDIR/"
   # Cache the virtual environment in the source checkout. The disposable copy is
   # replaced for each run, and reinstalling dependencies adds a network dependency.
   local venv=${KB_CI_SRC:-$ROOT}/.local-tmp/ci-venv
@@ -68,8 +68,7 @@ idp_prepare() {
     python3 -m venv "$venv"
     "$venv/bin/pip" install --quiet --disable-pip-version-check pyjwt cryptography
   fi
-  # make_fixtures.py writes output beside its own copy.
-  (cd "$FIXDIR" && "$venv/bin/python" make_fixtures.py >/dev/null)
+  "$venv/bin/python" "$ROOT/$fixtures/make_fixtures.py" --out "$FIXDIR" >/dev/null
   [ -s "$FIXDIR/jwks.json" ] && [ -s "$FIXDIR/positive_delegated.jwt" ] &&
     [ -s "$FIXDIR/positive_other_user.jwt" ] ||
     die "fixture generation produced nothing"

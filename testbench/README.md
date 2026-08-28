@@ -11,14 +11,17 @@ Nothing here is production code, for testing only.
 | `planner/` | golden files, each `{admission, desired, current, plan}` — retention, quarantine, admission-group-deleted freeze, ambiguous-identity conflict, role-marker restamp. | `kerbridge-sync/src/planner/mod.rs`, `kerbridge-idp/src/entra/wire.rs` |
 | `tls/` | Two certificates, covering both arms of every branch the client's X.509 reader has: private-CA-issued vs self-signed, subjectAltName vs none, UTCTime vs GeneralizedTime, ASCII vs UTF8String. Nothing presents or trusts these — they are bytes to parse. | `kerbridge-client/src/tls.rs` |
 
-The `make_fixtures` scripts stay because they are the only way to
-regenerate their corpus:
+The `make_fixtures` scripts stay because they are the only way to regenerate
+their corpus. Both Python generators take `--out` and default to the corpus they
+live in:
 
 - `entra-token/make_fixtures.py` is **run live** by `make test-stack`:
-  `deploy/scripts/bench/ci-stack.sh` copies it into a scratch directory and runs
-  it, so the broker under test verifies a token inside its own validity window
-  against a locally generated `jwks.json`. It creates a fresh throwaway RSA key
-  on every run; that key is gitignored and never committed.
+  `deploy/scripts/bench/ci-stack.sh` runs it in place with `--out` pointing at a
+  scratch directory, so the broker under test verifies a token inside its own
+  validity window against a locally generated `jwks.json`. It creates a fresh
+  throwaway RSA key on every run; that key is gitignored, never committed, and
+  follows `--out`, because `compose.ci-entra.yaml` mounts it into mockidp from
+  there.
   `positive_other_user.jwt` exists only in that live corpus: the delegation
   checks need two admitted callers to distinguish "refused for not being a
   delegate" from "refused for not being admitted", and committing a second

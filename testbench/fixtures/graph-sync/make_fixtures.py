@@ -13,7 +13,8 @@ Every fixture is a JSON object: {"request": {...}, "response": {"status": n, "he
 so tests can replay complete HTTP exchanges. IDs match the objects provisioned in the
 sync-spike Samba directory (tenant aaaabbbb-..., admission group 4e8a1c9d-...).
 """
-import json, os
+import argparse, json, os
+from pathlib import Path
 
 T = "aaaabbbb-0000-cccc-1111-dddd2222eeee"  # tenant id
 G = "https://graph.microsoft.com/v1.0"
@@ -63,7 +64,15 @@ def fx(name, method, url, status, body, headers=None, note=None):
         json.dump(obj, f, indent=2)
     print("wrote", name + ".json")
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# The corpus directory by default. --out writes elsewhere, which is how a
+# regeneration is diffed against the committed corpus without dirtying the tree.
+# fx() above writes relative names, so the chdir is what makes both work.
+_cli = argparse.ArgumentParser(description=__doc__)
+_cli.add_argument("--out", type=Path, default=Path(__file__).resolve().parent,
+                  help="directory to write the corpus into")
+_out = _cli.parse_args().out
+_out.mkdir(parents=True, exist_ok=True)
+os.chdir(_out)
 
 ALICE = user(U_ALICE, "Alice Anderson", "alice.anderson@contoso.example")
 JDOE = user(U_JDOE, "John Doe", "jdoe@contoso.example")
