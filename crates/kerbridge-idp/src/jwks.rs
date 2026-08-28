@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use kerbridge_core::Source;
 use kerbridge_notify::{Event, Notifier, Severity};
 use serde::Deserialize;
 use tokio::sync::RwLock;
@@ -125,6 +126,10 @@ const ALERT_AFTER_FAILURES: u32 = 3;
 
 pub struct Jwks {
     source: JwksSource,
+    /// Which configured IdP these keys are for, and the subject both events
+    /// below are keyed on. There is one `Jwks` per adapter instance, so a
+    /// deployment listing two sources holds two of these.
+    idp: Source,
     timeout: Duration,
     keys: RwLock<Keys>,
     /// Shared with `AppState` rather than threaded through `verify`, which has no
@@ -150,21 +155,24 @@ impl Jwks {
     /// reported and says nothing.
     pub async fn load(
         source: JwksSource,
+        idp: &Source,
         timeout: Duration,
         notifier: Arc<Notifier>,
     ) -> Result<Self> {
         let by_kid = match fetch(&source, timeout).await {
             Ok(keys) => keys,
             Err(e) => {
-                notifier.send(idp_failure(&e, Severity::Error, "no signing keys at startup")).await;
+                notifier
+                    .send(idp_failure(&e, idp, Severity::Error, "no signing keys at startup"))
+                    .await;
                 return Err(e);
             }
         };
-        notifier.resolve("idp-keys-unavailable").await;
-        notifier.resolve("idp-trust-failure").await;
+        resolve_idp_failures(&notifier, idp).await;
         let now = Instant::now();
         Ok(Self {
             source,
+            idp: idp.clone(),
             timeout,
             keys: RwLock::new(Keys {
                 by_kid,
@@ -246,8 +254,7 @@ impl Jwks {
                 }
                 // Outside the guard: the whole point of this module is that no
                 // lock is held across an await.
-                self.notifier.resolve("idp-keys-unavailable").await;
-                self.notifier.resolve("idp-trust-failure").await;
+                resolve_idp_failures(&self.notifier, &self.idp).await;
             }
             Err(e) => {
                 let (failures, backoff, stale) = {
@@ -272,7 +279,7 @@ impl Jwks {
                     } else {
                         (Severity::Warning, "serving cached signing keys")
                     };
-                    self.notifier.send(idp_failure(&e, severity, what)).await;
+                    self.notifier.send(idp_failure(&e, &self.idp, severity, what)).await;
                 }
             }
         }
@@ -284,14 +291,29 @@ impl Jwks {
 /// They are separate because the fixes are: a trust failure is a stale root
 /// bundle or something terminating the connection, and no amount of waiting
 /// clears it; an unreachable IdP is a network problem that may clear itself.
-fn idp_failure(error: &anyhow::Error, severity: Severity, what: &str) -> Event {
+///
+/// The source is the subject and is also spelled into the message: the webhook
+/// template has `%MESSAGE%` and no `%SUBJECT%`, so the sentence is the only
+/// place an operator learns which IdP stopped answering.
+fn idp_failure(error: &anyhow::Error, idp: &Source, severity: Severity, what: &str) -> Event {
     let slug = if looks_like_a_trust_failure(error) {
         "idp-trust-failure"
     } else {
         "idp-keys-unavailable"
     };
-    Event::new(slug, severity, format!("cannot fetch the IdP signing keys: {what}"))
+    Event::new(slug, severity, format!("cannot fetch the signing keys for source {idp}: {what}"))
+        .subject(idp.name())
         .detail(format!("{error:#}"))
+}
+
+/// Both conditions cleared for one source, and for no other.
+///
+/// `resolve` would clear every subject the event holds, which is right for a
+/// condition whose subject describes the symptom and wrong here: a fetch proves
+/// only the IdP it fetched from reachable.
+async fn resolve_idp_failures(notifier: &Notifier, idp: &Source) {
+    notifier.resolve_subject("idp-keys-unavailable", idp.name()).await;
+    notifier.resolve_subject("idp-trust-failure", idp.name()).await;
 }
 
 /// Does this look like a trust decision rather than a network one?
@@ -471,6 +493,7 @@ mod tests {
         let jwks = Jwks {
             // Unreadable, so the refresh `with_key` triggers is certain to fail.
             source: JwksSource::File("/nonexistent/jwks.json".into()),
+            idp: crate::entra::tests::source(),
             timeout: Duration::from_secs(1),
             keys: RwLock::new(Keys {
                 by_kid: parse(&body).unwrap(),
@@ -487,6 +510,38 @@ mod tests {
             Some(256),
             "an aged document was withdrawn -- MAX_AGE is a refresh trigger, not an expiry"
         );
+    }
+
+    /// Two sources are two conditions. One `Jwks` per adapter instance means an
+    /// unkeyed `resolve` on the second source's startup fetch announces a
+    /// recovery for the first source's outage while that outage still runs.
+    #[tokio::test]
+    async fn a_second_source_does_not_resolve_the_first_one_s_outage() {
+        let dir = std::env::temp_dir().join(format!("kb-jwks-subject-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cfg =
+            kerbridge_core::config::Notify { state_dir: Some(dir.clone()), ..Default::default() };
+        let notifier = Arc::new(Notifier::from_config("broker", &cfg, "EXAMPLE.SITE").unwrap());
+
+        let missing = JwksSource::File("/nonexistent/jwks.json".into());
+        let fixture = JwksSource::File(crate::entra::tests::fixture_dir().join("jwks.json"));
+        let second = Duration::from_secs(1);
+        let broken = Source::new("broken").unwrap();
+        let working = Source::new("working").unwrap();
+        assert!(Jwks::load(missing, &broken, second, notifier.clone()).await.is_err());
+        Jwks::load(fixture, &working, second, notifier.clone()).await.unwrap();
+
+        let open: Vec<serde_json::Value> = std::fs::read_dir(dir.join("broker"))
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("problem-"))
+            .map(|e| serde_json::from_str(&std::fs::read_to_string(e.path()).unwrap()).unwrap())
+            .collect();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(open.len(), 1, "{open:?}");
+        assert_eq!(open[0]["event"], "idp-keys-unavailable");
+        assert_eq!(open[0]["subject"], "broken", "the outage is still the broken source's");
     }
 
     #[test]

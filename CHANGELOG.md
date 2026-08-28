@@ -24,6 +24,14 @@ version of the build, so a note left in it is shown a second time.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
+## Unreleased
+
+- The two IdP signing-key conditions, `idp-trust-failure` and
+  `idp-keys-unavailable`, now carry the source name and are opened and
+  cleared per source. A deployment with two identity providers no longer
+  has the second one's key fetch announce a recovery for the first one's
+  outage while that outage is still running.
+
 ## 0.9.3
 
 - Every option a config file must set is now a commented line to complete,

@@ -324,8 +324,8 @@ v1 events, and their repeat policy:
 | `sync-cycle-failing`, after three consecutive discarded cycles — a cycle counts as discarded whether it was abandoned in-band (a stalled read) or abandoned by a transport failure against Graph or LDAP | sync | persisting |
 | `sync-name-collision` — a `sAMAccountName` collision blocked the whole cycle | sync | persisting |
 | `sync-apply-failing` — the directory rejected writes the plan expected to succeed, usually a delegation ACE that was never granted. The cycle returns `Ok`, so nothing else counts it | sync | persisting |
-| `idp-trust-failure` — outbound TLS to Entra could not be validated, distinct from Entra being merely unreachable | broker | persisting |
-| `idp-keys-unavailable` — the IdP signing keys could not be fetched and it is not a trust problem. `error` at startup and once the cached document has expired, `warning` while cached keys still serve | broker | persisting |
+| `idp-trust-failure` — outbound TLS to the IdP could not be validated, distinct from the IdP being merely unreachable. Keyed per source | broker | persisting |
+| `idp-keys-unavailable` — the IdP signing keys could not be fetched and it is not a trust problem. `error` at startup and once the cached document has expired, `warning` while cached keys still serve. Keyed per source | broker | persisting |
 | `directory-unavailable` — the directory is not answering, so no login can succeed. A rejected bind — a rotated `svc-kerbridge-broker` password — is indistinguishable from here and equally fatal | broker | persisting |
 | `issuer-refused` — `issuerd` refused an account the broker admitted, so the two disagree. Keyed per account | broker | persisting |
 | `identity-ambiguous` — two directory objects carry one external identity. Keyed per identity | broker | persisting |
@@ -361,11 +361,13 @@ and not dropped from the code, because both are conditions that only an operator
 can clear.
 
 Each event is keyed on the subject that it is about: the client id the sync
-credential belongs to, for the two credential events; the reason for a `<role>-group-*` problem; and the
-colliding names for `sync-name-collision`. Two groups that carry a marker and
-three that carry it are one condition, but a reworded reason must not sit behind
-the first one's repeat interval. `sync-cycle-failing` and `sync-cursor-corrupt`
-are about the deployment, and have no subject.
+credential belongs to, for the two credential events; the reason for a
+`<role>-group-*` problem; the colliding names for `sync-name-collision`; and the
+source name, for the two `idp-*` conditions, which are about one configured IdP
+and not about the deployment. Two groups that carry a marker and three that
+carry it are one condition, but a reworded reason must not sit behind the first
+one's repeat interval. `sync-cycle-failing` and `sync-cursor-corrupt` are about
+the deployment, and have no subject.
 
 Where each condition is disproved, because only whatever would have raised a
 condition can clear it:
@@ -383,15 +385,16 @@ condition can clear it:
 | `sync-cycle-failing` | a cycle that reached the end of its write |
 | `sync-name-collision` | a plan that built at all |
 | `sync-apply-failing` | a cycle whose writes all applied |
-| `idp-trust-failure`, `idp-keys-unavailable` | a signing-key fetch that succeeds |
+| `idp-trust-failure`, `idp-keys-unavailable` | a signing-key fetch **for that source** that succeeds |
 | `directory-unavailable` | a directory lookup that completed |
 | `issuer-refused` | **that account** getting a ticket |
 | `identity-ambiguous` | **that identity** resolving to one object |
 
-The last two clear one subject, and not the whole event, because a second broken
-account is not fixed when the first one works. Each other event clears across
-each of its subjects, because its subject describes the symptom and not a stable
-thing.
+The last two and the two `idp-*` conditions clear one subject, and not the whole
+event: a second broken account is not fixed when the first one works, and a
+second IdP answering does not make the first one reachable. Each other event
+clears across each of its subjects, because its subject describes the symptom
+and not a stable thing.
 
 The broker's conditions are all latent. The broker is request-driven, and
 thus both the raise and the clear wait for somebody to log in. On a quiet

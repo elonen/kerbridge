@@ -57,7 +57,7 @@ impl Entra {
         notifier: Arc<Notifier>,
         timeout: Duration,
     ) -> Result<Self> {
-        let jwks = Jwks::load(settings.jwks.clone(), timeout, notifier)
+        let jwks = Jwks::load(settings.jwks.clone(), source, timeout, notifier)
             .await
             .context("loading signing keys")?;
         Ok(Self {
@@ -319,6 +319,7 @@ mod tests {
         // The timeout is the network fetch's; a file source never reaches it.
         Jwks::load(
             JwksSource::File(fixture_dir().join("jwks.json")),
+            &source(),
             std::time::Duration::from_secs(30),
             std::sync::Arc::new(kerbridge_notify::Notifier::disabled("broker")),
         )
