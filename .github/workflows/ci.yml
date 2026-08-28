@@ -1,14 +1,17 @@
 # Everything here is `make` underneath, so a green run means the same
 # commands pass on a developer's machine.
 #
-#   changes  Whether the push touched anything but prose. Gates the three
-#            heavy jobs below, which between them hold two runners for over an
-#            hour and cannot be affected by an edit to a `.md` file.
+#   changes  Whether the push touched anything but prose. Gates every job
+#            that compiles something -- all of them but `fast` and `audit` --
+#            because a compile cannot be affected by an edit to a `.md` file.
+#            It answers `true` for a pull request, so the gate only ever skips
+#            work on a push to main.
 #   fast     Fast checks without Docker. Ungated: it runs the doc checks, which
 #            a prose-only push is exactly the thing that can break.
 #   windows  The cross-build gate for the client.
 #   macos    The gate for the other client half, on a Mac runner. Its tests
 #            link the real Kerberos.framework, so they run rather than compile.
+#            Billed at ten times an ubuntu runner, so the gate earns most here.
 #   build    Main, manual. Every shipping artifact still builds.
 #   stack    Main, manual. A realm provisioned from scratch, a TGT issued
 #            against it, and a file read over SMB with that ticket.
@@ -98,6 +101,8 @@ jobs:
 
   windows:
     name: windows client (cross-build, clippy)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -114,6 +119,8 @@ jobs:
 
   macos:
     name: macos client (build, clippy, tests)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     # arm64, and pinned rather than `macos-latest`: a runner image that rotates
     # under the release job would change what ships without a commit saying so.
     runs-on: macos-15
