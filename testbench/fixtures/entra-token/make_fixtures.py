@@ -95,6 +95,11 @@ def algorithm_confusion_claims():
     claims["oid"] = OTHER_USER_OID
     return claims
 
+def wrong_audience_claims():
+    claims = base_claims()
+    claims["aud"] = "00000003-0000-0000-c000-000000000000"  # Graph's own resource id
+    return claims
+
 # ---- Positive fixtures ----
 issue("positive_delegated", base_claims())
 
@@ -117,7 +122,7 @@ issue("neg_wrong_tenant", c)
 
 forge.conformance_set(
     base_claims,
-    wrong_audience="00000003-0000-0000-c000-000000000000",  # Graph aud
+    wrong_audience_claims=wrong_audience_claims,
     algorithm_confusion_claims=algorithm_confusion_claims,
 )
 

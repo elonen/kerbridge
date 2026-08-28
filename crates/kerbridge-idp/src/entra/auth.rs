@@ -4,12 +4,13 @@
 //! `entra-token-validation`, whose ordering of the checks below is the one this
 //! reproduces.
 //!
-//! Two properties are structural rather than checked. The algorithm is never
-//! chosen by the token -- `alg` is resolved against the allowlist before any key
-//! is loaded, and the only verification routine in this file is RSA, so the
-//! classic confusions have no code path to reach rather than merely a guard in
-//! front of them; see the crate doc for why that rule is asymmetric-only rather
-//! than RS256-only. And the clock is a parameter, not configuration.
+//! Two properties are structural rather than checked, and both are held in
+//! `crate::jwt` rather than here: the algorithm is never chosen by the token --
+//! `alg` is resolved against the allowlist before any key is loaded, and the
+//! only verification routine that half can reach is RSA, so the classic
+//! confusions have no code path rather than merely a guard in front of them;
+//! see the crate doc for why that rule is asymmetric-only rather than
+//! RS256-only. And the clock is a parameter, not configuration.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,9 +21,9 @@ use kerbridge_notify::Notifier;
 use serde::Deserialize;
 
 use super::{DEFAULT_LEEWAY_SECONDS, Settings, identity};
-use crate::jwks::{self, Jwks, RsaKey};
-use crate::jwt::Audience;
-use crate::{IdentityProvider, OidcDiscovery, Reject, b64url, reject};
+use crate::jwks::Jwks;
+use crate::jwt::{self, Audience};
+use crate::{IdentityProvider, OidcDiscovery, Reject, reject};
 
 /// Everything about a configured Entra tenant that verification compares
 /// against.
@@ -104,12 +105,6 @@ impl IdentityProvider for Entra {
 }
 
 #[derive(Deserialize)]
-struct Header {
-    alg: String,
-    kid: Option<String>,
-}
-
-#[derive(Deserialize)]
 struct Claims {
     iss: Option<String>,
     aud: Option<Audience>,
@@ -135,51 +130,10 @@ async fn verify(
     jwks: &Jwks,
     now: i64,
 ) -> Result<ExternalIdentity, Reject> {
-    // 1. Structure, before anything is decoded or fetched.
-    let mut parts = token.split('.');
-    let (Some(header_b64), Some(claims_b64), Some(sig_b64), None) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
-        return Err(reject("not a three-part JWT"));
-    };
-
-    let header: Header =
-        serde_json::from_slice(&b64url(header_b64).map_err(|_| reject("header is not base64url"))?)
-            .map_err(|_| reject("header is not JSON"))?;
-
-    // 2. Algorithm allowlist, before a key is selected. Entra signs v2 access
-    //    tokens with RS256; the rest of the list is crate-wide.
-    let Some(primitive) = jwks::algorithm(&header.alg) else {
-        return Err(reject(format!("disallowed alg {:?}", header.alg)));
-    };
-    let kid = header.kid.ok_or_else(|| reject("header carries no kid"))?;
-
-    // 3. Signature over the exact bytes presented, not over anything re-encoded.
-    let signature = b64url(sig_b64).map_err(|_| reject("signature is not base64url"))?;
-    let signed_len = header_b64.len() + 1 + claims_b64.len();
-    let signed = &token.as_bytes()[..signed_len];
-    let outcome = jwks
-        .with_key(&kid, |key| {
-            // Refused on the key's published `alg` before the signature is
-            // computed at all, so a correct signature does not reach a key the
-            // IdP published for something else.
-            (!key.pins(&header.alg)).then(|| verify_rsa(key, primitive, signed, &signature))
-        })
-        .await
-        .ok_or_else(|| reject(format!("unknown kid {kid:?}")))?;
-    let Some(verified) = outcome else {
-        return Err(reject(format!("key {kid:?} is not published for alg {:?}", header.alg)));
-    };
-    if !verified {
-        return Err(reject("signature does not verify"));
-    }
-
-    // 4. Claims. Everything from here is policy against a payload whose
-    //    authenticity is already established.
-    let claims: Claims = serde_json::from_slice(
-        &b64url(claims_b64).map_err(|_| reject("claims are not base64url"))?,
-    )
-    .map_err(|_| reject("claims are not JSON"))?;
+    // Structure, the algorithm allowlist, the key and the signature are
+    // `crate::jwt`'s, and the claims are not read until they hold. Everything
+    // below is policy against a payload whose authenticity is established.
+    let claims: Claims = jwt::verified_claims(token, jwks).await?;
 
     let iss = claims.iss.ok_or_else(|| reject("no iss"))?;
     let aud = claims.aud.ok_or_else(|| reject("no aud"))?;
@@ -241,34 +195,6 @@ async fn verify(
     // too. The cause is interpolated, so an `oid` refused for its case says so.
     let oid = claims.oid.ok_or_else(|| reject("no oid"))?;
     identity(source, &oid).map_err(|e| reject(format!("oid is not a usable subject: {e}")))
-}
-
-/// The one verification routine in this file, and it is RSA. `primitive` came
-/// from [`jwks::algorithm`], so it is an allowlisted algorithm by construction
-/// rather than by a check somewhere above.
-///
-/// ring takes the two components as JWKS states them, so no key encoding is
-/// written here. Do not reintroduce one: hand-built ASN.1 in this routine is
-/// the single defect that would forge any identity.
-fn verify_rsa(
-    key: &RsaKey,
-    primitive: &'static ring::signature::RsaParameters,
-    signed: &[u8],
-    signature: &[u8],
-) -> bool {
-    ring::signature::RsaPublicKeyComponents {
-        n: trim_leading_zeros(&key.modulus),
-        e: trim_leading_zeros(&key.exponent),
-    }
-    .verify(primitive, signed, signature)
-    .is_ok()
-}
-
-/// ring wants each component big-endian with no leading zero. RFC 7517 does not
-/// forbid an IdP from publishing one, so this does not assume it away.
-fn trim_leading_zeros(bytes: &[u8]) -> &[u8] {
-    let first_significant = bytes.iter().position(|&b| b != 0).unwrap_or(bytes.len());
-    &bytes[first_significant..]
 }
 
 #[cfg(test)]
@@ -410,7 +336,7 @@ mod tests {
     fn tampered_positive() -> String {
         let original = token("positive_delegated.jwt");
         let mut parts: Vec<&str> = original.split('.').collect();
-        let claims = String::from_utf8(b64url(parts[1]).unwrap()).unwrap();
+        let claims = String::from_utf8(crate::b64url(parts[1]).unwrap()).unwrap();
         let swapped = claims.replace(USER_OID, "00000000-0000-0000-0000-000000000000");
         assert_ne!(swapped, claims, "the oid must actually have been substituted");
         use base64::Engine as _;
@@ -504,31 +430,5 @@ mod tests {
         // Entra asks for a refresh token by scope, so it needs no request
         // parameters -- and an empty map is omitted from `GET /config`.
         assert!(oidc.extra_auth_params.is_empty());
-    }
-
-    #[test]
-    fn a_component_is_trimmed_to_what_ring_accepts() {
-        assert_eq!(trim_leading_zeros(&[0x00, 0x00, 0x7f]), &[0x7f]);
-        assert_eq!(trim_leading_zeros(&[0x01, 0x00, 0x01]), &[0x01, 0x00, 0x01]);
-        // No significant byte at all: an empty slice, not a panic.
-        assert_eq!(trim_leading_zeros(&[0x00, 0x00]), &[] as &[u8]);
-        assert_eq!(trim_leading_zeros(&[]), &[] as &[u8]);
-    }
-
-    /// The same key and signature, with the modulus stated both ways: bare, and
-    /// with the leading zero RFC 7517 permits. A verifier that handed the padded
-    /// form straight to ring would refuse a token the IdP signed correctly.
-    #[test]
-    fn a_modulus_published_with_a_leading_zero_still_verifies() {
-        let body = std::fs::read_to_string(fixture_dir().join("jwks.json")).unwrap();
-        let mut key = crate::jwks::parse(&body).unwrap().remove("fixture-key-2026-07").unwrap();
-        let jwt = token("positive_delegated.jwt");
-        let (signed, sig) = jwt.rsplit_once('.').unwrap();
-        let signature = crate::b64url(sig).unwrap();
-        let primitive = crate::jwks::algorithm("RS256").unwrap();
-
-        assert!(verify_rsa(&key, primitive, signed.as_bytes(), &signature), "bare modulus");
-        key.modulus.insert(0, 0x00);
-        assert!(verify_rsa(&key, primitive, signed.as_bytes(), &signature), "padded modulus");
     }
 }

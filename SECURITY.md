@@ -238,10 +238,12 @@ every device grant you did not create.
 ### 3. The token verifier is hand-written
 
 **Risk.** KerBridge uses **no JWT library**.
-`crates/kerbridge-idp/src/entra/auth.rs` splits the token, resolves the algorithm,
-and applies every claim rule itself, calling `ring` for the signature. This is
-the single most security-critical routine in the project, and it is bespoke
-code in a project whose code is mostly agent-written.
+`crates/kerbridge-idp/src/jwt.rs` splits the token, resolves the algorithm and
+checks the signature by calling `ring`; each adapter's own `auth.rs` then
+applies its IdP's claim rules. That first half is shared rather than written
+once per adapter, because it is the single most security-critical routine in the
+project — bespoke code in a project whose code is mostly agent-written — and a
+second copy would be a second one to get right.
 
 **What limits it.**
 
@@ -261,7 +263,10 @@ code in a project whose code is mostly agent-written.
   the audience, the lifetime, the tenant, the token version, the token type, the
   delegated scope, the authorized client and the shape of the subject. It
   refuses the token if one fails. Each check, claim by claim, is in
-  [`crates/kerbridge-idp/entra.md`](crates/kerbridge-idp/entra.md).
+  [`crates/kerbridge-idp/entra.md`](crates/kerbridge-idp/entra.md). Which claims
+  those are is the adapter's: authentik has no token version, no token type and
+  no scope to check, and its authorized-client claim is the one its scope
+  mappings cannot rewrite.
 - The `scp` and `idtyp` checks are the real access control, not defence in
   depth. Entra issues app-only tokens with the broker audience to **any**
   confidential client in the tenant. The spike `entra-token-validation` measured

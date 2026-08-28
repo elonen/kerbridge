@@ -26,7 +26,7 @@ thing wrong with them.
 
 One directory under the fixtures root that its reader loads as a set and that
 is regenerated whole or not at all.
-<!-- refs: path `testbench/fixtures/`; corpora `entra-token`, `graph-sync`, `planner`, `tls` -->
+<!-- refs: path `testbench/fixtures/`; corpora `entra-token`, `authentik-token`, `graph-sync`, `planner`, `tls` -->
 <!-- avoid: test corpora, fixture set, golden files -->
 
 ### evidence
@@ -49,7 +49,7 @@ expired on purpose.
 A script, the only sanctioned way to change the [corpus](#corpus) it owns.
 One per generated corpus; the planner corpus has none, its cases being
 hand-written golden files.
-<!-- refs: `make_fixtures.py` / `make_fixtures.sh`, one per generated corpus: `entra-token`, `graph-sync`, `tls` -->
+<!-- refs: `make_fixtures.py` / `make_fixtures.sh`, one per generated corpus: `entra-token`, `authentik-token`, `graph-sync`, `tls`; the two token generators share `tokenforge.py` -->
 <!-- avoid: script -->
 
 ### instrument
@@ -83,11 +83,12 @@ reader must not conclude from it; the corpus's own documentation channel.
 
 ### positive
 
-A token [fixture](#fixture-test-corpus) that must verify. Exactly one is
-committed; the second exists only in the [live corpus](#live-corpus), because
-committing it would mean regenerating the whole corpus and moving the
-[validity window](#validity-window) the broker's verifier pins.
-<!-- refs: the pinned window lives in `kerbridge-idp/src/entra/auth.rs` -->
+A token [fixture](#fixture-test-corpus) that must verify. Exactly one per
+token [corpus](#corpus) is committed; Entra's second exists only in the [live
+corpus](#live-corpus), because committing it would mean regenerating the whole
+corpus and moving the [validity window](#validity-window) the broker's verifier
+pins.
+<!-- refs: each pinned window lives in that adapter's `auth.rs`, `kerbridge-idp/src/{entra,authentik}/` -->
 <!-- avoid: good token, happy path -->
 
 ### recorded-shape exchange
@@ -117,9 +118,11 @@ it belongs on bench networks only.
 
 ### validity window
 
-The `nbf`..`exp` span baked into a committed test token. The committed
-[corpus](#corpus) is expired on purpose, so the verifier tests pin a fixed
-clock; the [live corpus](#live-corpus) gets a fresh window instead.
+The span a committed test token is valid over: `nbf`..`exp` where the IdP
+emits an `nbf`, and everything up to `exp` where it does not -- authentik emits
+none. The committed [corpus](#corpus) is expired on purpose, so the verifier
+tests pin a fixed clock; the [live corpus](#live-corpus) gets a fresh window
+instead.
 <!-- avoid: token lifetime, expiry window -->
 
 ### zoo

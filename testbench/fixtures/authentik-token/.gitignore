@@ -1,0 +1,3 @@
+# The token-fixture generator creates a throwaway RSA key on every run and drops it
+# next to the corpus. No key is ever committed -- that is why the fixtures can be.
+signing-key.pem

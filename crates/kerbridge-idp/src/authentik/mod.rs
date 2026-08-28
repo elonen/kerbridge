@@ -13,8 +13,10 @@
 //! `client_id`, and the agent reads them out of the discovery document rather
 //! than out of this file.
 //!
-//! [`identity`] is what makes the two faces agree -- see the crate doc for what
-//! a divergence costs.
+//! `auth` is the token face. [`identity`] is what makes the two faces agree --
+//! see the crate doc for what a divergence costs.
+
+mod auth;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -25,6 +27,8 @@ use kerbridge_core::{ExternalIdentity, IdentityError, Source, is_guid};
 use serde::Deserialize;
 
 use crate::{Probe, discovery_url, get};
+
+pub(crate) use auth::Authentik;
 
 /// authentik's product name, in its own lower-case styling: what the agent says
 /// on screen unless the deployment renames it.
@@ -455,10 +459,11 @@ pub mod tests {
 
     use crate::Verdict;
 
-    /// The commented `application_slug` and `client_id` the template offers.
-    const SLUG: &str = "kerbridge";
-    const CLIENT_ID: &str = "kerbridge";
-    const URL: &str = "https://authentik.example.site";
+    /// The commented `application_slug` and `client_id` the template offers,
+    /// which are also what the token corpus was forged for.
+    pub const SLUG: &str = "kerbridge";
+    pub const CLIENT_ID: &str = "kerbridge";
+    pub const URL: &str = "https://authentik.example.site";
     /// One authentik `uuid`, in the form `str(user.uuid)` produces.
     pub const USER_UUID: &str = "6d1b9c4a-2f3e-4a7b-8c5d-0e1f2a3b4c5d";
 

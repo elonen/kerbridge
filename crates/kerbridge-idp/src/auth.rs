@@ -9,12 +9,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use kerbridge_core::{ExternalIdentity, Source};
 use kerbridge_notify::Notifier;
 use serde::Serialize;
 
-use crate::{IdpSettings, entra};
+use crate::{IdpSettings, authentik, entra};
 
 /// Bring up one source's adapter. The settings variant names the adapter, so a
 /// caller cannot hand one provider's block to another's constructor.
@@ -32,13 +32,9 @@ pub async fn connect(
         IdpSettings::Entra(settings) => {
             Ok(Box::new(entra::Entra::connect(settings, source, notifier, timeout).await?))
         }
-        // A broker that came up without a token face would answer every
-        // sign-in for this source with a 401 and say why nowhere.
-        IdpSettings::Authentik(_) => bail!(
-            "the authentik adapter cannot verify a token in this build -- remove {:?} from \
-             main.sources, or run a build that carries its token face",
-            source.name()
-        ),
+        IdpSettings::Authentik(settings) => {
+            Ok(Box::new(authentik::Authentik::connect(settings, source, notifier, timeout).await?))
+        }
     }
 }
 

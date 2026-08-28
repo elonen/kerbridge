@@ -136,9 +136,9 @@ nothing generates or installs a NEWS file then.
 Only what is below, and nothing else. `crates/` is the implementation now, so the
 Python reference implementations and the spike bring-up scripts are gone.
 
-- `fixtures/` — the corpora `cargo test` loads, and the two generators that are
-  the only way to regenerate them. `entra-token/make_fixtures.py` is also *run*
-  by `make test-stack`.
+- `fixtures/` — the corpora `cargo test` loads, and the generators that are the
+  only way to regenerate them; the two token generators share `tokenforge.py`.
+  `entra-token/make_fixtures.py` is also *run* by `make test-stack`.
 - `authentik/` — the pinned live-Authentik blueprint and authorization-code
   proof that `make test-authentik` runs.
 - `mock-idp/` — the fake OIDC server and approval hook that `make test-stack`

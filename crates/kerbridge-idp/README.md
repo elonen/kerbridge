@@ -44,11 +44,13 @@ tenant.
 
 **authentik** is being built face by face, so this build refuses what it cannot
 yet do rather than half-doing it. It carries the source file's
-`[provider_config]`, the derivations every URL hangs off, and the subject rule
-— enough for `kbconfig` to load and check a source, and for `kbconfig check
---online` to ask the provider the three questions that catch the settings a token
-never shows. It carries no token verification and no directory reader, and both
-`connect`s say so by name rather than starting.
+`[provider_config]`, the derivations every URL hangs off, the subject rule, and
+the **token face** — `kbconfig` loads and checks a source, `kbconfig check
+--online` asks the provider the three questions that catch the settings a token
+never shows, and the broker verifies an access token against the shared
+conformance suite and the forged corpus at
+`testbench/fixtures/authentik-token/`. It carries no directory reader yet, and
+`sync::connect` says so by name rather than starting.
 
 ## What is provider-specific, and therefore lives here
 
@@ -153,9 +155,13 @@ and the failure mode there is a silent authentication bypass.
 Two things follow from the arms being a match rather than a registry. An adapter
 can land face by face, with the faces it has not got refusing by name in their
 own arm; and a helper two adapters come to share moves to a private module here
-— `src/jwt.rs` for the JOSE shapes, `src/lib.rs` for the probe's HTTP — rather
-than becoming a public type, which would make every future adapter's protocol a
-commitment the trait never asked for.
+— `src/jwt.rs` for the JOSE shapes and for the structure, algorithm and
+signature in front of every claim rule, `src/lib.rs` for the probe's HTTP —
+rather than becoming a public type, which would make every future adapter's
+protocol a commitment the trait never asked for. That first one is shared
+because it is where a mistake is an authentication bypass rather than a wrong
+answer; what the claims then have to *say* is never shared, and is why
+`identify` still receives an opaque credential.
 
 Read the IdP's own documentation rather than assuming it resembles Entra's or
 authentik's. The interface is

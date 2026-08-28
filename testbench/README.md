@@ -7,13 +7,18 @@ Nothing here is production code, for testing only.
 | Path | What | Read by |
 |---|---|---|
 | `entra-token/` | signed JWTs + `jwks.json`: a positive delegated token, an RS/PS algorithm sweep, and the negatives (wrong tenant/audience/`azp`/scope, missing `scp` or `oid`, `idtyp=app`, expired, future `nbf`, unknown kid, `alg:none`, `alg:none` under an unknown kid, HS256, HS256 confusion, unknown alg, an alg the key does not publish, malformed tid, iss/tid mismatch, v1 shape, non-JWT garbage). The script also generates a second positive for a different `oid`, which only the live run below uses — see the note there. | `kerbridge-idp/src/entra/auth.rs`, and `deploy/scripts/bench/ci-stack.sh` |
+| `authentik-token/` | signed JWTs + `jwks.json`: one positive access token and the negatives (the neighbouring application's own token, the all-providers issuer mode, an `azp` that disagrees with `aud`, the ID token from the same sign-in, the default `sub_mode`, expired, unknown kid, an alg the key does not publish, `alg:none`, `alg:none` under an unknown kid, HS256, HS256 confusion, unknown alg, the EdDSA an Ed25519 signing key produces, non-JWT garbage). Plus `jwks_empty.json`, the document a provider with no Signing Key publishes. | `kerbridge-idp/src/authentik/auth.rs` |
 | `graph-sync/` | recorded-shape Graph exchanges — delta init/incremental/paging, soft and hard delete, 410 Gone, 429 throttle, transitive members, syncable-rule cases. | `kerbridge-idp/src/entra/wire.rs`, `client.rs` |
 | `planner/` | golden files, each `{admission, desired, current, plan}` — retention, quarantine, admission-group-deleted freeze, ambiguous-identity conflict, role-marker restamp. | `kerbridge-sync/src/planner/mod.rs`, `kerbridge-idp/src/entra/wire.rs` |
 | `tls/` | Two certificates, covering both arms of every branch the client's X.509 reader has: private-CA-issued vs self-signed, subjectAltName vs none, UTCTime vs GeneralizedTime, ASCII vs UTF8String. Nothing presents or trusts these — they are bytes to parse. | `kerbridge-client/src/tls.rs` |
 
 The `make_fixtures` scripts stay because they are the only way to regenerate
-their corpus. Both Python generators take `--out` and default to the corpus they
-live in:
+their corpus. The two token generators share `tokenforge.py`, which owns the
+signing key, the JWKS and the negatives `conformance::Forged` demands, so a
+third IdP inherits `neg_alg_confusion`'s load-bearing assert instead of copying
+it; each corpus forks only its own claim shape and its own claim-level
+negatives. `entra-token` and `graph-sync` take `--out` and default to the corpus
+they live in:
 
 - `entra-token/make_fixtures.py` is **run live** by `make test-stack`:
   `deploy/scripts/bench/ci-stack.sh` runs it in place with `--out` pointing at a
@@ -28,6 +33,11 @@ live in:
   positive would mean regenerating the whole corpus and moving the validity
   window `verify.rs` pins. A future regeneration picks it up; nothing reads it
   from here.
+- `authentik-token/make_fixtures.py` has **no** `--out`: nothing runs this corpus
+  live, because the tier that exercises authentik signs a real user in against a
+  real provider. It carries no algorithm sweep either — that belongs to the
+  shared allowlist rather than to either IdP, and `entra-token` already covers
+  it.
 - `graph-sync/make_fixtures.py` writes the recorded-shape corpus, with the Graph
   documentation each shape follows cited at the top.
 - `tls/make_fixtures.sh` sets literal `notBefore`/`notAfter` values rather than
@@ -35,8 +45,9 @@ live in:
   `.local-tmp/` and are deleted on the way out.
 
 The committed JWTs are time-bound and already expired, so the verifier tests
-inject a fixed clock — which is the right shape for a verifier test anyway. All
-identifiers in the fixtures are synthetic.
+inject a fixed clock — each corpus's window is pinned in the adapter that reads
+it — which is the right shape for a verifier test anyway. All identifiers in the
+fixtures are synthetic.
 
 ## `authentik/` — live blueprint proof
 
