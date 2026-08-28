@@ -171,6 +171,10 @@ uid no longer matched the filesystem ACL. The result was
 `NT_STATUS_ACCESS_DENIED` for the same user who created the file. To recover
 from a changed range, you must also change the owner of every file.
 
+A file server that already holds files cannot use these lines unchanged. No
+`idmap_rid` range reaches a uid below 65534, so the old owners are unreachable.
+See [Map to pre-existing user IDs](pre-existing-uids.md).
+
 ### `valid users` is defense in depth, not the control
 
 - It matches on the group **name**. If you rename the group, the match stops,

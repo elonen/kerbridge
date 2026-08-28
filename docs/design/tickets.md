@@ -214,7 +214,9 @@ does not manage them.
   operator selects. Each member that needs consistent numeric IDs uses the same
   domain mapping range.
 - KerBridge does not assign `uidNumber` or `gidNumber`, and does not solve
-  brownfield file ownership migration.
+  brownfield file ownership migration. An operator who must keep pre-existing
+  uids configures the member for it, by `idmap_ad` or `idmap_script` — see
+  [Map to pre-existing user IDs](../setup/pre-existing-uids.md).
 
 The Research spike `joined-nas-authorization` demonstrated the nested-group and
 ACL chain from end to end:
