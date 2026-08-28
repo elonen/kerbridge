@@ -3,6 +3,7 @@
 target/
 dist/
 CLAUDE.md
+.claude
 
 # Byte-compiled Python, which importing or running any script here leaves beside
 # it. The scripts are the artifact; a .pyc is a copy of one for the interpreter
