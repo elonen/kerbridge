@@ -1,37 +1,18 @@
-# The Compose stack: build it, bootstrap it, run it. The root Makefile forwards
-# every compose-related target here, and each one is equally runnable from
-# deploy/ directly.
-#
-# This file exists because compose has to be invoked from this directory --
-# compose.yaml's build contexts and its secret and Caddyfile bind mounts are all
-# resolved relative to it. It holds targets only; the shell lives in scripts/,
-# which every target calls and which are all runnable by hand.
-#
-# Every target is idempotent: re-running is a no-op, and re-running after a
-# failure resumes where it stopped.
+# Compose resolves build contexts and bind mounts relative to this directory.
+# The root Makefile forwards Compose targets here. Recipes use scripts that also
+# run directly. Targets are idempotent and resume after a failed step.
 
-# Prerequisites are ordered steps here, not independent work -- `make -j` must
-# not reorder a bootstrap into its own preconditions.
+# Bootstrap prerequisites are ordered steps. Do not run them in parallel.
 .NOTPARALLEL:
 
-# `nas1` in compose.nas.yaml is opt-in: `make up NAS=1`, and
-# then NAS=1 on every later target in that deployment. Production leaves it
-# unset and never creates the container.
+# `NAS=1` adds nas1 from compose.nas.yaml. Use it on each later target for that
+# deployment. nas1 uses the DC's port 445, so no external file server can join.
+# `MOCKIDP=1` adds the stand-in OIDC authority for sign-in without a tenant.
+# Both fixtures can run together.
 #
-# COMPOSE_FILE rather than -f, because the scripts in scripts/ all call plain
-# `docker compose` and this is the one form that reaches them too -- one
-# definition, and seeding sees the same file list the `up` did.
-#
-# Teardown needs none of it: scripts/compose/teardown.sh works by project label,
-# so it sees the fixture whether or not the operator remembered NAS=1 here.
-#
-# It also takes the DC's :445 for itself -- see compose.nas.yaml -- so a
-# deployment running the fixture is one no external file server can join.
-#
-# MOCKIDP=1 adds the bench's stand-in OIDC authority, for a client sign-in
-# without a tenant. The two are independent and compose, which is why this
-# accumulates rather than assigning: `make up NAS=1 MOCKIDP=1` is the whole
-# path -- cloud sign-in to a file over SMB -- on one machine and no tenant.
+# Export COMPOSE_FILE because scripts call plain `docker compose` and must use
+# the same overlays. Teardown finds fixtures by project label and does not need
+# these variables.
 COMPOSE_FILES = compose.yaml
 ifdef NAS
 COMPOSE_FILES := $(COMPOSE_FILES):compose.nas.yaml
@@ -39,8 +20,7 @@ endif
 ifdef MOCKIDP
 COMPOSE_FILES := $(COMPOSE_FILES):compose.mockidp.yaml
 endif
-# Left unset when neither is asked for, so a production deployment's environment
-# looks exactly as it did before either fixture existed.
+# Leave COMPOSE_FILE unset when no fixture is selected.
 ifneq ($(COMPOSE_FILES),compose.yaml)
 export COMPOSE_FILE = $(COMPOSE_FILES)
 endif
@@ -49,164 +29,109 @@ endif
         kbmanage-image realm-image test-notification clean-report clean-docker-images \
         clean-docker-volumes check-env check-tls check-config check-secrets
 
-# NOTE: commas. COMPOSE_FILE above uses colons; COMPOSE_ENV_FILES does not.
+# COMPOSE_ENV_FILES uses commas; COMPOSE_FILE uses colons. Export it because
+# scripts call plain `docker compose`. Later files override earlier files, so the
+# operator's .env must follow tracked bench.env. An explicit list
+# replaces Compose's implicit .env.
 #
-# Exported for the reason COMPOSE_FILE is: the scripts in scripts/ all call
-# plain `docker compose`, and this is the one form that reaches them too.
-# bench.env holds the tracked fixtures, .env the operator's own values, and the
-# order matters -- the last file listed wins, so .env must be last or an
-# operator's edit is silently ignored. Setting this at all replaces compose's
-# implicit ./.env rather than adding to it, which is why .env is named.
-#
-# A file listed here that does not exist is a hard error, not a skip, and .env
-# is gitignored -- so a fresh clone falls back to the example. `docker compose
-# build` parses the whole file and validates fields it has interpolated into
-# (extra_hosts rejects the empty string), so without that fallback a clone with
-# no .env fails before reaching a single Dockerfile, naming a host name nobody
-# wrote. Building is not deploying and must not need a deployment's identity.
-# An .env that exists is used as it is, wrong values and all: that one belongs
-# to the operator, and check-env.sh is where it is judged.
+# Compose rejects a missing listed file and validates interpolated fields before
+# a build. Use .env.example only when .env is absent, so a fresh clone can build
+# without a deployment identity. check-env.sh validates an existing .env.
 COMMA := ,
 export COMPOSE_ENV_FILES = bench.env$(COMMA)$(if $(wildcard .env),.env,.env.example)
 
-# The package version, for the `debs` service's build arg. Derived here because
-# debian/Dockerfile carries no `.git` and can derive nothing itself; recursively
-# expanded, so `git describe` runs only for a target that actually builds.
+# debian/Dockerfile has no .git metadata. Recursive expansion derives the package
+# version only for targets that build the `debs` service.
 export KB_VERSION ?= $(shell ../debian/make-changelog --print-version)
 
-# The six .deb files first, then the images that install them; compose orders
-# that itself, because each names the `debs` service as a build context.
+# Compose builds the six packages before images that use `debs` as a build context.
 build:
 	@[ -f .env ] || echo "note: no deploy/.env -- building with .env.example; only caddy's build args read it"
 	docker compose build
 
-# A fresh clone to a running stack. `make up NAS=1` also brings up the example
-# file server; without it the realm comes up alone and you join your own
-# (docs/setup/file-server.md), which is what a real deployment does.
+# `NAS=1` adds the example file server. Without it, join an external file server
+# as described in docs/setup/file-server.md.
 up: kbconfig-image check-env check-tls check-config secrets
-	# --wait, because the next step talks to sam.ldb and `up -d` returns as soon
-	# as the container exists -- provisioning a fresh domain takes far longer than
-	# that. Without it a fresh volume fails on "could not open sam.ldb". Nothing
-	# else here waits: nas1 is opt-in, so its depends_on is not a barrier.
+	# Wait for realm provisioning before the next step accesses sam.ldb. nas1 is
+	# optional, so its dependency does not provide this barrier.
 	docker compose up -d --wait realm $(if $(NAS),nas1)
 	docker compose run --rm setup directory
 	$(MAKE) stack
 	$(MAKE) kbmanage-config
 
-# The rest of the stack, once the directory is bootstrapped. `up -d` returns as
-# soon as the containers exist, so the report is what decides whether this
-# worked -- see scripts/compose/wait-ready.sh for what it would otherwise take a log
-# read to notice.
+# `up -d` returns when containers exist. wait-ready.sh detects later startup
+# failures after directory bootstrap.
 stack: kbconfig-image kbmanage-image check-env check-tls check-config check-secrets
-	# caddy only, and not as a dependency on `build`. Its image is the one whose
-	# correctness follows a .env value rather than source you edited --
-	# TLS_STRATEGY and CADDY_DNS_MODULE are build args, so switching strategy
-	# leaves an image that silently does not match, and compose will not notice.
-	# Cached this is ~0.3s; a full `docker compose build` is 75s, which is the
-	# wrong tax for catching stale Rust you knew you were writing.
+	# Rebuild Caddy because TLS_STRATEGY and CADDY_DNS_MODULE are build arguments.
+	# Compose does not detect a stale image after these .env values change. A cached
+	# Caddy build takes approximately 0.3 seconds; a full build takes 75 seconds.
 	docker compose build caddy
 	docker compose up -d
 	@scripts/compose/wait-ready.sh
 
-# Rebuild just the broker, which is the dev loop for server-side Rust and the one
-# service that cannot be recreated on its own. `docker compose up -d broker` is
-# the reflex and it silently breaks TLS ingress: caddy joined *that* container's
-# network namespace by ID when it started (compose.yaml: network_mode:
-# service:broker), so the recreate leaves caddy attached to a namespace that no
-# longer exists. Nothing then listens on :443, caddy logs nothing, and all five
-# containers still read running. Recreating caddy is the whole fix and costs ~1s.
-#
-# Every other service is safe to `up -d` by hand; only this one is a namespace
-# parent. wait-ready.sh detects the stale state by container identity and names
-# it, for the times this target was not the path taken.
+# Recreate Caddy after the broker. Caddy joins the broker's network namespace by
+# container ID (`network_mode: service:broker`). Recreating only the broker leaves
+# Caddy attached to a deleted namespace, so port 443 stops listening while all
+# containers report running. Recreating Caddy takes approximately one second.
+# wait-ready.sh detects this stale namespace by container identity.
 broker: check-env kbmanage-image
 	docker compose build broker
 	docker compose up -d broker
 	docker compose up -d --force-recreate caddy
 	@scripts/compose/wait-ready.sh
 
-# The same report on its own, against whatever is running.
-#
-# check-secrets first, and that is the point rather than a tidy-up: the Entra
-# credential is written by hand *after* `make up` has already run the check, so
-# nothing judges the one file whose mode an operator actually chooses. This is the
-# command SETUP.md tells them to re-run, so it is where the answer belongs. It
-# fails the target instead of reporting into it, because "sync idle" is the
-# misleading symptom a wrong mode produces.
+# Check secrets before readiness because the operator writes the Entra credential
+# after `make up`. A wrong mode otherwise appears only as "sync idle".
 ready: check-secrets kbmanage-image
 	@scripts/compose/wait-ready.sh
 
-# The realm CA, the CLI's own identity, and the link that makes a host-run
-# kbmanage mean this deployment. Run by `up`, and on its own after a realm
-# rebuild -- which creates a new CA. The CA is refreshed every run;
-# configs/kbmanage.toml and the link are written only if absent.
+# Refresh the realm CA for host-run kbmanage after each realm rebuild.
+# configs/kbmanage.toml and its link are created only when absent.
 kbmanage-config:
 	@scripts/config/kbmanage-config.sh
 
-# What the scripts here read deploy/configs/ through, because shell cannot parse
-# TOML. An image rather than the host binary `make kbconfig` exports: that one is
-# built for the server's architecture and a macOS bench cannot run it. Cheap
-# after the first build -- the layers are the workspace's, shared with the
-# service images.
+# Scripts use this image to parse deploy/configs/. The exported host binary uses
+# the server architecture and cannot run on a macOS bench. Workspace layers make
+# later image builds inexpensive.
 kbconfig-image:
 	docker build -q -f kbconfig/Dockerfile --target dist -t kerbridge-kbconfig .. >/dev/null
 
-# The other one the scripts here run in a container, and for the same reason:
-# the host binary is built for the server's architecture. This one is what the
-# readiness report asks the endpoint with -- see scripts/lib.sh @ kbmanage().
+# Run kbmanage in a container because the exported binary uses the server
+# architecture. scripts/lib.sh uses this image for the readiness endpoint probe.
 kbmanage-image:
 	docker build -q -f kbmanage/Dockerfile --target dist -t kerbridge-kbmanage .. >/dev/null
 
-# The realm image, on its own and before `up` needs it running. It carries
-# /usr/libexec/kerbridge/prepare-state, which `secrets` runs in a throwaway
-# container -- so this is the one build that has to happen before the host tree
-# exists rather than after.
+# Build the realm image before the host tree. `secrets` runs its
+# /usr/libexec/kerbridge/prepare-state helper in a temporary container.
 realm-image:
 	docker compose build realm
 
-# The host tree every container binds a piece of: the directories, and the empty
-# files a compose secret needs a source for. It cannot be done from inside a
-# service container -- the daemon refuses a missing bind source before anything
-# in one runs, and the hardened ones could not set the ownership anyway -- so a
-# throwaway root container prepares it, from the shipped helper. state/ and
-# secrets/ are both gitignored, so a fresh clone has neither.
-#
-# realm-image because it carries the helper. Cached that build is ~0.3s, and it
-# is the one `up` needs two steps later anyway.
+# Prepare gitignored state/ and secrets/ on the host. Docker rejects a missing
+# bind source before a service starts, and hardened services cannot set the
+# required owners. Run the shipped helper in a temporary root container from the
+# realm image. A cached realm build takes approximately 0.3 seconds.
 secrets: kbconfig-image realm-image
 	scripts/compose/bootstrap-secrets.sh
 
-# the OUs, the svc-kerbridge-broker account and one svc-kerbridge-sync-<source>
-# per source with freshly generated passwords, and each delegated source-OU
-# write. Needs a provisioned realm; needs no kbconfig, because `kbsetup` reads
-# the config set in process rather than a subprocess per value.
+# Requires a provisioned realm. kbsetup reads the config set directly, so this
+# target does not need kbconfig.
 directory:
 	docker compose run --rm setup directory
 
-# Bench only: demo user, groups, share ACL. Production never runs this --
-# kerbridge-sync owns its IdP-specific OU's content.
+# Bench only. Production uses kerbridge-sync to manage source OU content.
 seed: kbconfig-image
 	scripts/bench/seed-demo.sh
 
-# Send one synthetic event and report whether the receiver took it. A
-# notification channel can fail as silently as the conditions it reports, so an
-# installation is not finished until this has been seen to arrive in the channel.
-#
-# `run --rm` rather than `exec`: it needs no running service -- the point is to
-# prove the channel on a deployment that is still being set up -- and the
-# arguments after the service name reach the binary as its own.
+# Send a synthetic event and verify that the receiver accepts it. Use `run --rm`
+# because setup can test the channel before any service runs. Arguments after the
+# service name pass to the binary.
 test-notification:
 	docker compose run --rm --no-deps sync --test-notification
 
-# Teardown identifies the project by name instead of parsing compose.yaml, so a
-# missing or broken .env cannot leave an operator unable to stop their own stack.
-# scripts/compose/teardown.sh has the reasoning and what it measured.
+# Teardown finds the project by name, so it works with a missing or invalid .env.
 down:
 	scripts/compose/teardown.sh
 
-# The two Docker rungs of `make clean`. The root Makefile owns `clean` itself --
-# host build output there, nothing from Docker -- and each rung here names the
-# next rather than climbing it. scripts/compose/clean.sh explains why.
 clean-report:
 	@scripts/compose/clean.sh report
 
@@ -216,18 +141,14 @@ clean-docker-images:
 clean-docker-volumes:
 	@scripts/compose/clean.sh volumes $(if $(YES),--yes)
 
-# All four gates refuse rather than warn, and each explains the fix -- see the
-# header comment in each script for why the failure it catches is otherwise
-# silent.
 check-env:
 	@scripts/config/check-env.sh
 
 check-tls:
 	@scripts/compose/check-tls.sh
 
-# The image is a prerequisite rather than an assumption: shell cannot read TOML,
-# so this gate runs the binary in a container, and `make -j` gives no order to a
-# sibling in the same list.
+# The gate parses TOML with kbconfig in a container. Keep the image as an ordered
+# prerequisite because sibling prerequisites have no build order.
 check-config: kbconfig-image
 	@scripts/config/check-config.sh
 

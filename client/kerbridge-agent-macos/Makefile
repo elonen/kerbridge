@@ -1,29 +1,21 @@
-# kerbridge-agent-macos -- the NAS Access menu-bar agent.
-#
-# Built natively: an .app has to be assembled on a Mac, and unlike the Windows
-# half there is no container that can stand in. `make check` is what CI on a Mac
-# runner should run; `make app` produces the bundle a person can actually launch.
+# Build the NAS Access menu-bar agent on macOS. `make check` is the CI target;
+# `make app` creates the application bundle.
 
 BIN     := kerbridge-agent
 APP     := NAS Access.app
-# A release asset is one file, and the name carries the architecture because the
-# bundle is thin: `cargo build` targets the host, and every Mac this ships to is
-# arm64.
+# The bundle is arm64-only, so the release asset name includes the architecture.
 ZIP     := macos-kerbridge-nas-access-gui-arm64.app.zip
 DIST    := ../../dist
-# One version number for the product: the crate's, substituted into Info.plist.
+# Use the crate version in Info.plist.
 VERSION := $(shell sed -n '/^\[package\]/,/^\[/ s/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)
-# The logo is shared with every other platform's packaging; the .icns it is
-# rasterized into is a macOS artifact and stays here.
+# Keep the generated macOS icon beside its packaging files.
 SVG     := ../assets/app-icon.svg
 ICNS    := installer/app-icon.icns
 ICON_SIZES := 16 32 64 128 256 512 1024
 TMP     := .local-tmp/icon
 
-# `app` and `clean` below run `rm -rf` over these, and Make expands an unset
-# variable to the empty string without a word: a name that lost its definition
-# makes that `rm -rf ../../dist/`, which is every shipping artifact including
-# the MSI. Checked at parse time, so it fails before a recipe runs.
+# An empty name makes `rm -rf` target ../../dist/. Reject empty path components
+# before a recipe can remove all release artifacts.
 $(if $(strip $(DIST)),,$(error DIST is empty))
 $(if $(strip $(APP)),,$(error APP is empty))
 $(if $(strip $(ZIP)),,$(error ZIP is empty))
@@ -35,17 +27,14 @@ all: build
 build:
 	cargo build --release
 
-# What CI should run for the macOS half. The core's own tests run here too:
-# unlike the Windows arms, these link against the real Kerberos.framework and
-# libresolv, so they are the thing rather than a compile check.
+# Run core tests against Kerberos.framework and libresolv, not platform stubs.
 check: build
 	cargo clippy --release --all-targets -- -D warnings
 	cargo test
 	cd ../kerbridge-client && cargo test
 
-# The bundle. Ad-hoc signed (`-`), because an unsigned binary cannot use
-# Notification Center at all and a real Developer ID signature is a release-time
-# act by the publisher with a CI secret -- the same split as the unsigned MSI.
+# Apply an ad-hoc signature because Notification Center rejects unsigned
+# binaries. The publisher applies the Developer ID signature during release.
 app: build $(ICNS)
 	rm -rf "$(DIST)/$(APP)"
 	mkdir -p "$(DIST)/$(APP)/Contents/MacOS" "$(DIST)/$(APP)/Contents/Resources"
@@ -55,16 +44,14 @@ app: build $(ICNS)
 	codesign --force --deep --sign - "$(DIST)/$(APP)"
 	@echo "wrote $(abspath $(DIST))/$(APP) (version $(VERSION), ad-hoc signed)"
 
-# The bundle as the single file a release asset has to be. `ditto`, not `zip`:
-# it keeps the bundle's symlinks and its signature, and a `zip -r` archive comes
-# back out failing `codesign --verify`.
+# Use `ditto` because `zip -r` does not preserve a verifiable bundle signature.
 zip: app
 	rm -f "$(DIST)/$(ZIP)"
 	ditto -c -k --keepParent "$(DIST)/$(APP)" "$(DIST)/$(ZIP)"
 	@echo "wrote $(abspath $(DIST))/$(ZIP)"
 
-# Regenerate bundle icon from SVG. Separate from `app` on purpose: only
-# needed when the logo changes, and it pulls in rsvg-convert. Commit the result.
+# Regenerate and commit the icon only when the logo changes. This target requires
+# rsvg-convert; normal application builds do not.
 icon: $(ICNS)
 
 $(ICNS): $(SVG)
@@ -74,8 +61,7 @@ $(ICNS): $(SVG)
 		rsvg-convert -w $$(($$n * 2)) -h $$(($$n * 2)) $(SVG) \
 			-o $(TMP)/app-icon.iconset/icon_$${n}x$${n}@2x.png; \
 	done
-	@# iconutil rejects sizes outside the set it knows, so drop the two the
-	@# loop above produces that it does not want.
+	@# iconutil rejects these generated sizes.
 	@rm -f $(TMP)/app-icon.iconset/icon_1024x1024@2x.png $(TMP)/app-icon.iconset/icon_64x64@2x.png
 	iconutil -c icns -o $(ICNS) $(TMP)/app-icon.iconset
 	@echo "wrote $(ICNS)"
