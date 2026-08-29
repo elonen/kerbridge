@@ -99,6 +99,15 @@ The test has a shared provisioning script and a stack tier.
 It does not name an identity source. `ci-stack.sh` selects Entra, provides the
 source-specific configuration, and runs the assertions.
 
+`scripts/bench/ci-authentik.sh` is the second stack tier — `make test-authentik`
+— and the same shape over the same `provision.sh`. It puts a pinned, live
+authentik on the compose network behind this Caddy on `idp.kbci.test`, so the
+broker fetches real signing keys over TLS instead of reading a key document off
+disk; answering `/config` at all is the proof that fetch succeeded. It then
+checks that sync refuses the authentik source by name, because this build carries
+authentik's token face and not its directory one. Unlike `test-stack` it pulls
+images, so it needs the network.
+
 ## `make up`, step by step
 
 ```mermaid

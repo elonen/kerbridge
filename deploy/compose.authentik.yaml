@@ -1,0 +1,171 @@
+# Source-specific overlay for the authentik stack tier. ci-authentik.sh layers it
+# last: compose.yaml:compose.nas.yaml:compose.ci.yaml:compose.authentik.yaml. It
+# is the authentik counterpart of compose.ci-entra.yaml, and it is not part of a
+# deployment.
+#
+# It stands in for two Entra-tier files at once. The Entra tier is
+# compose.yaml:compose.nas.yaml:compose.mockidp.yaml:compose.ci.yaml:compose.ci-entra.yaml
+# -- a stand-in authority (compose.mockidp.yaml) plus a key document mounted off
+# disk (compose.ci-entra.yaml). authentik replaces both: it *is* the authority,
+# on the compose network behind the same Caddy, and the broker fetches its keys
+# over TLS like any real IdP. So there is no mockidp block here and no jwks mount;
+# there is a live authentik, and the broker's first real JWKS fetch.
+#
+# Ordering is the whole of why this works. The broker's startup JWKS fetch is
+# fatal on failure (kerbridge-idp/src/jwks.rs), so authentik has to be serving the
+# application's signing keys before the broker starts -- which means the blueprint
+# has to be applied first. authentik-init applies it and the broker waits for that
+# to finish; Caddy, sharing the broker's namespace, comes up just after the broker
+# and the broker's fetch succeeds on the retry the crash-loop gives it.
+
+services:
+  # Postgres alone: caching, the embedded outpost and the WebSocket layer moved
+  # into it in 2025.10, so no Redis. Digest-pinned like every bench image.
+  authentik-postgresql:
+    image: docker.io/library/postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    container_name: kerbridge-ci-authentik-postgresql
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: bench-authentik-postgres-password
+    volumes:
+      - authentik-db:/var/lib/postgresql/data
+    networks: [kerbridge]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # The API and the sign-in surface. Tag AND index digest pinned at 2026.8.0:
+  # the floor is 2025.12, and 2026.11.0-rc1 is main's in-development
+  # string, not a release. Reached only through Caddy on idp.kbci.test, never on a
+  # published port -- so its `iss` is always port-443 and matches the source
+  # config the broker derives.
+  authentik-server: &authentik
+    image: ghcr.io/goauthentik/server:2026.8.0@sha256:7421753cfea67e89a6d295a1f0173ccea3866b33768c88dad90453b151cdcfd5
+    container_name: kerbridge-ci-authentik-server
+    command: server
+    environment: &authentik_env
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: bench-authentik-postgres-password
+      AUTHENTIK_SECRET_KEY: bench-only-secret-key-not-for-anything-real
+      # Read on first startup only, targeting `akadmin`. The string becomes the
+      # token key verbatim and carries intent: api, the one intent
+      # TokenAuthentication looks up -- so the blueprint and the healthcheck
+      # both read the API with it.
+      AUTHENTIK_BOOTSTRAP_TOKEN: bench-authentik-bootstrap-token
+      AUTHENTIK_BOOTSTRAP_EMAIL: akadmin@bench.invalid
+      AUTHENTIK_BOOTSTRAP_PASSWORD: bench-akadmin-password
+      AUTHENTIK_LOG_LEVEL: info
+      # Offline forever: admin/tasks.py re-raises the update check when it cannot
+      # reach the internet, which a CI runner cannot, and an unlicensed instance
+      # never degrades on its own (enterprise/license.py).
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_AVATARS: none
+    volumes:
+      # The CI blueprint at a path authentik does NOT auto-discover (/blueprints
+      # is the discovery root): authentik-init applies it once, by absolute path,
+      # so there is no second uncontrolled apply racing the explicit one.
+      - ../testbench/authentik/blueprints/kerbridge-ci.yaml:/kerbridge/kerbridge-ci.yaml:ro
+      # The gate the healthcheck runs; see it below.
+      - ../testbench/authentik/wait_defaults.py:/wait_defaults.py:ro
+    networks: [kerbridge]
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+    # Upstream ships no healthcheck for server or worker. This one is the
+    # ordering pin: /-/health/ready/ goes 200 before the worker has applied
+    # authentik's own default flows and scope mappings, and the CI blueprint
+    # !Finds every one of them. wait_defaults.py returns 0 only once they exist,
+    # so a healthy server is one the blueprint can be applied against -- which is
+    # the condition authentik-init and, through it, the broker wait on.
+    healthcheck:
+      test: ["CMD-SHELL", 'python3 /wait_defaults.py http://localhost:9000 "$$AUTHENTIK_BOOTSTRAP_TOKEN"']
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 20s
+
+  # Same image and env, applying blueprints and running background tasks. No
+  # healthcheck: the server's covers the pair, because both share the database the
+  # gate reads.
+  authentik-worker:
+    <<: *authentik
+    container_name: kerbridge-ci-authentik-worker
+    command: worker
+    healthcheck:
+      disable: true
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+
+  # One-shot: apply the CI fixture, then exit. `ak apply_blueprint` is synchronous
+  # and transactional (a single failed entry rolls the whole file back), and it
+  # talks to the database directly, so it needs no HTTP server -- only the default
+  # objects the server's healthcheck waits for. The broker depends on this
+  # completing, which is what puts the application's signing keys in place before
+  # the broker's fatal startup fetch reaches for them.
+  authentik-init:
+    <<: *authentik
+    container_name: kerbridge-ci-authentik-init
+    command: ["apply_blueprint", "/kerbridge/kerbridge-ci.yaml"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+
+  broker:
+    # The bench CA, where reqwest finds it. tls_built_in_native_certs reads the
+    # OS trust store through openssl-probe, which honours SSL_CERT_FILE; without
+    # this the startup JWKS fetch from idp.kbci.test cannot verify Caddy's leaf
+    # and the broker exits. The Entra tier needs none of this: it mounts a
+    # key document off disk and makes no outbound TLS call at all.
+    environment:
+      SSL_CERT_FILE: /etc/kerbridge-ci-ca/ca.crt
+    volumes:
+      - ${CI_CA_CRT}:/etc/kerbridge-ci-ca/ca.crt:ro
+    # The application's keys must exist before the broker's fatal startup fetch.
+    depends_on:
+      authentik-init:
+        condition: service_completed_successfully
+    networks:
+      kerbridge:
+        # idp.kbci.test resolves to the broker, because Caddy has no namespace of
+        # its own to carry the alias (network_mode: service:broker). Caddy answers
+        # for it and proxies to authentik. Appended to compose.ci.yaml's
+        # BROKER_FQDN alias, not replacing it.
+        aliases: ["${IDP_FQDN}"]
+
+  caddy:
+    # The two-vhost Caddyfile in place of Caddyfile.external: same broker vhost,
+    # plus idp.kbci.test in front of authentik. Overrides the base mount by target
+    # path.
+    volumes:
+      - ./caddy/Caddyfile.ci-authentik:/etc/caddy/Caddyfile:ro
+    environment:
+      # The idp vhost's server name and what it proxies to. authentik-server is a
+      # compose service name, resolved through the broker's namespace DNS that
+      # Caddy shares.
+      IDP_FQDN: ${IDP_FQDN}
+      AUTHENTIK_UPSTREAM: http://authentik-server:9000
+
+  # This build carries no authentik directory face, so the sync daemon would only
+  # crash-loop here: kerbridge_idp::sync::connect refuses the source at startup.
+  # Kept out of `up` -- ci-authentik.sh runs it once with `compose run` to assert
+  # that refusal by name. replicas: 0 rather than a profile, matching the `debs`
+  # service, because `compose run` starts it regardless and a profile would leak
+  # it past a plain `down`.
+  sync:
+    deploy:
+      replicas: 0
+
+volumes:
+  authentik-db:

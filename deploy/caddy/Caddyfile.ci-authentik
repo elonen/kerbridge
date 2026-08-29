@@ -1,0 +1,39 @@
+# TLS strategy for the authentik stack tier only, and never a deployment: the
+# external strategy plus a second vhost that fronts authentik on the same
+# certificate. scripts/bench/ci-authentik.sh selects it by mounting it over
+# /etc/caddy/Caddyfile, the way TLS_STRATEGY picks Caddyfile.external elsewhere.
+#
+# Two vhosts, one certificate. The bench CA signs a leaf whose SAN carries both
+# broker.kbci.test and idp.kbci.test (scripts/bench/provision.sh), so Caddy can
+# answer for either name. The broker vhost is Caddyfile.external's, verbatim; the
+# idp vhost is what makes the broker's JWKS fetch reach a real authentik.
+#
+# The alias idp.kbci.test resolves to the broker, because Caddy shares the
+# broker's network namespace (network_mode: service:broker) and has none of its
+# own to put the alias on. So a request to idp.kbci.test:443 lands here, and this
+# proxies it to authentik on the compose network -- which is why every authentik
+# URL the broker builds is port-443 and its `iss` carries no port.
+{
+	log {
+		level {$CADDY_LOG_LEVEL:INFO}
+	}
+	# The broker shares this namespace, so a TCP admin port would be reachable
+	# from it; the socket is in Caddy's own mount namespace. See Caddyfile.external.
+	admin unix//run/caddy/admin.sock
+	auto_https off
+	import /etc/caddy/timeouts.caddyfile
+}
+
+https://{$BROKER_FQDN}:443 {
+	tls /etc/caddy/tls/broker.crt /etc/caddy/tls/broker.key
+	import /etc/caddy/routes.caddyfile
+}
+
+https://{$IDP_FQDN}:443 {
+	tls /etc/caddy/tls/broker.crt /etc/caddy/tls/broker.key
+	# Plain HTTP to authentik inside the network. Caddy sets X-Forwarded-Proto
+	# and X-Forwarded-Host, and authentik trusts them from an RFC1918 peer, so it
+	# builds https://idp.kbci.test/... and signs that into `iss` -- the value the
+	# broker's source config derives and compares byte for byte.
+	reverse_proxy {$AUTHENTIK_UPSTREAM}
+}

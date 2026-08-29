@@ -139,8 +139,10 @@ Python reference implementations and the spike bring-up scripts are gone.
 - `fixtures/` — the corpora `cargo test` loads, and the generators that are the
   only way to regenerate them; the two token generators share `tokenforge.py`.
   `entra-token/make_fixtures.py` is also *run* by `make test-stack`.
-- `authentik/` — the pinned live-Authentik blueprint and authorization-code
-  proof that `make test-authentik` runs.
+- `authentik/` — the pinned live-Authentik blueprints and the `wait_defaults`
+  gate the `make test-authentik` stack tier applies, plus `authcode.sh`, the
+  standalone authorization-code proof it grew out of and kept for manual
+  iteration. The tier itself is `deploy/scripts/bench/ci-authentik.sh`.
 - `mock-idp/` — the fake OIDC server and approval hook that `make test-stack`
   runs instead of a live tenant.
 - `entra-tenant/` — the tools for driving a live Entra tenant. Kept because they

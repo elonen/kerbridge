@@ -3,7 +3,10 @@
 # Drive Authentik's authorization-code + PKCE flow to a verified token with
 # nothing but curl and a cookie jar. No browser, no human, no headless driver.
 #
-#   make test-authentik           # cold stack, proof, tear down with volume
+# A standalone proof, kept for manual iteration; the `make test-authentik` tier
+# is deploy/scripts/bench/ci-authentik.sh, which stands its own authentik up.
+#
+#   ./authcode.sh                 # cold stack, proof, tear down with volume
 #   ./authcode.sh --keep          # run the proof and leave the stack intact
 #   ./authcode.sh up              # provision the fixture, leave it running
 #   ./authcode.sh flow            # sign in against an already-provisioned stack

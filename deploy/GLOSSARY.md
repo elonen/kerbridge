@@ -205,10 +205,11 @@ external file server can join.
 A `compose.*.yaml` file applied to the base Compose file through the compose-file
 environment variable. The repository has file-server, mock-IdP, CI isolation,
 and stack-tier overlays. Order is significant because a later overlay narrows an
-earlier one. Each [stack tier](#stack-tier) states its complete list. Scripts do
-not use `-f`; they call plain `docker compose`, so only the environment variable
-selects overlays.
-<!-- refs: `COMPOSE_FILE`, `compose.nas.yaml`, `compose.mockidp.yaml`, `compose.ci.yaml`, `compose.ci-entra.yaml` -->
+earlier one. Each [stack tier](#stack-tier) states its complete list -- the Entra
+tier layers `compose.ci-entra.yaml` over the mock IdP, the authentik tier layers
+`compose.authentik.yaml` in its place. Scripts do not use `-f`; they call plain
+`docker compose`, so only the environment variable selects overlays.
+<!-- refs: `COMPOSE_FILE`, `compose.nas.yaml`, `compose.mockidp.yaml`, `compose.ci.yaml`, `compose.ci-entra.yaml`, `compose.authentik.yaml` -->
 <!-- avoid: compose file, extension file, fragment, profile -->
 
 ### provisioning
@@ -302,10 +303,11 @@ the readiness script reports "Stack is up."
 A script that sources `scripts/bench/provision.sh` for one identity source and
 then runs source-specific assertions. A stack tier provides the prerequisites,
 the `.env` fragment, the `idp_<source>.toml` body, and the final Compose overlay.
-`ci-stack.sh`, which implements `make test-stack`, is the Entra stack tier.
+`ci-stack.sh`, which implements `make test-stack`, is the Entra stack tier;
+`ci-authentik.sh`, which implements `make test-authentik`, is the authentik one.
 Stack tiers use vendor names because the supported source types form a closed
 set.
-<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/provision.sh`, `idp_prepare`, `idp_env_lines`, `idp_source_toml` -->
+<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/ci-authentik.sh`, `deploy/scripts/bench/provision.sh`, `idp_prepare`, `idp_env_lines`, `idp_source_toml` -->
 <!-- avoid: the CI profile, the idp profile, the test driver -->
 
 ### `state/`

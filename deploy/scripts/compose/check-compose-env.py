@@ -299,6 +299,7 @@ FILES = [
     "compose.yaml",
     "compose.ci.yaml",
     "compose.ci-entra.yaml",
+    "compose.authentik.yaml",
     "compose.mockidp.yaml",
     "compose.nas.yaml",
 ]
