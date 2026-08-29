@@ -21,11 +21,14 @@
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// `http_status_as_error(false)`: a 4xx or 5xx carries a body the caller wants
-/// to read, not a transport error to unwrap.
+/// to read, not a transport error to unwrap. `https_only(true)` applies to the
+/// initial URL and every redirect, so neither a bad discovery document nor a
+/// broker redirect can move a credential-bearing request onto plaintext.
 pub fn agent() -> ureq::Agent {
     ureq::config::Config::builder()
         .timeout_global(Some(REQUEST_TIMEOUT))
         .http_status_as_error(false)
+        .https_only(true)
         .tls_config(
             ureq::tls::TlsConfig::builder()
                 .provider(ureq::tls::TlsProvider::NativeTls)
@@ -128,4 +131,24 @@ impl std::error::Error for Untrusted {}
 /// this error's chain.
 pub fn untrusted_host(e: &anyhow::Error) -> Option<&str> {
     e.chain().find_map(|cause| cause.downcast_ref::<Untrusted>()).map(|u| u.host.as_str())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// This is checked before DNS or connection setup, so the test proves the
+    /// shared agent's policy without depending on a server or the network.
+    #[test]
+    fn shared_agent_refuses_plaintext_requests() {
+        let err = agent().get("http://127.0.0.1:9/plaintext").call().unwrap_err();
+        assert!(matches!(err, ureq::Error::RequireHttpsOnly(_)), "{err:?}");
+    }
+
+    #[test]
+    fn shared_agent_retains_https_as_an_allowed_scheme() {
+        assert!(agent().config().https_only());
+        let request = agent().get("https://idp.example/discovery");
+        assert_eq!(request.uri_ref().and_then(|uri| uri.scheme_str()), Some("https"));
+    }
 }

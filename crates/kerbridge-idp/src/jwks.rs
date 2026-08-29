@@ -390,9 +390,25 @@ pub(crate) fn http_client(timeout: Duration) -> Result<reqwest::Client> {
         .use_rustls_tls()
         .tls_built_in_native_certs(true)
         .tls_built_in_webpki_certs(true)
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if is_https_downgrade(attempt.previous(), attempt.url()) {
+                attempt.error("refusing HTTPS to HTTP redirect")
+            } else {
+                // Delegate every other decision, including the ten-hop bound,
+                // to reqwest's normal policy. HTTPS redirects remain useful for
+                // IdP migrations; only the transport downgrade is forbidden.
+                reqwest::redirect::Policy::default().redirect(attempt)
+            }
+        }))
         .timeout(timeout)
         .build()
         .context("building the JWKS HTTP client")
+}
+
+/// A chain that has established TLS must never hand the next request (and, for
+/// the directory client, its bearer credential) to plaintext HTTP.
+fn is_https_downgrade(previous: &[reqwest::Url], next: &reqwest::Url) -> bool {
+    previous.last().is_some_and(|url| url.scheme() == "https") && next.scheme() == "http"
 }
 
 async fn fetch(source: &JwksSource, timeout: Duration) -> Result<HashMap<String, RsaKey>> {
@@ -461,6 +477,18 @@ pub fn parse(body: &str) -> Result<HashMap<String, RsaKey>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redirect_policy_refuses_only_a_tls_downgrade() {
+        let https = reqwest::Url::parse("https://idp.example/old").unwrap();
+        let next_https = reqwest::Url::parse("https://idp.example/new").unwrap();
+        let plaintext = reqwest::Url::parse("http://idp.example/new").unwrap();
+        let initial_http = reqwest::Url::parse("http://127.0.0.1/old").unwrap();
+
+        assert!(is_https_downgrade(std::slice::from_ref(&https), &plaintext));
+        assert!(!is_https_downgrade(std::slice::from_ref(&https), &next_https));
+        assert!(!is_https_downgrade(&[initial_http], &plaintext));
+    }
 
     /// The two IdP conditions are told apart by reading the error chain, because
     /// nothing types the answer. A stale root bundle and an unplugged network
