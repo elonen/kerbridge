@@ -20,6 +20,11 @@ use crate::IdpSettings;
 use crate::authentik::sync::AuthentikSource;
 use crate::entra::sync::EntraSource;
 
+/// The cases every adapter's directory face is driven through, from its own test
+/// module. It checks the adapters, so it never ships.
+#[cfg(test)]
+pub(crate) mod conformance;
+
 // ---- the seam ----------------------------------------------------------
 
 /// What one [`DirectorySource::advance`] concluded.

@@ -202,6 +202,7 @@ mod tests {
 
     use super::*;
     use crate::authentik::wire::RawUser;
+    use crate::sync::conformance;
 
     fn corpus(name: &str) -> Value {
         let path = format!(
@@ -246,15 +247,26 @@ mod tests {
     }
 
     /// The class the seam draws from each outcome: only the rejection is spared
-    /// from counting against the source.
+    /// from counting against the source. Driven through the shared conformance,
+    /// which holds Entra's own classified errors to the same biconditional.
     #[test]
     fn only_a_rejected_credential_is_spared_from_counting() {
-        let (s, b) = response("err_403_token_invalid");
-        let PageOutcome::Rejected(why) = classify::<RawUser>(s, &b) else { panic!("not rejected") };
-        assert!(!SourceError::CredentialRejected(why).counts_as_failure());
+        // token_invalid rejects the credential (spared); no_permission and
+        // not_provided refuse the read (counted) -- both sides of the rule.
+        for name in ["err_403_token_invalid", "err_403_no_permission", "err_403_not_provided"] {
+            conformance::credential_rejection_is_the_only_non_failure(&classified(name));
+        }
+    }
 
-        let (s, b) = response("err_403_no_permission");
-        let PageOutcome::Refused(why) = classify::<RawUser>(s, &b) else { panic!("not refused") };
-        assert!(SourceError::Credential(why).counts_as_failure());
+    /// The [`SourceError`] the read builds from a classified 403, mapping each
+    /// terminal [`PageOutcome`] onto its seam class the way [`AuthentikClient`]'s
+    /// own read does.
+    fn classified(name: &str) -> SourceError {
+        let (s, b) = response(name);
+        match classify::<RawUser>(s, &b) {
+            PageOutcome::Rejected(why) => SourceError::CredentialRejected(why),
+            PageOutcome::Refused(why) => SourceError::Credential(why),
+            _ => panic!("{name} did not classify as a terminal error"),
+        }
     }
 }

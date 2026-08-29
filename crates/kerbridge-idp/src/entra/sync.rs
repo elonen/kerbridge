@@ -304,6 +304,7 @@ mod tests {
 
     use super::*;
     use crate::entra::wire::{RawGroup, RawUser};
+    use crate::sync::conformance;
 
     const STORED_CURSOR: &str = "https://graph.microsoft.com/v1.0/users/delta?$deltatoken=stored";
     const STALE_USER: &str = "user-from-the-last-cycle";
@@ -397,6 +398,85 @@ mod tests {
 
     fn raw<T: serde::de::DeserializeOwned>(id: &str) -> T {
         serde_json::from_value(serde_json::json!({ "id": id, "displayName": id })).unwrap()
+    }
+
+    /// A reader whose users cursor is refused on every attempt, so the resync
+    /// never takes: Entra's torn read, the shape authentik meets when a page set
+    /// does not assemble.
+    struct CursorNeverRecovers;
+
+    impl GraphReader for CursorNeverRecovers {
+        async fn acquire_token(&self) -> Result<String, TokenError> {
+            Ok("bearer".to_owned())
+        }
+
+        async fn read_users(
+            &self,
+            _token: &str,
+            _cursor: Option<&str>,
+        ) -> Result<StreamResult<RawUser>> {
+            Ok(StreamResult::CursorCorrupt)
+        }
+
+        async fn read_groups(
+            &self,
+            _token: &str,
+            _cursor: Option<&str>,
+        ) -> Result<StreamResult<RawGroup>> {
+            Ok(StreamResult::Complete { items: Vec::new(), delta_link: Some("g".to_owned()) })
+        }
+    }
+
+    /// A bare source, enough to reach [`EntraSource::read`]. The notifier is
+    /// disabled: these tests read `read`'s return, not its alarms.
+    fn bare_source() -> EntraSource {
+        EntraSource {
+            source: "entra".to_owned(),
+            tenant_id: String::new(),
+            client_id: "11111111-1111-1111-1111-111111111111".to_owned(),
+            credential_file: PathBuf::from("/nonexistent/credential"),
+            credential_expires: None,
+            admission_group_id: "77778888-bbbb-9999-cccc-0000dddd1111".to_owned(),
+            grant_group_id: None,
+            allowlist: Vec::new(),
+            sam_source: SamSource::default(),
+            notifier: Arc::new(Notifier::disabled("sync")),
+            shadow: Shadow::default(),
+            users_cursor: Some(STORED_CURSOR.to_owned()),
+            groups_cursor: Some(STORED_CURSOR.to_owned()),
+        }
+    }
+
+    /// A read that cannot be made whole yields no snapshot, driven through the
+    /// shared conformance. Entra's torn read is a cursor still refused after a
+    /// full resync, the reader-level analogue of authentik's un-assemblable pages.
+    #[tokio::test]
+    async fn a_read_that_never_recovers_yields_no_snapshot() {
+        let mut source = bare_source();
+        let verdict = match source.read(&CursorNeverRecovers).await {
+            Ok(Progress::Complete(_)) => conformance::Verdict::Snapshot,
+            Ok(Progress::Idle(why)) => panic!("idle is not a torn read: {why}"),
+            Err(e) => conformance::Verdict::Refused(e.to_string()),
+        };
+        let why = conformance::a_torn_read_yields_no_snapshot(verdict);
+        assert!(why.contains("still refused after a full resync"), "{why}");
+    }
+
+    /// Only a rejected credential is spared from counting, driven through the
+    /// shared conformance over the classes Entra's own paths build: the rejection
+    /// `read` raises from a dead token, and the errors `transport` maps.
+    #[test]
+    fn only_a_rejected_credential_is_spared_from_counting() {
+        let errs = [
+            SourceError::CredentialRejected("the app secret expired".to_owned()),
+            transport(anyhow::anyhow!("the tenant did not answer")),
+            SourceError::NotWhole(
+                "a delta cursor was still refused after a full resync".to_owned(),
+            ),
+        ];
+        for err in &errs {
+            conformance::credential_rejection_is_the_only_non_failure(err);
+        }
     }
 
     /// A loopback webhook keeping every body posted to it, so "once" is a count.

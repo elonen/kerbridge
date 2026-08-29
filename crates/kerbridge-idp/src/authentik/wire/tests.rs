@@ -1,7 +1,7 @@
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::*;
-use crate::sync::build_desired;
+use crate::sync::{build_desired, conformance};
 
 /// The one group the corpus admits people through -- the pk the golden's closure
 /// starts from.
@@ -27,22 +27,20 @@ fn group_page(name: &str) -> Page<RawGroup> {
     serde_json::from_value(body(name)).unwrap()
 }
 
-/// The whole read the four recorded pages make, as the snapshot the mirror
-/// receives -- serialized the way `golden.json` records it.
-fn snapshot(users: &[Page<RawUser>], groups: &[Page<RawGroup>]) -> Value {
-    let read = assemble(users, groups).expect("a whole read");
-    let admission = Subject::new(ADMISSION);
-    let (desired, refused) = build_desired(read, &admission, &[]);
-    json!({
-        "admission": admission,
-        "grant": Option::<Subject>::None,
-        "refused": refused,
-        "desired": desired,
-    })
+/// Assemble a set of named pages into the seam's [`Verdict`](conformance::Verdict):
+/// a whole read is a snapshot, a refused one carries its reason.
+fn verdict(users: &[&str], groups: &[&str]) -> conformance::Verdict {
+    let u: Vec<Page<RawUser>> = users.iter().map(|n| user_page(n)).collect();
+    let g: Vec<Page<RawGroup>> = groups.iter().map(|n| group_page(n)).collect();
+    match assemble(&u, &g) {
+        Ok(_) => conformance::Verdict::Snapshot,
+        Err(why) => conformance::Verdict::Refused(why),
+    }
 }
 
 /// The crux: the four pages, narrowed to the admission closure, are the golden
-/// desired state byte for byte.
+/// desired state byte for byte -- driven through the shared conformance so the
+/// same assertion holds Entra's corpus too.
 ///
 /// The golden is an independent hand-derivation, so this is where it and the
 /// reader cross-check each other. Five of thirteen users and six of eleven
@@ -51,18 +49,17 @@ fn snapshot(users: &[Page<RawUser>], groups: &[Page<RawGroup>]) -> Value {
 /// a cycle whose two nodes name each other.
 #[test]
 fn the_four_pages_reproduce_the_golden_desired_state() {
-    let users = [user_page("users_page1"), user_page("users_page2")];
-    let groups = [group_page("groups_page1"), group_page("groups_page2")];
-    let got = snapshot(&users, &groups);
-
-    let golden = corpus("golden");
-    let want = json!({
-        "admission": golden["admission"],
-        "grant": golden["grant"],
-        "refused": golden["refused"],
-        "desired": golden["desired"],
-    });
-    assert_eq!(got, want);
+    let read = assemble(
+        &[user_page("users_page1"), user_page("users_page2")],
+        &[group_page("groups_page1"), group_page("groups_page2")],
+    )
+    .expect("a whole read");
+    conformance::whole_read_reproduces_golden(
+        read,
+        &Subject::new(ADMISSION),
+        &[],
+        &corpus("golden")["desired"],
+    );
 }
 
 /// Nothing filters an account, so the refusal list is empty and the population
@@ -90,9 +87,10 @@ fn nothing_is_refused_and_a_held_service_account_is_kept() {
 /// refused with no snapshot rather than a population quietly short one person.
 #[test]
 fn a_deleted_user_lowers_the_count_and_refuses_the_read() {
-    let users = [user_page("users_page1"), user_page("neg_torn_read_user_delete")];
-    let groups = [group_page("groups_page1"), group_page("groups_page2")];
-    let why = assemble(&users, &groups).expect_err("the count fell");
+    let why = conformance::a_torn_read_yields_no_snapshot(verdict(
+        &["users_page1", "neg_torn_read_user_delete"],
+        &["groups_page1", "groups_page2"],
+    ));
     assert!(why.contains("deleted mid-read"), "{why}");
 }
 
@@ -101,9 +99,10 @@ fn a_deleted_user_lowers_the_count_and_refuses_the_read() {
 /// catches it -- the detector the delete case cannot exercise.
 #[test]
 fn an_inserted_group_repeats_a_pk_and_refuses_the_read() {
-    let users = [user_page("users_page1"), user_page("users_page2")];
-    let groups = [group_page("groups_page1"), group_page("neg_torn_read_group_insert")];
-    let why = assemble(&users, &groups).expect_err("a pk repeated");
+    let why = conformance::a_torn_read_yields_no_snapshot(verdict(
+        &["users_page1", "users_page2"],
+        &["groups_page1", "neg_torn_read_group_insert"],
+    ));
     assert!(why.contains("inserted or repeated"), "{why}");
 }
 
@@ -112,9 +111,10 @@ fn an_inserted_group_repeats_a_pk_and_refuses_the_read() {
 /// once. The page is otherwise structurally perfect.
 #[test]
 fn a_non_canonical_uuid_refuses_the_whole_cycle() {
-    let users = [user_page("neg_uuid_noncanonical"), user_page("users_page2")];
-    let groups = [group_page("groups_page1"), group_page("groups_page2")];
-    let why = assemble(&users, &groups).expect_err("a uuid was not canonical");
+    let why = conformance::a_torn_read_yields_no_snapshot(verdict(
+        &["neg_uuid_noncanonical", "users_page2"],
+        &["groups_page1", "groups_page2"],
+    ));
     assert!(why.contains("not canonical lowercase"), "{why}");
 }
 
@@ -122,9 +122,10 @@ fn a_non_canonical_uuid_refuses_the_whole_cycle() {
 /// construction, so it refuses the whole read.
 #[test]
 fn a_dangling_member_id_refuses_the_read() {
-    let users = [user_page("users_page1"), user_page("users_page2")];
-    let groups = [group_page("groups_page1"), group_page("neg_dangling_member")];
-    let why = assemble(&users, &groups).expect_err("a member id dangled");
+    let why = conformance::a_torn_read_yields_no_snapshot(verdict(
+        &["users_page1", "users_page2"],
+        &["groups_page1", "neg_dangling_member"],
+    ));
     assert!(why.contains("member user pk 900"), "{why}");
 }
 

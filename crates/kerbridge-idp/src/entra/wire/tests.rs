@@ -1,5 +1,5 @@
 use super::*;
-use crate::sync::{Desired, build_desired};
+use crate::sync::{Desired, build_desired, conformance};
 
 const ADMISSION: &str = "4e8a1c9d-5f6b-4d7e-b8a9-001122334455";
 const PROJX: &str = "77770001-aaaa-bbbb-cccc-000000000001";
@@ -112,9 +112,18 @@ fn held_guest_reproduces_the_s13_desired_state() {
     assert_eq!(d, desired_fixture("S13_held_guest_upn_name"));
 }
 
+/// The initial full read, narrowed to the population, is the S1 desired state --
+/// driven through the shared conformance, which holds authentik's corpus to the
+/// same assertion. Entra reaches [`build_desired`] from a shadow rather than a
+/// page set, so this is where the seam is checked against a second shape.
 #[test]
 fn initial_read_reproduces_the_s1_desired_state() {
-    assert_eq!(built(&initial_shadow()), desired_fixture("S1_initial_full_sync"));
+    conformance::whole_read_reproduces_golden(
+        initial_shadow().enumerate(SamSource::Upn),
+        &sub(ADMISSION),
+        &[sub(PROJX)],
+        &desired_fixture("S1_initial_full_sync"),
+    );
 }
 
 #[test]
