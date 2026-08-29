@@ -52,7 +52,7 @@ port. It tests provisioning, bootstrap scripts, the LDAPS bind, the issuer
 socket, the KDC, and a member's PAC. It is not a deployment method.
 `scripts/bench/provision.sh` creates the stack and waits for `/config`; each
 [stack tier](#stack-tier) sources it.
-<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/provision.sh`, project `kerbridge-ci` -->
+<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/provision.sh`, project `${CI_PROJECT}` -->
 <!-- avoid: the test stack -->
 
 ### config set

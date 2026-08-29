@@ -77,9 +77,10 @@ defaults in `deploy/.env.example` and `seed-demo.sh`.
 
 They are in `deploy/` rather than under `testbench/` for two mechanical reasons:
 
-- `make test-stack` stages a disposable tree from the *tracked* files
-  (`git ls-files` → `.local-tmp/ci-tree`) and works only there, so a fixture the
-  deploy scripts need has to be committed to exist inside that tree at all.
+- Each stack tier stages a disposable tree from the *tracked* files (`git
+  ls-files` → its own directory under `.local-tmp/`) and works only there, so a
+  fixture the deploy scripts need has to be committed to exist inside that tree
+  at all.
 - Compose and those scripts read it beside `.env`, relative to the compose
   project directory: `COMPOSE_ENV_FILES=bench.env,.env`, and the scripts source
   the same pair in the same order.

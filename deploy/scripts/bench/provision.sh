@@ -16,10 +16,11 @@
 # The checks below validate this contract before the build. `make test` also
 # verifies that this file does not name an identity source.
 #
-# The script copies tracked and unignored working-tree files to
-# .local-tmp/ci-tree. Gitignored deployment data, including .env and secrets/,
-# is not copied. The CI project also uses separate container names, volumes, a
-# subnet, and a published port. It can run while the development bench is up.
+# The script copies tracked and unignored working-tree files to a disposable
+# tree under .local-tmp/. Gitignored deployment data, including .env and
+# secrets/, is not copied. Each tier also uses separate container names,
+# volumes, a subnet, and a published port -- see the namespace block below. It
+# can run while the development bench is up, and while another tier is.
 # The default teardown removes its volumes; `--keep` preserves them.
 
 # shellcheck shell=bash
@@ -39,7 +40,17 @@ for hook in idp_prepare idp_env_lines idp_source_toml; do
     die "the tier must define $hook() before sourcing provision.sh"
 done
 
-PROJECT=kerbridge-ci
+# The tier's namespace: everything two tiers must not share. Each one is an
+# environment override, so a tier states its own before it sources this file,
+# and the defaults are the stack tier's values unchanged. None of them names an
+# identity source, which is what keeps this file reusable.
+#
+# The container names derive from CI_PROJECT too -- compose.ci.yaml and the tier
+# overlays interpolate it -- because a `container_name` is global and a project
+# name alone separates nothing.
+PROJECT=${CI_PROJECT:-kerbridge-ci}
+SUBNET=${CI_SUBNET:-172.29.0.0/24}
+PORT=${CI_HTTPS_PORT:-8443}
 REALM=KBCI.TEST
 DOMAIN=kbci.test
 NETBIOS=KBCI
@@ -51,10 +62,14 @@ FQDN=broker.$DOMAIN
 IDP_FQDN=idp.$DOMAIN
 # Derive the base DN so it cannot diverge from DOMAIN.
 BASE_DN=DC=${DOMAIN//./,DC=}
-SUBNET=172.29.0.0/24
-REALM_IP=172.29.0.10
-NAS_IP=172.29.0.20
-PORT=${CI_HTTPS_PORT:-8443}
+# The realm and the member take fixed hosts in whichever /24 the tier chose, so
+# a subnet written any other way would silently produce two unusable addresses.
+case $SUBNET in
+  *.0/24) ;;
+  *) die "CI_SUBNET is $SUBNET; it has to be a /24 written x.y.z.0/24, because the realm and the member take .10 and .20 in it";;
+esac
+REALM_IP=${SUBNET%.0/24}.10
+NAS_IP=${SUBNET%.0/24}.20
 USER_NAME=alice
 # seed-demo.sh maps this token object ID to $USER_NAME in the directory.
 OID=33334444-dddd-5555-eeee-6666ffff7777
@@ -98,7 +113,7 @@ done
 # The published port is the only resource that the Compose project does not
 # isolate. Check it before copying files or building images. The development
 # bench also uses 8443 by default.
-python3 - "$PORT" <<'EOF' || die "port $PORT is already published (the bench's authority overlay takes 8443) -- rerun with CI_HTTPS_PORT=<free port>"
+python3 - "$PORT" <<'EOF' || die "port $PORT is already published (the bench's authority overlay takes 8443, and each tier defaults to one of its own) -- rerun with CI_HTTPS_PORT=<free port>"
 import socket, sys
 s = socket.socket()
 try:
@@ -117,7 +132,10 @@ if [ -z "${KB_CI_TREE:-}" ]; then
   toplevel=$(git -C "$(dirname "$0")" rev-parse --show-toplevel) ||
     die "not inside a git checkout"
   cd "$toplevel"
-  TREE=$PWD/.local-tmp/ci-tree
+  # One tree per project. A tier's `rm -rf` below would otherwise delete the
+  # tree another tier's kept containers are still bind-mounting configs/,
+  # secrets/tls/ and the CA out of.
+  TREE=${CI_TREE:-$PWD/.local-tmp/${PROJECT#kerbridge-}-tree}
   say "staging a disposable tree at $TREE"
   rm -rf "$TREE"
   mkdir -p "$TREE"
@@ -166,6 +184,9 @@ AD_DC_HOSTNAME=kerbridge
 BROKER_FQDN=$FQDN
 TLS_STRATEGY=external
 CI_HTTPS_PORT=$PORT
+# The container names in compose.ci.yaml and the tier overlays. A fixed
+# `container_name` is global, so this is what lets two tiers run at once.
+CI_PROJECT=$PROJECT
 # compose.ci.yaml mounts the client and CA into nas1. The tier fragment adds its
 # sign-in helper.
 CI_CLIENT_BIN=$CLIENTDIR/kerbridge

@@ -37,6 +37,14 @@ SOURCE=authentik
 # here -- authentik is the authority, not a stand-in for one.
 export COMPOSE_FILE=compose.yaml:compose.nas.yaml:compose.ci.yaml:compose.authentik.yaml
 
+# This tier's namespace, one step along from the stack tier's, so the two can
+# run at once rather than colliding on the project, the container names, the
+# subnet and the published port. provision.sh holds the defaults and says what
+# each one separates.
+: "${CI_PROJECT:=kerbridge-ci-authentik}"
+: "${CI_SUBNET:=172.30.0.0/24}"
+: "${CI_HTTPS_PORT:=8444}"
+
 # The constant bench sync credential -- the API token sync reads the directory
 # with. It is the token the blueprint sets on the read-only service account, so
 # the two are one value. authentik makes an API token unreadable after creation,

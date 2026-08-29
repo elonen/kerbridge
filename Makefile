@@ -261,11 +261,15 @@ test-fast:
 		done; \
 	done
 	@# provision.sh must not depend on one identity source. Otherwise, one tier can
-	@# pass while the shared provisioning code is no longer reusable.
+	@# pass while the shared provisioning code is no longer reusable. Every source
+	@# any tier uses belongs in the pattern, not only the first one.
 	@#
 	@# In ci-stack.sh, source-specific terms are valid only in comments, SOURCE and
-	@# TENANT declarations, COMPOSE_FILE, and the three idp_* hook bodies.
-	@if grep -inE 'mock-?idp|entra' deploy/scripts/bench/provision.sh; then \
+	@# TENANT declarations, COMPOSE_FILE, and the three idp_* hook bodies. There is
+	@# no counterpart for ci-authentik.sh: that tier states its own source in the
+	@# assertions it prints, so the same gate would refuse prose it is right to
+	@# have. The guard that matters is the one above, on the shared file.
+	@if grep -inE 'mock-?idp|entra|authentik' deploy/scripts/bench/provision.sh; then \
 		echo "FAIL: deploy/scripts/bench/provision.sh contains the source-specific lines above" >&2; \
 		echo "      shared provisioning code must not name an identity source" >&2; \
 		exit 1; \
@@ -361,15 +365,18 @@ test-mac:
 test-build: build-docker installer
 
 # Test authentik sign-in and a directory (IdP) read through an SMB file read.
-# This tier uses a disposable project under .local-tmp/ and pulls pinned external
-# images. `ARGS=--keep` preserves the stack.
+# This tier uses a disposable project, subnet, port and tree of its own under
+# .local-tmp/ -- distinct from test-stack's, so the two can run at once -- and
+# pulls pinned external images. `ARGS=--keep` preserves the stack.
 test-authentik:
 	deploy/scripts/bench/ci-authentik.sh $(ARGS)
 
 # Test sign-in through an SMB file read against a new realm without a tenant or
-# secret. The disposable stack uses a separate project, container names, and
-# subnet under .local-tmp/. Its HTTPS port defaults to 8443; CI_HTTPS_PORT
-# overrides it. ARGS=--keep preserves the stack.
+# secret. The disposable stack uses a separate project, container names, subnet
+# and tree under .local-tmp/, so it runs beside a bench and beside the other
+# tier. Its HTTPS port defaults to 8443; CI_HTTPS_PORT overrides it, as
+# CI_PROJECT, CI_SUBNET and CI_TREE override the rest. ARGS=--keep preserves
+# the stack.
 test-stack:
 	deploy/scripts/bench/ci-stack.sh $(ARGS)
 

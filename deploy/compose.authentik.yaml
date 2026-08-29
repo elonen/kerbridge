@@ -26,7 +26,7 @@ services:
   # into it in 2025.10, so no Redis. Digest-pinned like every bench image.
   authentik-postgresql:
     image: docker.io/library/postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
-    container_name: kerbridge-ci-authentik-postgresql
+    container_name: ${CI_PROJECT:-kerbridge-ci}-postgresql
     environment:
       POSTGRES_DB: authentik
       POSTGRES_USER: authentik
@@ -48,7 +48,7 @@ services:
   # config the broker derives.
   authentik-server: &authentik
     image: ghcr.io/goauthentik/server:2026.8.0@sha256:7421753cfea67e89a6d295a1f0173ccea3866b33768c88dad90453b151cdcfd5
-    container_name: kerbridge-ci-authentik-server
+    container_name: ${CI_PROJECT:-kerbridge-ci}-server
     command: server
     environment: &authentik_env
       AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
@@ -104,7 +104,7 @@ services:
   # gate reads.
   authentik-worker:
     <<: *authentik
-    container_name: kerbridge-ci-authentik-worker
+    container_name: ${CI_PROJECT:-kerbridge-ci}-worker
     command: worker
     healthcheck:
       disable: true
@@ -120,7 +120,7 @@ services:
   # the broker's fatal startup fetch reaches for them.
   authentik-init:
     <<: *authentik
-    container_name: kerbridge-ci-authentik-init
+    container_name: ${CI_PROJECT:-kerbridge-ci}-init
     command: ["apply_blueprint", "/blueprints/kerbridge/kerbridge-ci.yaml"]
     restart: "no"
     healthcheck:
