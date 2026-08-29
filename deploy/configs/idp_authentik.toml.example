@@ -174,3 +174,26 @@
 # REQUIRED. KerBridge does not start until this line is completed.
 # Example: "/etc/kerbridge.secrets/idp/authentik/credential"
 #sync_credential_file =
+
+# The group whose members may hold Kerberos tickets, by the group's pk (a uuid).
+# Nothing works without one: with no admission group sync mirrors no users and
+# every sign-in is a 403. The blueprint reports the pk after it creates the
+# group, and authentik shows it on the group's page.
+#
+# The pk, and not the name: a group that is renamed keeps its pk, while a name
+# can come to answer for a group you did not choose. Repointing at a different
+# group retires every user the new one does not admit.
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"
+#admission_group_id =
+
+# Pks of further groups to mirror, beyond those reachable from the admission
+# group.
+#extra_group_ids = []
+
+# The group whose members may activate a device grant, by pk as above. Unset is
+# a deployment with no device-grant group and therefore no working grants,
+# whatever main.toml's device_grant_days says: the broker finds the group by its
+# marker. docs/setup/device-grants.md.
+# Example: "1b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e"
+#device_grant_group_id =

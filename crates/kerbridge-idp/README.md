@@ -42,15 +42,19 @@ the directory one — and `src/sync/` is the seam they meet the mirror at.
 **Entra** is complete on both faces, and is the one measured against a live
 tenant.
 
-**authentik** is being built face by face, so this build refuses what it cannot
-yet do rather than half-doing it. It carries the source file's
-`[provider_config]`, the derivations every URL hangs off, the subject rule, and
-the **token face** — `kbconfig` loads and checks a source, `kbconfig check
+**authentik** carries **both faces**. The **token face** is the source
+file's `[provider_config]`, the derivations every URL hangs off, the subject
+rule and the verifier: `kbconfig` loads and checks a source, `kbconfig check
 --online` asks the provider the three questions that catch the settings a token
 never shows, and the broker verifies an access token against the shared
 conformance suite and the forged corpus at
-`testbench/fixtures/authentik-token/`. It carries no directory reader yet, and
-`sync::connect` says so by name rather than starting.
+`testbench/fixtures/authentik-token/`. The **directory face**
+(`src/authentik/{sync,client,wire}.rs`) is a full REST read every cycle —
+authentik has no delta, no group-side change filter and invisible deletions, so
+a torn read is refused rather than mirrored short a person, a dangling id refuses
+the whole read, and nothing filters an account below the admission closure. It
+is validated with no container against `testbench/fixtures/authentik-directory/`,
+golden included.
 
 ## What is provider-specific, and therefore lives here
 

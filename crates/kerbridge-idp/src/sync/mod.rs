@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::IdpSettings;
+use crate::authentik::sync::AuthentikSource;
 use crate::entra::sync::EntraSource;
 
 // ---- the seam ----------------------------------------------------------
@@ -159,11 +160,9 @@ pub fn connect(
 ) -> anyhow::Result<Box<dyn DirectorySource>> {
     match settings {
         IdpSettings::Entra(entra) => Ok(Box::new(EntraSource::new(entra, source, notifier))),
-        IdpSettings::Authentik(_) => anyhow::bail!(
-            "source {source}: the authentik adapter reads no directory in this build, so this \
-             source would mirror nobody -- remove {source:?} from main.sources, or run a build \
-             that carries its directory face"
-        ),
+        IdpSettings::Authentik(authentik) => {
+            Ok(Box::new(AuthentikSource::new(authentik, source, notifier)))
+        }
     }
 }
 

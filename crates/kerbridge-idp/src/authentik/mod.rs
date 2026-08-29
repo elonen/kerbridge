@@ -17,12 +17,18 @@
 //! see the crate doc for what a divergence costs.
 
 mod auth;
+#[cfg(feature = "sync")]
+mod client;
+#[cfg(feature = "sync")]
+pub(crate) mod sync;
+#[cfg(feature = "sync")]
+mod wire;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use kerbridge_core::{ExternalIdentity, IdentityError, Source, is_guid};
 use serde::Deserialize;
 
@@ -147,6 +153,16 @@ pub struct Settings {
     /// reports an API token's own expiry to the bearer, so the adapter measures
     /// it rather than asking the operator to assert it.
     pub sync_credential_file: PathBuf,
+    /// Who may hold Kerberos tickets, by the group's pk (a uuid). Required: with
+    /// no admission group sync mirrors nobody and every sign-in is a 403. The
+    /// operator reads the pk back after the blueprint creates the group.
+    pub admission_group_id: String,
+    /// Who may activate a device grant, by the group's pk. `None` is a
+    /// deployment with no device-grant group and therefore no working grants --
+    /// the broker finds the group by its marker.
+    pub device_grant_group_id: Option<String>,
+    /// Groups to mirror beyond those reachable from the admission group, by pk.
+    pub extra_group_ids: Vec<String>,
 }
 
 /// The file's own shape, before the derived defaults.
@@ -189,6 +205,12 @@ struct Raw {
     jwks_url: Option<String>,
     #[cfg_attr(feature = "schema", schemars(example = &"/etc/kerbridge.secrets/idp/authentik/credential"))]
     sync_credential_file: PathBuf,
+    #[cfg_attr(feature = "schema", schemars(example = &"0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"))]
+    admission_group_id: String,
+    #[cfg_attr(feature = "schema", schemars(example = &"1b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e"))]
+    device_grant_group_id: Option<String>,
+    #[serde(default)]
+    extra_group_ids: Vec<String>,
 }
 
 /// What [`Raw`] says about its own shape, as JSON Schema.
@@ -212,6 +234,12 @@ impl Settings {
             .try_into()
             .context("[provider_config], for an authentik source")?;
 
+        let admission_group_id = group_id(raw.admission_group_id, "admission_group_id")?;
+        let device_grant_group_id = raw
+            .device_grant_group_id
+            .map(|id| group_id(id, "device_grant_group_id"))
+            .transpose()?;
+
         Ok(Self {
             issuer: raw.issuer.unwrap_or_else(|| issuer(&raw.url, &raw.application_slug)),
             authority: raw.authority.unwrap_or_else(|| authority(&raw.url, &raw.application_slug)),
@@ -222,8 +250,30 @@ impl Settings {
             client_id: raw.client_id,
             display_name: raw.display_name,
             sync_credential_file: raw.sync_credential_file,
+            admission_group_id,
+            device_grant_group_id,
+            extra_group_ids: raw.extra_group_ids,
         })
     }
+}
+
+/// Check a group pk's shape. The likely mistake is the group's *name* pasted in
+/// place of its pk, which would otherwise surface only as a realm that admits
+/// nobody. A uuid is authentik's own key spelling, the same one every subject
+/// carries.
+fn group_id(id: String, key: &str) -> Result<String> {
+    // Folded first, because `is_guid` takes only the canonical lowercase form:
+    // an upper-cased pk is still a pk, and this refuses a mistake rather than a
+    // spelling. The stored value keeps the operator's own casing, and a pk that
+    // does not match a group the read returns freezes the cycle rather than
+    // repointing onto the wrong group.
+    if !is_guid(&id.to_ascii_lowercase()) {
+        bail!(
+            "[provider_config]: {key} is not a group pk (a uuid): {id:?} -- authentik shows it on \
+             the group's page, and the blueprint reports it after it creates the group"
+        );
+    }
+    Ok(id)
 }
 
 /// This source's settings as `kbconfig get` answers them, keyed by the file's
@@ -246,6 +296,9 @@ pub(crate) fn paths(settings: &Settings) -> BTreeMap<String, String> {
         ("jwks_url", settings.jwks_url.clone()),
         ("display_name", settings.display_name.clone()),
         ("sync_credential_file", settings.sync_credential_file.display().to_string()),
+        ("admission_group_id", settings.admission_group_id.clone()),
+        ("device_grant_group_id", settings.device_grant_group_id.clone().unwrap_or_default()),
+        ("extra_group_ids", settings.extra_group_ids.join("\n")),
     ]
     .into_iter()
     .map(|(key, value)| (key.to_owned(), value))
@@ -451,6 +504,26 @@ pub(crate) const AUTHENTIK_SRC: &str = r#"# authentik: one OAuth2 provider and o
 # than asking you to assert it -- but only if you left "Expiring" on when you
 # created the token.
 {{sync_credential_file}}
+
+# The group whose members may hold Kerberos tickets, by the group's pk (a uuid).
+# Nothing works without one: with no admission group sync mirrors no users and
+# every sign-in is a 403. The blueprint reports the pk after it creates the
+# group, and authentik shows it on the group's page.
+#
+# The pk, and not the name: a group that is renamed keeps its pk, while a name
+# can come to answer for a group you did not choose. Repointing at a different
+# group retires every user the new one does not admit.
+{{admission_group_id}}
+
+# Pks of further groups to mirror, beyond those reachable from the admission
+# group.
+{{extra_group_ids}}
+
+# The group whose members may activate a device grant, by pk as above. Unset is
+# a deployment with no device-grant group and therefore no working grants,
+# whatever main.toml's device_grant_days says: the broker finds the group by its
+# marker. docs/setup/device-grants.md.
+{{device_grant_group_id}}
 "#;
 
 #[cfg(test)]
@@ -464,6 +537,8 @@ pub mod tests {
     pub const SLUG: &str = "kerbridge";
     pub const CLIENT_ID: &str = "kerbridge";
     pub const URL: &str = "https://authentik.example.site";
+    /// The admission group's pk, as the template's example states it.
+    pub const GROUP_ID: &str = "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d";
     /// One authentik `uuid`, in the form `str(user.uuid)` produces.
     pub const USER_UUID: &str = "6d1b9c4a-2f3e-4a7b-8c5d-0e1f2a3b4c5d";
 
@@ -531,6 +606,7 @@ pub mod tests {
         application_slug = "kerbridge"
         client_id = "kerbridge"
         sync_credential_file = "/etc/kerbridge.secrets/idp/authentik/credential"
+        admission_group_id = "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"
     "#;
 
     fn required() -> toml::Table {
@@ -558,6 +634,9 @@ pub mod tests {
         assert_eq!(defaults.issuer, issuer(URL, SLUG));
         assert_eq!(defaults.authority, authority(URL, SLUG));
         assert_eq!(defaults.jwks_url, jwks_url(URL, SLUG));
+        assert_eq!(defaults.admission_group_id, GROUP_ID);
+        assert_eq!(defaults.device_grant_group_id, None);
+        assert!(defaults.extra_group_ids.is_empty());
     }
 
     /// The trailing slash, which is not decoration.
@@ -597,9 +676,14 @@ pub mod tests {
     #[test]
     fn only_the_per_application_urls_carry_the_slug() {
         let answered = paths(&Settings::parse(&required()).unwrap());
+        // No endpoint is derived as a URL of this file's. Only the derived URL
+        // keys are in scope: `device_grant_group_id` names the device-grant
+        // group, not the device-authorization endpoint, and shares only the word.
+        let url_keys = answered.keys().filter(|key| key.ends_with("_url") || *key == "issuer");
+        let url_keys: Vec<&String> = url_keys.collect();
         for endpoint in ["authorize", "token", "userinfo", "introspect", "revoke", "device"] {
             assert!(
-                !answered.keys().any(|key| key.contains(endpoint)),
+                !url_keys.iter().any(|key| key.contains(endpoint)),
                 "{endpoint} is instance-global and is not this file's to state"
             );
         }
@@ -637,16 +721,31 @@ pub mod tests {
         }
     }
 
-    /// The four required keys, each of them the whole deployment: a source with
-    /// any one of them missing serves nobody, and serde reports one per file.
+    /// The required keys, each of them the whole deployment: a source with any
+    /// one of them missing serves nobody, and serde reports one per file. The
+    /// admission group joins the token-face four for the directory face -- with
+    /// no admission group sync mirrors nobody.
     #[test]
-    fn the_block_requires_the_four_values_only_the_operator_has() {
-        for key in ["url", "application_slug", "client_id", "sync_credential_file"] {
+    fn the_block_requires_the_values_only_the_operator_has() {
+        for key in
+            ["url", "application_slug", "client_id", "sync_credential_file", "admission_group_id"]
+        {
             let mut absent = required();
             absent.remove(key);
             let err = format!("{:#}", Settings::parse(&absent).unwrap_err());
             assert!(err.contains(key), "{key}: {err}");
         }
+    }
+
+    /// The admission group is bound by pk, a uuid, and the likely mistake is the
+    /// group's name pasted where its pk goes -- refused with the key named, not
+    /// left to surface as a realm that admits nobody.
+    #[test]
+    fn a_group_id_that_is_not_a_uuid_is_refused_by_name() {
+        let mut named = required();
+        named.insert("admission_group_id".into(), "kb-admission".into());
+        let err = format!("{:#}", Settings::parse(&named).unwrap_err());
+        assert!(err.contains("admission_group_id") && err.contains("uuid"), "{err}");
     }
 
     /// The audience exists as a key and defaults to the client id, and `azp` is
