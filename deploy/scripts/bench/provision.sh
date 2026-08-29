@@ -136,9 +136,13 @@ if [ -z "${KB_CI_TREE:-}" ]; then
   # tree another tier's kept containers are still bind-mounting configs/,
   # secrets/tls/ and the CA out of.
   TREE=${CI_TREE:-$PWD/.local-tmp/${PROJECT#kerbridge-}-tree}
+  # The helper resolves symlinks, refuses the checkout/root/ancestors, and only
+  # reuses external paths carrying this checkout's ownership marker. It prints
+  # the canonical path so cleanup cannot be validated under one spelling and
+  # then performed through a symlink spelling.
+  TREE=$(deploy/scripts/bench/prepare-ci-tree.py "$PWD" "$TREE") ||
+    die "CI_TREE is not a safe disposable tree"
   say "staging a disposable tree at $TREE"
-  rm -rf "$TREE"
-  mkdir -p "$TREE"
   # Copy tracked and unignored files at their working-tree contents. This includes
   # uncommitted files but excludes .env, secrets/, target/, dist/, and .local-tmp/.
   # --ignore-missing-args omits tracked files that are deleted in the working tree.

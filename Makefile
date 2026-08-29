@@ -283,6 +283,7 @@ test-fast:
 		echo "      shared provisioning code must not name an identity source" >&2; \
 		exit 1; \
 	fi
+	python3 deploy/scripts/bench/test_prepare_ci_tree.py
 	@body=$$(sed -e '/^idp_prepare()/,/^}$$/d' -e '/^idp_env_lines()/,/^}$$/d' \
 		-e '/^idp_source_toml()/,/^}$$/d' -e '/^[[:space:]]*#/d' \
 		-e '/^SOURCE=/d' -e '/^TENANT=/d' -e '/^export COMPOSE_FILE=/d' \
