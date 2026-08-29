@@ -257,6 +257,14 @@ root: run this as root, or grant passwordless sudo."
   PRIV="sudo -n"
 fi
 own_root() { [ "$(uname -s)" = Linux ] || return 0; $PRIV chown 0:0 "$@"; }
+# A source's sync credential is pasted, never generated: `kbsetup directory`
+# writes only what it generates, and the `setup` service mounts
+# secrets/generated and deliberately not secrets/idp. Nothing below fixes its
+# group, then, and sync -- ${SYNC_UID}:${BROKER_GID}, no DAC_OVERRIDE -- reads
+# it through that group alone. The invoking user cannot chgrp into a group they
+# are not in, so this takes the privilege the TLS key takes. Off Linux it is a
+# no-op for own_root's reason: ownership is remapped at the VM boundary.
+own_secret() { [ "$(uname -s)" = Linux ] || return 0; $PRIV chgrp "${BROKER_GID:-10002}" "$@"; }
 teardown() {
   local rc=$?
   # Capture diagnostics before `down -v` removes the containers. A later CI
@@ -310,6 +318,12 @@ scripts/compose/bootstrap-secrets.sh
 own_root secrets/tls/broker.key
 docker compose up -d --wait realm nas1
 docker compose run --rm setup directory
+# Whatever idp_prepare pasted in, given the group sync reads it through. The
+# glob matches nothing on a tier whose source has no credential file.
+for credential in secrets/idp/*/credential; do
+  [ -s "$credential" ] || continue
+  own_secret "$credential"
+done
 # Run the deployment's secret check without privilege. The current user owns
 # secrets/generated, so the check can enumerate files created by root.
 scripts/check-secrets.sh
