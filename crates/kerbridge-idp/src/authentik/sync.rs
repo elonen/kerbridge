@@ -57,27 +57,15 @@ impl AuthentikSource {
     }
 
     /// This source's sync credential -- the API token the directory is read with
-    /// -- or `None` while the operator has yet to paste one in.
-    ///
-    /// An empty file means that setup is incomplete, not that the source failed.
-    /// Sync checks the file again in the next cycle.
+    /// -- or `None` while the operator has yet to paste one in, which is the
+    /// state [`kerbridge_core::secret::read_optional`] defines: setup is
+    /// incomplete, the source has not failed, and the next cycle looks again.
     ///
     /// Unlike Entra's, there is **no shape to refuse locally**: an authentik API
     /// token is an opaque string, so the prompt's words are the only local
     /// defence and a wrong token fails identically to a right one until the read.
-    /// `EACCES` is still an error rather than "not yet", for
-    /// the reason [`kerbridge_core::secret::denial`] records: a compose secret is
-    /// a bind mount whose host mode reaches the container unchanged.
     fn credential(&self) -> Result<Option<String>> {
-        match std::fs::read_to_string(&self.credential_file) {
-            Ok(raw) if raw.trim().is_empty() => Ok(None),
-            Ok(_) => Ok(Some(kerbridge_core::secret::read(&self.credential_file)?)),
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                anyhow::bail!("{}", kerbridge_core::secret::denial(&self.credential_file))
-            }
-            // An absent path means that setup is incomplete.
-            Err(_) => Ok(None),
-        }
+        kerbridge_core::secret::read_optional(&self.credential_file)
     }
 
     /// The enumeration, narrowed to the population the realm should hold.

@@ -63,16 +63,34 @@ pub fn read(path: &Path) -> Result<String> {
     }
 }
 
-/// The same diagnosis, for a caller that meets the denial before it reaches
-/// [`read`].
+/// The same read, for a secret the deployment is allowed not to have yet.
 ///
-/// The sync credential and notify's `notify_url` are both read once before
-/// this module sees them, to tell a secret that is empty (a deployment that has
-/// not got there yet) from one that is absent. `EACCES` arrives at that read,
-/// not at ours, and it is the same failure with the same audience -- so it gets
-/// the same words, from the same numbers, instead of a hand-written guess at
-/// which group the deployment meant.
-pub fn denial(path: &Path) -> String {
+/// A compose secret is a bind mount, so the file exists before its container
+/// starts and starts empty. Empty and absent therefore both mean the operator
+/// has not pasted one in, which is a state and not a fault -- the reader waits
+/// and looks again. Everything else is a fault, `EACCES` above all: that one
+/// arrives at the peek below rather than inside [`read`], and answering it with
+/// `None` would disable a credential that is present behind a message saying
+/// none was configured.
+pub fn read_optional(path: &Path) -> Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(raw) if raw.trim().is_empty() => Ok(None),
+        // Read again through `read`, which is where the permission rule lives.
+        Ok(_) => read(path).map(Some),
+        // This arm never reaches `read`, so the diagnosis is asked for by name.
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => bail!("{}", denial(path)),
+        Err(_) => Ok(None),
+    }
+}
+
+/// The same diagnosis, for the denial [`read_optional`] meets at its own peek
+/// rather than inside [`read`].
+///
+/// That peek exists to tell a secret that is empty from one that is absent, and
+/// `EACCES` arrives there instead. It is the same failure with the same
+/// audience, so it gets the same words, from the same numbers, instead of a
+/// hand-written guess at which group the deployment meant.
+fn denial(path: &Path) -> String {
     let reader = Reader::current();
     match std::fs::metadata(path) {
         Ok(meta) => file_denial(path, Owned::of(&meta), &reader),

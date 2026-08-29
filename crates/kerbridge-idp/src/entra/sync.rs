@@ -61,52 +61,27 @@ impl EntraSource {
     }
 
     /// This source's sync credential -- the app-only client secret Graph is read
-    /// with -- or `None` while the operator has yet to paste one in.
+    /// with -- or `None` while the operator has yet to paste one in, which is
+    /// the state [`kerbridge_core::secret::read_optional`] defines. Empty means
+    /// the Graph app registration has not happened yet, so the source is skipped
+    /// and re-checked next cycle rather than refused.
     ///
-    /// A compose secret is a bind mount, so the file has to exist before the
-    /// container starts and `prepare-state` creates it empty. Empty means
-    /// the Graph app registration has not happened yet -- a deployment that has
-    /// not got there, not a fault. So the source is skipped and re-checked next
-    /// cycle rather than refused, and an operator who drops the secret in starts
-    /// mirroring with nothing to restart.
-    ///
-    /// Only emptiness is treated this way. A credential that is present and
-    /// wrong -- the *Secret ID* GUID, say -- is an error, and so is one this
-    /// process is not allowed to read.
-    ///
-    /// `EACCES` in particular must not read as "not yet": it is the *likely*
-    /// failure on Linux, where a compose secret is a bind mount and the host
-    /// file's mode reaches the container unchanged. Sync runs unprivileged and
-    /// reaches its secret through `BROKER_GID`, so a credential written `0600`
-    /// owned by the root that wrote it is unreadable to it. Docker Desktop
-    /// remaps the ownership and hides this, which is why the bench never saw it
-    /// -- the same reason [`kerbridge_core::secret::read`] records.
+    /// Only emptiness is treated that way. A credential that is present and
+    /// wrong -- the *Secret ID* GUID, say -- is an error.
     fn credential(&self) -> Result<Option<String>> {
-        let shown = self.credential_file.display();
-        match std::fs::read_to_string(&self.credential_file) {
-            Ok(raw) if raw.trim().is_empty() => Ok(None),
-            Ok(_) => {
-                let value = kerbridge_core::secret::read(&self.credential_file)?;
-                // Folded: `is_guid` is canonical-only, and an uppercase Secret
-                // ID is still a Secret ID. Losing the fold is fail-open.
-                if is_guid(&value.to_ascii_lowercase()) {
-                    bail!(
-                        "secret file {shown} contains a GUID: that is the credential's Secret ID, \
-                         not its Value"
-                    );
-                }
-                Ok(Some(value))
-            }
-            // This arm never reaches `secret::read`, so the diagnosis is asked
-            // for by name -- and it prints the group the file actually has,
-            // where a message written here could only name `$BROKER_GID`.
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                bail!("{}", kerbridge_core::secret::denial(&self.credential_file))
-            }
-            // Absent is the fresh-deployment case `prepare-state` creates,
-            // and anything else here is a path that is not there either.
-            Err(_) => Ok(None),
+        let Some(value) = kerbridge_core::secret::read_optional(&self.credential_file)? else {
+            return Ok(None);
+        };
+        // Folded: `is_guid` is canonical-only, and an uppercase Secret ID is
+        // still a Secret ID. Losing the fold is fail-open.
+        if is_guid(&value.to_ascii_lowercase()) {
+            bail!(
+                "secret file {} contains a GUID: that is the credential's Secret ID, not its \
+                 Value",
+                self.credential_file.display()
+            );
         }
+        Ok(Some(value))
     }
 
     /// One read of both delta streams, into the shadow they patch.

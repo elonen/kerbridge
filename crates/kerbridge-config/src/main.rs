@@ -307,7 +307,19 @@ fn probe(sources: &[(&kerbridge_core::config::SourceFile, IdpSettings)]) -> Resu
         .context("starting the probe runtime")?;
     let mut failures = 0;
     for (source, settings) in sources {
-        let credential = sync_credential(settings.sync_credential_file());
+        // The read sync performs, so a mode or a group that will stop sync
+        // stops this and says why, in the tool run to find out. The rest of the
+        // source is skipped rather than probed on `None`: the authenticated legs
+        // would tell the operator to paste in a credential that is already there.
+        let file = settings.sync_credential_file();
+        let credential = match kerbridge_core::secret::read_optional(file) {
+            Ok(credential) => credential,
+            Err(e) => {
+                println!("{} FAIL sync credential file -- {e:#}", source.name);
+                failures += 1;
+                continue;
+            }
+        };
         for probe in
             runtime.block_on(kerbridge_idp::probe(settings, credential.as_deref(), PROBE_TIMEOUT))
         {
@@ -324,17 +336,6 @@ fn probe(sources: &[(&kerbridge_core::config::SourceFile, IdpSettings)]) -> Resu
         bail!("{failures} probe(s) contradict the configuration");
     }
     Ok(())
-}
-
-/// Read a source's sync credential for authenticated probes. An empty, absent,
-/// or unreadable credential returns `None` so the advisory probe warns instead
-/// of replacing offline configuration validation with an I/O error.
-fn sync_credential(path: &std::path::Path) -> Option<String> {
-    match std::fs::read_to_string(path) {
-        Ok(raw) if raw.trim().is_empty() => None,
-        Ok(raw) => Some(raw.trim().to_owned()),
-        Err(_) => None,
-    }
 }
 
 fn get(dir: &Path, path: &str) -> Result<()> {
