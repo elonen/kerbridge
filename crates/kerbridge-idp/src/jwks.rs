@@ -40,6 +40,18 @@ const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// attempt is allowed. Charging a one-second blip the full success interval turns
 /// it into five minutes of refusing every login.
 const FAILED_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
+/// How long [`Jwks::load`] keeps retrying a startup fetch that cannot connect
+/// before it gives up. A reverse proxy that fronts the IdP and shares the
+/// broker's network namespace cannot bind its listener until the broker process
+/// is up, so the very first fetch can be refused through no fault of the
+/// configuration -- and a process that exits on it takes that shared namespace
+/// down before the proxy can bind. Long enough for the proxy to come up, short
+/// enough that a genuinely unreachable IdP still surfaces as the crash loop the
+/// eventual exit becomes under `restart: unless-stopped`.
+pub(crate) const STARTUP_RETRY_BUDGET: Duration = Duration::from_secs(90);
+/// Between startup retries. Short, so a proxy binding its listener is noticed
+/// within a second or two.
+const STARTUP_RETRY_INTERVAL: Duration = Duration::from_secs(2);
 /// Ceiling on a fetched document. A tenant's real one is a few kilobytes; this
 /// is the point past which the response is no longer a JWKS but a way to spend
 /// the broker's memory.
@@ -147,8 +159,13 @@ struct Keys {
 }
 
 impl Jwks {
-    /// The startup fetch. A failure here is fatal and the process exits, which
-    /// under `restart: unless-stopped` is a crash loop -- so it is also the one an
+    /// The startup fetch. A connection failure is retried for up to
+    /// `startup_retry`: the process stays up so a reverse proxy that shares its
+    /// network namespace can bind the listener the fetch needs. A failure a wait
+    /// cannot clear -- a missing file, an HTTP error status, a malformed document
+    /// -- is fatal at once, and a connection failure becomes fatal once the budget
+    /// is spent. A fatal return exits the process, which under
+    /// `restart: unless-stopped` is a crash loop -- so it is also the one an
     /// operator is least likely to be told about by anything else, and it raises
     /// before it returns. The durable problem record is what keeps that loop from
     /// becoming an event flood: the second start finds the condition already
@@ -157,15 +174,23 @@ impl Jwks {
         source: JwksSource,
         idp: &Source,
         timeout: Duration,
+        startup_retry: Duration,
         notifier: Arc<Notifier>,
     ) -> Result<Self> {
-        let by_kid = match fetch(&source, timeout).await {
-            Ok(keys) => keys,
-            Err(e) => {
-                notifier
-                    .send(idp_failure(&e, idp, Severity::Error, "no signing keys at startup"))
-                    .await;
-                return Err(e);
+        let deadline = Instant::now() + startup_retry;
+        let by_kid = loop {
+            match fetch(&source, timeout).await {
+                Ok(keys) => break keys,
+                Err(e) => {
+                    if is_transient(&e) && Instant::now() + STARTUP_RETRY_INTERVAL <= deadline {
+                        tokio::time::sleep(STARTUP_RETRY_INTERVAL).await;
+                        continue;
+                    }
+                    notifier
+                        .send(idp_failure(&e, idp, Severity::Error, "no signing keys at startup"))
+                        .await;
+                    return Err(e);
+                }
             }
         };
         resolve_idp_failures(&notifier, idp).await;
@@ -332,6 +357,17 @@ fn looks_like_a_trust_failure(error: &anyhow::Error) -> bool {
     })
 }
 
+/// Whether a fetch failure is one a short wait can clear: the connection was
+/// refused or the request timed out. A missing file, an HTTP error status, or a
+/// malformed document will not fix itself on a retry, so those stay fatal at
+/// once -- only [`Jwks::load`]'s startup retry consults this.
+fn is_transient(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())
+        .any(|e| e.is_connect() || e.is_timeout())
+}
+
 /// `FAILED_REFRESH_INTERVAL` doubled per consecutive failure, capped at
 /// `MIN_REFRESH_INTERVAL`: a blip costs seconds, while an IdP that is genuinely
 /// down settles at the same one-attempt-per-five-minutes the success path allows.
@@ -476,6 +512,20 @@ mod tests {
         assert_eq!(failure_backoff(999), MIN_REFRESH_INTERVAL);
     }
 
+    /// The startup retry waits only on a failure a wait can clear. A missing file
+    /// is permanent, so it must fall straight through -- retrying it would turn a
+    /// mistyped path into a full-budget hang before the same error.
+    #[tokio::test]
+    async fn a_missing_file_is_not_a_transient_failure() {
+        let missing =
+            fetch(&JwksSource::File("/nonexistent/jwks.json".into()), Duration::from_secs(1))
+                .await
+                .err()
+                .expect("a missing file must fail to fetch");
+        assert!(!is_transient(&missing));
+        assert!(!is_transient(&anyhow::anyhow!("a plain error carries no reqwest cause")));
+    }
+
     /// The fail-open `with_key` documents: a document past `MAX_AGE` whose
     /// refresh cannot succeed still verifies. Asserting it is what stops a later
     /// reading of `MAX_AGE` as an expiry from quietly becoming one -- that change
@@ -528,8 +578,10 @@ mod tests {
         let second = Duration::from_secs(1);
         let broken = Source::new("broken").unwrap();
         let working = Source::new("working").unwrap();
-        assert!(Jwks::load(missing, &broken, second, notifier.clone()).await.is_err());
-        Jwks::load(fixture, &working, second, notifier.clone()).await.unwrap();
+        assert!(
+            Jwks::load(missing, &broken, second, Duration::ZERO, notifier.clone()).await.is_err()
+        );
+        Jwks::load(fixture, &working, second, Duration::ZERO, notifier.clone()).await.unwrap();
 
         let open: Vec<serde_json::Value> = std::fs::read_dir(dir.join("broker"))
             .unwrap()

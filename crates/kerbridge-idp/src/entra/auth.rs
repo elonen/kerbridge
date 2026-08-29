@@ -17,7 +17,7 @@ use kerbridge_notify::Notifier;
 use serde::Deserialize;
 
 use super::{DEFAULT_LEEWAY_SECONDS, Settings, identity};
-use crate::jwks::Jwks;
+use crate::jwks::{Jwks, STARTUP_RETRY_BUDGET};
 use crate::jwt::{self, Audience};
 use crate::{IdentityProvider, OidcDiscovery, Reject, reject};
 
@@ -55,9 +55,10 @@ impl Entra {
         notifier: Arc<Notifier>,
         timeout: Duration,
     ) -> Result<Self> {
-        let jwks = Jwks::load(settings.jwks.clone(), source, timeout, notifier)
-            .await
-            .context("loading signing keys")?;
+        let jwks =
+            Jwks::load(settings.jwks.clone(), source, timeout, STARTUP_RETRY_BUDGET, notifier)
+                .await
+                .context("loading signing keys")?;
         Ok(Self {
             source: source.clone(),
             jwks,
@@ -226,6 +227,7 @@ mod tests {
             JwksSource::File(fixture_dir().join("jwks.json")),
             &source(),
             std::time::Duration::from_secs(30),
+            std::time::Duration::ZERO,
             std::sync::Arc::new(kerbridge_notify::Notifier::disabled("broker")),
         )
         .await

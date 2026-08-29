@@ -28,7 +28,7 @@ use kerbridge_notify::Notifier;
 use serde::Deserialize;
 
 use super::{Settings, identity};
-use crate::jwks::{Jwks, JwksSource};
+use crate::jwks::{Jwks, JwksSource, STARTUP_RETRY_BUDGET};
 use crate::jwt::{self, Audience};
 use crate::{IdentityProvider, OidcDiscovery, Reject, reject};
 
@@ -76,10 +76,15 @@ impl Authentik {
         // Always the application's own live document. authentik publishes one,
         // so there is no `jwks_file` to fall back to and nothing to verify
         // against whatever happened to be on disk.
-        let jwks =
-            Jwks::load(JwksSource::Url(settings.jwks_url.clone()), source, timeout, notifier)
-                .await
-                .context("loading signing keys")?;
+        let jwks = Jwks::load(
+            JwksSource::Url(settings.jwks_url.clone()),
+            source,
+            timeout,
+            STARTUP_RETRY_BUDGET,
+            notifier,
+        )
+        .await
+        .context("loading signing keys")?;
         Ok(Self {
             source: source.clone(),
             jwks,
@@ -225,6 +230,7 @@ mod tests {
             JwksSource::File(fixture_dir().join(document)),
             &source(),
             Duration::from_secs(30),
+            Duration::ZERO,
             Arc::new(kerbridge_notify::Notifier::disabled("broker")),
         )
         .await

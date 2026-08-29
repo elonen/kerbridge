@@ -11,12 +11,15 @@
 # over TLS like any real IdP. So there is no mockidp block here and no jwks mount;
 # there is a live authentik, and the broker's first real JWKS fetch.
 #
-# Ordering is the whole of why this works. The broker's startup JWKS fetch is
-# fatal on failure (kerbridge-idp/src/jwks.rs), so authentik has to be serving the
-# application's signing keys before the broker starts -- which means the blueprint
-# has to be applied first. authentik-init applies it and the broker waits for that
-# to finish; Caddy, sharing the broker's namespace, comes up just after the broker
-# and the broker's fetch succeeds on the retry the crash-loop gives it.
+# Ordering is the whole of why this works. The broker's startup JWKS fetch needs
+# authentik serving the application's signing keys, which means the blueprint has
+# to be applied first: authentik-init applies it and the broker waits on that.
+# Caddy fronts authentik on idp.kbci.test but shares the broker's namespace, so it
+# cannot bind its listener until the broker process is up. The broker's startup
+# fetch therefore retries while staying up (kerbridge-idp/src/jwks.rs,
+# STARTUP_RETRY_BUDGET) rather than exiting on the first refusal -- which would
+# take Caddy's namespace down with it before it could bind -- and a retry succeeds
+# once Caddy is listening.
 
 services:
   # Postgres alone: caching, the embedded outpost and the WebSocket layer moved
