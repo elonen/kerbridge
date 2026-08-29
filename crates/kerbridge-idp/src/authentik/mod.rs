@@ -1,20 +1,14 @@
 //! The authentik adapter: the application a source file names, and the subject
 //! encoding both faces share.
 //!
-//! One authentik **OAuth2 provider** plus one **application**, per source. The
-//! provider is the protocol and the application is the access control, so
-//! Entra's three app registrations have no counterpart to copy here.
+//! Each source uses one authentik OAuth2 provider and one application. The
+//! provider supplies the protocol. The application supplies access control.
 //!
-//! **Every per-application URL is keyed by the application slug**, so one string
-//! in the file derives the issuer the broker compares, the authority the agent
-//! signs in against and the document its signing keys come from. The authorize,
-//! token, userinfo, introspect, revoke and device endpoints are
-//! instance-global -- they carry no slug, the provider is identified by
-//! `client_id`, and the agent reads them out of the discovery document rather
-//! than out of this file.
+//! The application slug identifies all application-specific URLs. It derives
+//! the issuer, authority, and JWKS URL. The other OAuth endpoints are global to
+//! the instance. The agent reads them from the discovery document.
 //!
-//! `auth` is the token face. [`identity`] is what makes the two faces agree --
-//! see the crate doc for what a divergence costs.
+//! `auth` is the token face. [`identity`] is the shared subject rule.
 
 mod auth;
 #[cfg(feature = "sync")]
@@ -59,29 +53,14 @@ const NOT_CANONICAL: &str = "a UUID in canonical lowercase form: authentik seria
      yours -- nothing here normalizes it, because a transformation over a stored subject would \
      become a second thing that may never change";
 
-/// The identity this adapter stores for an authentik account.
+/// Store the user's canonical lowercase `uuid` with `sub_mode: user_uuid`.
 ///
-/// **The user's `uuid`**, canonical lower-case hyphenated, bare, with the
-/// provider set to `sub_mode: user_uuid`. The decisive argument is
-/// **filterability** rather than stability: `uuid` is the only identifier
-/// `/core/users/` can be filtered on, and under any other mode the broker's
-/// `sub` could not be looked up in the directory at all, so the two faces could
-/// never be made to agree. Stability only ranks the rest -- the default
-/// `hashed_user_id` is salted per provider, `pk` is a reused integer, and
-/// username, email and UPN are mutable.
-///
-/// **The subject rule lives here**, so one rule serves both faces and sync's
-/// conflict machinery reports a bad value with no new code.
-///
-/// **Nothing normalizes.** A non-canonical value is refused rather than
-/// lower-cased: a stored subject is unrecoverable if wrong, so a transformation
-/// over it becomes a second thing that may never change. Storing either case
-/// verbatim is worse still, because the two are different subjects and an
-/// upstream serialization change would then orphan every account in silence.
+/// The UUID is the only user identifier that `/core/users/` can filter on. The
+/// token face and directory (IdP) face therefore use the same rule. The adapter
+/// rejects, and does not normalize, a noncanonical value. Normalization could
+/// silently change a permanent stored subject.
 pub fn identity(source: &Source, uuid: &str) -> Result<ExternalIdentity, IdentityError> {
-    // The shape case-insensitively first, so the second branch can name itself:
-    // a value that is a UUID in the wrong case has a different cause, and a
-    // different reader, from one that is no UUID at all.
+    // Distinguish a wrong subject mode from noncanonical UUID spelling.
     if !is_guid(&uuid.to_ascii_lowercase()) {
         return Err(IdentityError::SubjectShape(NOT_A_UUID));
     }
@@ -91,19 +70,16 @@ pub fn identity(source: &Source, uuid: &str) -> Result<ExternalIdentity, Identit
     ExternalIdentity::new(source, uuid)
 }
 
-/// Everything an application's own URLs hang off: the instance and the
-/// application's slug, with the trailing slash of the instance URL dropped so
-/// that one stated with or without it derives the same strings.
+/// Build the base for application-specific URLs. Ignore a trailing instance
+/// slash so both accepted forms produce the same URLs.
 fn application_base(url: &str, slug: &str) -> String {
     format!("{}/application/o/{slug}", url.trim_end_matches('/'))
 }
 
 /// The one `iss` this source accepts.
 ///
-/// **The trailing slash is load-bearing.** `get_issuer()` is `reverse()` plus
-/// `build_absolute_uri()`, and the URL pattern it reverses ends with a slash.
-/// `iss` is compared byte for byte, so a derivation without the slash refuses
-/// every token this provider will ever issue.
+/// The final slash is required. Authentik's reversed URL pattern includes it,
+/// and `iss` comparison is exact.
 fn issuer(url: &str, slug: &str) -> String {
     format!("{}/", application_base(url, slug))
 }
@@ -121,10 +97,8 @@ fn jwks_url(url: &str, slug: &str) -> String {
 
 /// One authentik application, as a source file's `[provider_config]` states it.
 ///
-/// Both faces are here because one file serves both binaries: the policy the
-/// broker verifies tokens against, and the API token sync reads the directory
-/// with. Split across two files they could name different applications, and
-/// that disagreement retires every account and recreates it with a fresh SID.
+/// One settings value serves both adapter faces. Different applications would
+/// map every account to a new identity and SID.
 #[derive(Debug, PartialEq)]
 pub struct Settings {
     /// The authentik instance, scheme and host, with no path of its own.
@@ -168,13 +142,10 @@ pub struct Settings {
 
 /// The file's own shape, before the derived defaults.
 ///
-/// Unknown keys are refused, as in every struct `kerbridge-core` parses: a typo
-/// that silently keeps a default is the failure mode the whole config set exists
-/// to end.
+/// Unknown keys are refused so a typo cannot silently select a default.
 ///
-/// Every `example` is borrowed rather than written bare, as in the Entra block:
-/// the derive re-lexes a bare string literal to see whether it names a
-/// function, and some placeholder values do not survive that.
+/// Borrow each `example`. The derive re-parses a bare string as a possible
+/// function name.
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -258,16 +229,10 @@ impl Settings {
     }
 }
 
-/// Check a group pk's shape. The likely mistake is the group's *name* pasted in
-/// place of its pk, which would otherwise surface only as a realm that admits
-/// nobody. A uuid is authentik's own key spelling, the same one every subject
-/// carries.
+/// Reject a group name pasted in place of the UUID primary key.
 fn group_id(id: String, key: &str) -> Result<String> {
-    // Folded first, because `is_guid` takes only the canonical lowercase form:
-    // an upper-cased pk is still a pk, and this refuses a mistake rather than a
-    // spelling. The stored value keeps the operator's own casing, and a pk that
-    // does not match a group the read returns freezes the cycle rather than
-    // repointing onto the wrong group.
+    // Accept uppercase spelling because this value selects an existing group;
+    // it is not a stored subject.
     if !is_guid(&id.to_ascii_lowercase()) {
         bail!(
             "[provider_config]: {key} is not a group pk (a uuid): {id:?} -- authentik shows it on \
@@ -280,12 +245,8 @@ fn group_id(id: String, key: &str) -> Result<String> {
 /// This source's settings as `kbconfig get` answers them, keyed by the file's
 /// own key names.
 ///
-/// Hand-written, because [`Settings`] is *resolved* rather than a copy of the
-/// file: a deploy script that could not ask for `issuer` would rebuild it out
-/// of `url` and the slug, and be wrong the day a deployment states one of its
-/// own. `a_settings_key_answers_by_the_name_the_file_gives_it` holds the set to
-/// the adapter's schema, so a key added to the block and forgotten here fails
-/// the build.
+/// [`Settings`] contains resolved values, including operator overrides. Return
+/// those values so callers do not derive them again.
 pub(crate) fn paths(settings: &Settings) -> BTreeMap<String, String> {
     [
         ("url", settings.url.clone()),
@@ -306,10 +267,7 @@ pub(crate) fn paths(settings: &Settings) -> BTreeMap<String, String> {
     .collect()
 }
 
-/// The checks, named as `kbconfig` prints them. The three public questions about
-/// the provider (answered by one discovery fetch), then the three the sync
-/// credential answers -- each named apart, because they fail for unrelated
-/// reasons and which one failed is the whole diagnosis.
+/// Probe labels shown by `kbconfig`. Separate labels identify separate fixes.
 const DISCOVERY: &str = "discovery document";
 const ISSUER: &str = "issuer";
 const SIGNING: &str = "signing algorithm";
@@ -318,13 +276,10 @@ const CREDENTIAL: &str = "sync credential";
 const GRANT: &str = "directory grant";
 const EXPIRY: &str = "credential expiry";
 
-/// The three claims the probe reads. Everything else the document carries is a
-/// client's business rather than this deployment's.
+/// The claims that the configuration probe reads.
 ///
-/// Only `issuer` is required, because it is what makes the document a discovery
-/// document. The other two are answers rather than structure, and a document
-/// that omits one has answered it: no algorithm list is a provider publishing
-/// no key, and no scope list is a provider with no mapping attached.
+/// Only `issuer` is structural. An absent algorithm or scope list means that the
+/// provider publishes no matching value.
 #[derive(Deserialize)]
 struct Discovery {
     issuer: String,
@@ -334,14 +289,8 @@ struct Discovery {
     scopes_supported: Vec<String>,
 }
 
-/// What the provider says about itself, against what this file derived, and what
-/// the sync credential can actually do.
-///
-/// **Five legs.** The first fetch answers the three public questions at once,
-/// each a hard fail. The last three are authenticated -- they present the sync
-/// credential -- and are the half a public document cannot answer: that the
-/// token authenticates at all, that its grant lets the directory be read, and
-/// how much headroom it has left before it lapses.
+/// Compare the public provider metadata and test the sync credential. The
+/// authenticated probes test the token, directory grant, and expiry.
 pub(crate) async fn probe(
     settings: &Settings,
     credential: Option<&str>,
@@ -352,9 +301,7 @@ pub(crate) async fn probe(
     probes
 }
 
-/// The three legs the discovery document answers -- issuer, signing algorithm,
-/// and the offline_access mapping attached -- each a hard fail. Kept whole so the
-/// authenticated legs append after them and leave these three unchanged.
+/// Check issuer, signing algorithm, and the `offline_access` mapping.
 async fn public_probes(settings: &Settings, timeout: Duration) -> Vec<Probe> {
     let url = discovery_url(&settings.authority);
     let body = match get(&url, timeout).await {
@@ -372,11 +319,10 @@ async fn public_probes(settings: &Settings, timeout: Duration) -> Vec<Probe> {
     ]
 }
 
-/// The three legs the sync credential answers, presented as `Bearer`.
+/// Check the sync credential as a bearer token.
 ///
-/// With no credential pasted in yet all three warn rather than fail: an empty
-/// file is a deployment mid-bootstrap, not a wrong one, and the same rule that
-/// idles the source here must not fail the check.
+/// An absent credential warns because setup is incomplete. It does not fail the
+/// source configuration.
 async fn authenticated_probes(
     settings: &Settings,
     credential: Option<&str>,
@@ -402,19 +348,16 @@ async fn authenticated_probes(
 
 /// `GET /core/users/me/`: does the token authenticate at all?
 ///
-/// The self endpoint needs zero grants, so a 403 here is the credential itself,
-/// not a missing permission. The fetch and the verdict are split so the verdict
-/// -- the part that decides Pass from Fail from Warn -- is a pure function the
-/// tests drive without a server.
+/// The self endpoint needs no grants. A `403` therefore identifies a credential
+/// failure, not a missing permission.
 async fn credential_probe(base: &str, token: &str, timeout: Duration) -> Probe {
     let url = format!("{}/api/v3/core/users/me/", base.trim_end_matches('/'));
     credential_verdict(get_authed(&url, token, timeout).await)
 }
 
-/// Expired, revoked, wrong and a deactivated service account all collapse to one
-/// 403 -- authentik emits no 401 -- so a probe keyed on 401 would silently never
-/// fire. An expired token rotates on lapse, so that 403 is permanent: `Fail`,
-/// never `Warn`.
+/// Authentik returns `403`, not `401`, for an expired, revoked, or wrong token
+/// and for a deactivated service account. This condition cannot heal without a
+/// credential change.
 fn credential_verdict(fetched: Fetched) -> Probe {
     match fetched {
         Fetched::Body(_) => Probe::pass(CREDENTIAL, "the service account authenticates"),
@@ -436,10 +379,9 @@ async fn grant_probe(base: &str, token: &str, timeout: Duration) -> Probe {
     grant_verdict(get_authed(&url, token, timeout).await)
 }
 
-/// A list, unlike the self endpoint, needs `view_group`. A 403 with the
-/// credential leg green is a missing grant; a per-object grant is worse than
-/// none, because it answers 200 with a silently shorter list that reconciles the
-/// people it left out as departures.
+/// A list needs `view_group`. If the credential probe passes, a `403` identifies
+/// a missing grant. An object-scoped grant can return a silently shorter list,
+/// so the permission must be global.
 fn grant_verdict(fetched: Fetched) -> Probe {
     match fetched {
         Fetched::Body(_) => Probe::pass(GRANT, "the service account may list the directory"),
@@ -455,15 +397,11 @@ fn grant_verdict(fetched: Fetched) -> Probe {
     }
 }
 
-/// `GET /core/tokens/?intent=api`: how much headroom is left, and is the token
-/// even an API token?
+/// `GET /core/tokens/?intent=api`: measure credential headroom.
 ///
-/// `TokenViewSet.owner_field = "user"` makes this self-scoped with zero grants,
-/// and `key` is absent from the serializer, so the read measures the expiry
-/// while being structurally unable to read the secret. `intent=api` is
-/// load-bearing: an `app_password` token authenticates nothing here and fails
-/// byte-identically to a wrong one, so a credential that reached a 200 on the
-/// legs above is already known to be an API token -- this leg reads its clock.
+/// `TokenViewSet.owner_field = "user"` makes this endpoint self-scoped. The
+/// serializer omits `key`, so the endpoint cannot disclose the secret. The
+/// `intent=api` filter excludes an `app_password` token.
 async fn expiry_probe(base: &str, token: &str, now: u64, timeout: Duration) -> Probe {
     let url =
         format!("{}/api/v3/core/tokens/?intent=api&page_size=100", base.trim_end_matches('/'));
@@ -477,9 +415,7 @@ fn expiry_verdict(fetched: Fetched, now: u64) -> Probe {
             Ok(Expiry::NonExpiring) => {
                 Probe::pass(EXPIRY, "the sync credential is set never to expire")
             }
-            // A 200 here means the credential authenticated, so it is an API
-            // token -- but none is visible to read a clock from. Not the file
-            // being wrong, so a warning rather than a fail.
+            // Authentication passed, but no API token is visible to measure.
             Ok(Expiry::Absent) => Probe {
                 check: EXPIRY,
                 verdict: Verdict::Warn,
@@ -503,18 +439,13 @@ fn expiry_verdict(fetched: Fetched, now: u64) -> Probe {
     }
 }
 
-/// A non-200, non-403 status sorted onto the same line the world/config split
-/// draws everywhere else: a 5xx is reachability, anything else is the request.
+/// A `5xx` is reachability trouble. Other unexpected statuses reject the
+/// request.
 fn at(check: &'static str, status: u16) -> Probe {
     Probe { check, verdict: status_verdict(status), detail: format!("authentik answered {status}") }
 }
 
-/// The check that earns the whole feature.
-///
-/// Three unrelated mistakes reach a deployment as one symptom -- every token
-/// refused, with the issuer the only clue: a wrong application slug, the "same
-/// identifier for all providers" issuer mode, and a reverse proxy that rewrites
-/// the `Host` header. One HTTP GET catches all three.
+/// Detect a wrong application slug, global issuer mode, or rewritten `Host`.
 fn issuer_probe(derived: &str, published: &str) -> Probe {
     if derived == published {
         Probe::pass(ISSUER, derived)
@@ -526,14 +457,10 @@ fn issuer_probe(derived: &str, published: &str) -> Probe {
     }
 }
 
-/// The default that is wrong, read where it names its own cause.
-///
 /// A new authentik provider has no Signing Key. There is no algorithm selector:
 /// the algorithm follows the key type, and with no key the provider signs
-/// **HS256 with its own client secret** and publishes a JWKS of `{}` with no
-/// `keys` array. This crate's allowlist is asymmetric-only and compiled in, so
-/// that deployment's whole symptom is a 401 and one log line. An empty JWKS
-/// shows only the symptom.
+/// HS256 with its client secret and publishes an empty JWKS. KerBridge permits
+/// asymmetric algorithms only.
 fn signing_probe(published: &[String]) -> Probe {
     if published.iter().any(|alg| crate::jwks::algorithm(alg).is_some()) {
         Probe::pass(SIGNING, published.join(", "))
@@ -549,18 +476,10 @@ fn signing_probe(published: &[String]) -> Probe {
     }
 }
 
-/// A hard fail rather than a warning, because its runtime failure is silent by
-/// construction.
-///
 /// A refresh token needs the `offline_access` scope mapping **attached to the
-/// provider** as well as requested by the agent, and a new provider does not
-/// get it. Unattached, the authorize view drops the scope with no error and the
-/// sign-in still succeeds; the agent cannot report it either, because a missing
-/// refresh token is a legitimate state. On authentik that token is the agent's
-/// only silent supply, so every re-injection becomes a browser sign-in instead.
-///
-/// The document lists the mappings attached to this provider, which is what
-/// makes an unattached one visible at all.
+/// provider** and requested by the agent. The authorize view silently drops an
+/// unattached scope. The discovery document lists attached mappings, so this
+/// check can detect the missing mapping.
 fn offline_access_probe(scopes: &[String]) -> Probe {
     if scopes.iter().any(|scope| scope == "offline_access") {
         Probe::pass(REFRESH, "attached")
@@ -575,14 +494,10 @@ fn offline_access_probe(scopes: &[String]) -> Probe {
     }
 }
 
-/// One authenticated GET for a probe leg, classified into three outcomes the
-/// caller can name in its own words.
+/// One authenticated GET, classified for a provider-specific probe.
 ///
-/// Deliberately not [`crate::get`]: that one has no bearer and folds every
-/// non-2xx into one generic line, and these legs turn on telling a 403 (the
-/// credential or its grant) apart from a 5xx (the world). The same client the
-/// signing-key fetch uses -- the IdP is remote and outside the deployment either
-/// way.
+/// [`crate::get`] has no bearer and combines all non-2xx responses. These probes
+/// must distinguish a `403` from a `5xx`.
 enum Fetched {
     /// A 2xx, body in hand.
     Body(String),
@@ -615,12 +530,9 @@ async fn get_authed(url: &str, token: &str, timeout: Duration) -> Fetched {
 /// What the self-scoped `/core/tokens/?intent=api` read says about the sync
 /// credential's headroom.
 enum Expiry {
-    /// Days until the soonest expiring API token lapses. Negative once past --
-    /// though a live expired token would already have been refused, so this
-    /// stays a measurement rather than a verdict.
+    /// Days until the soonest API token expires. Can be negative.
     Days(i64),
-    /// An API token is visible and set never to expire, so there is no countdown
-    /// to run. `expiring=false`, and its `expires` field is junk to be ignored.
+    /// An API token has `expiring=false`. Its `expires` value is invalid.
     NonExpiring,
     /// No API-intent token is visible to the bearer at all.
     Absent,
@@ -628,9 +540,7 @@ enum Expiry {
 
 /// One `/core/tokens/` row, cut to the two fields that decide expiry.
 ///
-/// `key` is absent from the serializer and so cannot be read here even by name.
-/// Unknown fields are tolerated: the live row carries `pk`, `user`, `intent`,
-/// `description` and more that this read has no use for.
+/// The serializer does not contain `key`. Unknown response fields are ignored.
 #[derive(Deserialize)]
 struct TokenRow {
     /// The datetime the token lapses, RFC 3339. **Junk whenever `expiring` is
@@ -647,15 +557,11 @@ struct TokenList {
     results: Vec<TokenRow>,
 }
 
-/// Read the credential's headroom from a self-scoped token list, `now` supplied
-/// rather than read for the reason the broker's verifier gives -- a function
-/// that reads the clock can only be tested against it, and this one straddles a
-/// day boundary that would flake once every 86 400 runs.
+/// Read credential headroom from a self-scoped token list. The supplied clock
+/// makes day-boundary tests deterministic.
 ///
-/// The soonest expiring token binds, because the account is meant to hold one
-/// API token and a conservative reading of any surplus is the right default.
-/// Only when every visible token is non-expiring is there no countdown; an empty
-/// list is [`Expiry::Absent`].
+/// The soonest expiry binds. Only a list of non-expiring tokens has no
+/// countdown. An empty list is [`Expiry::Absent`].
 fn read_expiry(body: &str, now: u64) -> Result<Expiry, serde_json::Error> {
     let list: TokenList = serde_json::from_str(body)?;
     if list.results.is_empty() {
@@ -666,10 +572,7 @@ fn read_expiry(body: &str, now: u64) -> Result<Expiry, serde_json::Error> {
         .results
         .iter()
         .filter(|row| row.expiring)
-        // The date part alone: a day-granularity countdown dodges the fractional
-        // seconds and offset spellings a datetime parser would have to chase,
-        // and `expiring=false` rows never reach here so their junk `expires` is
-        // never parsed.
+        // Use the date only. The notification countdown has day granularity.
         .filter_map(|row| row.expires.as_deref())
         .filter_map(|expires| expires.split('T').next())
         .filter_map(days_from_ymd)
@@ -903,8 +806,7 @@ pub mod tests {
         let stated = Settings::parse(&shown).expect("the template parses");
         let defaults = Settings::parse(&required()).expect("the minimal document parses");
         assert_eq!(stated, defaults);
-        // And the derivations the file leaves out, spelled once here so a
-        // changed default is visible rather than merely consistent.
+        // Assert derived values separately from template consistency.
         assert_eq!(defaults.display_name, PRODUCT_NAME);
         assert_eq!(defaults.audience, CLIENT_ID);
         assert_eq!(defaults.issuer, issuer(URL, SLUG));
@@ -938,9 +840,8 @@ pub mod tests {
             discovery_url(&settings.authority),
             "https://authentik.example.site/application/o/kerbridge/.well-known/openid-configuration"
         );
-        // A instance URL stated with a trailing slash derives the same strings:
-        // an operator who pastes the address bar must not get a doubled slash
-        // in the one value that is compared byte for byte.
+        // An instance URL copied with a trailing slash must not double the slash
+        // in the exact issuer value.
         let mut trailing = required();
         trailing.insert("url".into(), format!("{URL}/").into());
         assert_eq!(Settings::parse(&trailing).unwrap().issuer, settings.issuer);
@@ -1112,8 +1013,6 @@ pub mod tests {
         assert!(serde_json::from_str::<Discovery>("<html>sign in</html>").is_err());
     }
 
-    // ---- the five legs: the three authenticated ones ---------------------
-
     /// The `body` half of one of the corpus's response envelopes -- the bytes
     /// authentik would have put on the wire, which is what the reads above parse.
     fn token_body(name: &str) -> String {
@@ -1126,9 +1025,7 @@ pub mod tests {
         serde_json::to_string(&file["response"]["body"]).unwrap()
     }
 
-    /// Midnight, unix seconds, of a `YYYY-MM-DD` day -- a fixed `now` for the
-    /// countdown, so the measurement is asserted against a known headroom rather
-    /// than against the wall clock.
+    /// Midnight, Unix seconds, for a `YYYY-MM-DD` date.
     fn day(date: &str) -> u64 {
         (days_from_ymd(date).unwrap() as u64) * 86_400
     }
@@ -1142,7 +1039,6 @@ pub mod tests {
         let body = token_body("tokens_self_api");
         let now = day("2027-05-02") + 45_000;
         assert!(matches!(read_expiry(&body, now), Ok(Expiry::Days(30))), "30 days to 2027-06-01");
-        // The sync loop's own reading agrees with the probe's.
         assert_eq!(measured_days(&body, now), Some(30));
     }
 
@@ -1217,7 +1113,6 @@ pub mod tests {
         assert_eq!(app_password.verdict, Verdict::Fail);
         assert!(app_password.detail.contains("app_password"), "{}", app_password.detail);
 
-        // A 200 with no api token is odd but not a config error.
         let empty = r#"{"pagination":{"next":0,"count":0},"results":[]}"#;
         assert_eq!(expiry_verdict(Fetched::Body(empty.into()), now).verdict, Verdict::Warn);
     }

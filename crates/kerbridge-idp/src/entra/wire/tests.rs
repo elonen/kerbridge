@@ -112,10 +112,8 @@ fn held_guest_reproduces_the_s13_desired_state() {
     assert_eq!(d, desired_fixture("S13_held_guest_upn_name"));
 }
 
-/// The initial full read, narrowed to the population, is the S1 desired state --
-/// driven through the shared conformance, which holds authentik's corpus to the
-/// same assertion. Entra reaches [`build_desired`] from a shadow rather than a
-/// page set, so this is where the seam is checked against a second shape.
+/// The initial Entra shadow narrows to the S1 desired state through the shared
+/// directory-source conformance check.
 #[test]
 fn initial_read_reproduces_the_s1_desired_state() {
     conformance::whole_read_reproduces_golden(

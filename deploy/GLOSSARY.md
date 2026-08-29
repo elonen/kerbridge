@@ -284,7 +284,7 @@ memberships, file ownership — with nothing reporting it.
 
 It is also the enable switch. Drop a name and keep the file and that source stops
 being mirrored and stops being served, with nothing in the
-[directory](../GLOSSARY.md#directory) touched; there is no `enabled` field. A
+[directory (realm)](../GLOSSARY.md#directory-realm) touched; there is no `enabled` field. A
 listed name with no file refuses to start, and a file no name lists is ignored
 with a line saying so.
 <!-- refs: `main.sources`, `kbconfig sources` -->

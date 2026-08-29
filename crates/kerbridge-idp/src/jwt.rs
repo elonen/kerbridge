@@ -39,13 +39,9 @@ struct Header {
 /// presented. What the claims then have to say is the adapter's own, and stays
 /// there.
 ///
-/// Shared rather than copied because this is the half where a mistake is an
-/// authentication bypass instead of a wrong answer, and a second copy is a
-/// second thing to review. Two properties the crate doc rests on are held here
-/// once, for every adapter whose IdP happens to issue JWTs: the algorithm is
-/// resolved against the allowlist *before* a key is looked up, and the only
-/// verification routine reachable from here is RSA -- so the classic confusions
-/// have no code path rather than merely a guard in front of them.
+/// A defect in these shared checks is an authentication bypass. The algorithm
+/// is allowlisted before key lookup. RSA is the only reachable verification
+/// routine, so symmetric algorithm confusion has no code path.
 ///
 /// The claims are deserialized only after the signature holds, which is what
 /// makes every check an adapter writes afterwards a check against a payload
@@ -54,7 +50,7 @@ pub(crate) async fn verified_claims<C: DeserializeOwned>(
     token: &str,
     jwks: &Jwks,
 ) -> Result<C, Reject> {
-    // 1. Structure, before anything is decoded or fetched.
+    // Validate structure before decoding or fetching a key.
     let mut parts = token.split('.');
     let (Some(header_b64), Some(claims_b64), Some(sig_b64), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
@@ -66,14 +62,14 @@ pub(crate) async fn verified_claims<C: DeserializeOwned>(
         serde_json::from_slice(&b64url(header_b64).map_err(|_| reject("header is not base64url"))?)
             .map_err(|_| reject("header is not JSON"))?;
 
-    // 2. Algorithm allowlist, before a key is selected. The list is crate-wide;
-    //    a JWK that states its own `alg` narrows it further, below.
+    // Apply the crate-wide algorithm allowlist before key selection. A JWK can
+    // narrow this choice with its own `alg`.
     let Some(primitive) = jwks::algorithm(&header.alg) else {
         return Err(reject(format!("disallowed alg {:?}", header.alg)));
     };
     let kid = header.kid.ok_or_else(|| reject("header carries no kid"))?;
 
-    // 3. Signature over the exact bytes presented, not over anything re-encoded.
+    // Verify the exact encoded bytes, not a reconstructed token.
     let signature = b64url(sig_b64).map_err(|_| reject("signature is not base64url"))?;
     let signed_len = header_b64.len() + 1 + claims_b64.len();
     let signed = &token.as_bytes()[..signed_len];
@@ -93,7 +89,7 @@ pub(crate) async fn verified_claims<C: DeserializeOwned>(
         return Err(reject("signature does not verify"));
     }
 
-    // 4. Only now are the claims read at all.
+    // Read claims only after signature verification.
     serde_json::from_slice(&b64url(claims_b64).map_err(|_| reject("claims are not base64url"))?)
         .map_err(|_| reject("claims are not JSON"))
 }

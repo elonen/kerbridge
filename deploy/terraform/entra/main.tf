@@ -197,7 +197,7 @@ resource "azuread_app_role_assignment" "sync_group_read" {
   resource_object_id  = data.azuread_service_principal.msgraph.object_id
 }
 
-# Optional, off by default. Creating the secret here puts a live Graph credential
+# Optional, off by default. Creating the secret here puts a live sync credential
 # in Terraform state, which is why the supported default is to create it out of
 # band and let Terraform never see it. Behind the flag for the deployments that
 # accept a sensitive state file in exchange for one command.

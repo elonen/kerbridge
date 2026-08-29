@@ -54,9 +54,8 @@ const PROMPTS: &[Words] = &[
              and it is the one still readable after the Value has been masked.",
         ),
     },
-    // Nothing in `refuse` can catch a wrong answer here: an authentik API token
-    // is an opaque random string, and so is everything that could be pasted in
-    // its place. The words are the whole of the local defence.
+    // An authentik API token has no local shape check. The prompt must prevent
+    // confusion with an app password or a personal token.
     Words {
         provider: "authentik",
         option: "sync_credential_file",

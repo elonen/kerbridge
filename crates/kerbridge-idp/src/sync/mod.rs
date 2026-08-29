@@ -20,8 +20,7 @@ use crate::IdpSettings;
 use crate::authentik::sync::AuthentikSource;
 use crate::entra::sync::EntraSource;
 
-/// The cases every adapter's directory face is driven through, from its own test
-/// module. It checks the adapters, so it never ships.
+/// Directory-source conformance checks, compiled for adapter tests only.
 #[cfg(test)]
 pub(crate) mod conformance;
 
@@ -119,11 +118,7 @@ impl std::fmt::Display for SourceError {
 /// from. An IdP that reports its own credential's expiry needs no operator
 /// assertion; one that does not gets whatever the config set states.
 pub enum CredentialState {
-    /// Read from the IdP. Entra never constructs it -- an app-registration
-    /// secret carries no expiry a Graph read can see -- but authentik does: a
-    /// self-scoped `/core/tokens/` read reports the sync token's own expiry to
-    /// the bearer, so the adapter measures the headroom rather than asking the
-    /// operator to assert it.
+    /// Read from the IdP. Authentik reports API-token expiry to the bearer.
     Measured { days: i64 },
 
     /// Stated reminder from the operator.
@@ -156,10 +151,8 @@ pub trait DirectorySource: Send {
 
 /// The one place a configured source becomes an adapter.
 ///
-/// Fallible, because a build can carry an adapter's token face and not its
-/// directory one. The refusal stops the process rather than idling the source:
-/// a source silently skipped is a source whose whole population is absent from
-/// the desired state, and absence is how this design spells a departure.
+/// Connect a configured directory (IdP). A failure stops sync because silently
+/// skipping a source would treat its complete population as departed.
 pub fn connect(
     settings: &IdpSettings,
     source: &str,

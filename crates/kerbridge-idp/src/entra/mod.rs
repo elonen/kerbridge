@@ -128,7 +128,8 @@ fn tenant_jwks_url(tenant_id: &str) -> String {
 /// One Entra tenant, as a source file's `[provider_config]` states it.
 ///
 /// Both faces are here because one file serves both binaries: the policy the
-/// broker verifies tokens against, and the Graph credential sync reads with.
+/// broker verifies tokens against, and the sync credential used for directory
+/// (IdP) reads.
 /// Split across `broker.toml` and `sync.toml` they could name different
 /// tenants, and that disagreement retires every account and recreates it with a
 /// fresh SID.

@@ -1,24 +1,24 @@
-# The whole fixture #17 needs, as one atomic blueprint.
+# The complete authorization-code fixture, as one atomic blueprint.
 #
 #   docker compose exec worker ak apply_blueprint /blueprints/kerbridge/kerbridge-bench.yaml
 #
 # `ak apply_blueprint` is synchronous and the entries are one transaction: any
 # entry that fails rolls the whole file back, so a partial fixture is not a
 # state this can reach. Do not wait on the worker's hourly scheduler or its
-# filesystem watcher (#4).
+# filesystem watcher.
 #
 # Five things are pinned here, and four of them are pinned because the default
 # is wrong for us:
 #
 #  1. `signing_key` -- WITHOUT it a provider signs HS256 with its client secret
-#     and publishes a JWKS of `{}`, with no `keys` array at all (#2). That is
+#     and publishes a JWKS of `{}`, with no `keys` array. That is
 #     the default, not a corner case. `!Find` picks up the RSA self-signed
 #     keypair authentik generates on first boot, which yields RS256. A blueprint
 #     cannot generate a keypair -- it takes PEM only -- so this is the one entry
 #     that depends on the server having booted at least once.
 #  2. `sub_mode: user_uuid` -- the default `hashed_user_id` is sha256(id +
 #     install ID) and is not queryable through the REST API, which breaks the
-#     two-faces rule outright (#2, #6).
+#     token/directory subject agreement.
 #  3. `offline_access` -- a refresh token needs the mapping attached
 #     provider-side AND requested by the client. A new provider gets neither.
 #  4. `client_type: public` + no secret -- the agent is a public client on PKCE.
@@ -58,7 +58,7 @@ entries:
       include_claims_in_id_token: true
       # Explicitly the per-provider issuer, not the "same identifier for all
       # providers" mode -- under that mode `iss` is the bare root and no longer
-      # shares a prefix with the discovery URL (#2).
+      # shares a prefix with the discovery URL.
       issuer_mode: per_provider
       access_code_validity: minutes=5
       signing_key:
@@ -92,7 +92,7 @@ entries:
       is_active: true
       # `password` is a blueprint-only field. Note `type` -- UserWriteStage
       # would default an enrolled account to `external`, and both internal and
-      # external are people (#18).
+      # external are people.
       type: internal
       password: bench-user-password
       path: users

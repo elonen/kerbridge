@@ -1,7 +1,7 @@
 # kerbridge-sync glossary
 
 The cloud-IdP-to-IdP-specific-OU reconciliation loop: planning and applying —
-the read/plan/apply cycle and the directory state it reasons about. How an IdP
+the read/plan/apply cycle and the directory (realm) state it reasons about. How an IdP
 is read is the adapter's, below the seam — see
 [`crates/kerbridge-idp/GLOSSARY.md`](../kerbridge-idp/GLOSSARY.md).
 
@@ -14,8 +14,7 @@ unreadably long if it carried every term at once.
 
 Effectively inside the `admission group`, transitively: the state
 that earns a cloud user an on-prem object and lets the broker issue for them. A
-user can be syncable in Entra — a `Member` or `Guest` sync would mirror —
-without being admitted.
+user can be syncable in a directory (IdP) without being admitted.
 <!-- avoid: enrolled, entitled, allowed in -->
 
 ### admitted set
@@ -39,7 +38,7 @@ broker fails closed on the role marker.
 
 ### allowlist
 
-Extra Entra group object ids synchronized beyond the admission-
+Extra directory (IdP) group object IDs synchronized beyond the admission-
 group `closure`, named directly by the operator.
 They are closure roots like the admission group itself, so their nested groups
 come with them.
@@ -48,7 +47,7 @@ come with them.
 
 ### apply
 
-Writing a `plan (sync)`'s ops to the directory in order, as `svc-
+Writing a `plan (sync)`'s ops to the directory (realm) in order, as `svc-
 sync` over LDAPS. A failed op is recorded in the apply report's failures and the
 rest proceed, so one bad write cannot strand the others.
 <!-- refs: `ApplyReport::failures`, `kerbridge_sync::directory::Directory::apply` -->
@@ -56,11 +55,11 @@ rest proceed, so one bad write cannot strand the others.
 
 ### automatic sam rename
 
-Whether a live account's `login name` follows its
-Entra display name after creation — default on.
+Whether a live account's `login name` follows its first `name candidate` after
+creation — default on.
 It costs that one user a sign-out, because the name is their Kerberos
 `principal`; `kbmanage cloud rename` stamps `kbstate1|namepinned|` in the same
-modify to hold an operator's own choice against it, and `kbmanage cloud unpin`
+modify to hold an operator's own choice against it. `kbmanage cloud unpin`
 hands the name back.
 <!-- refs: `automatic_sam_renames` in `configs/sync.toml` -->
 <!-- avoid: auto rename, name drift -->
@@ -70,7 +69,7 @@ hands the name back.
 Naming the admission or device-grant group by its immutable
 cloud object id, which is the only way either is stated. An id is an identity,
 so sync moves a role marker found on the wrong group to obey it, and a rename
-at the IdP cannot point the binding at a different group. A different
+in the directory (IdP) cannot point the binding at a different group. A different
 operation from a `name pin`, which freezes a value against recomputation rather
 than selecting by a key.
 <!-- refs: `admission_group_id`, `device_grant_group_id` in `configs/idp_<source>.toml`'s `[provider_config]` -->
@@ -78,9 +77,9 @@ than selecting by a key.
 
 ### closure
 
-The set of Entra groups reachable from the `admission group` and
+The set of directory (IdP) groups reachable from the `admission group` and
 the `allowlist` through nested group membership; it is the whole answer to who
-has a directory object here, not merely who may get a ticket. Direct edges are
+has a directory (realm) object here, not merely who may get a ticket. Direct edges are
 mirrored as-is and nesting is resolved by Samba, not flattened here; leaving the
 closure therefore retires the account rather than only dropping its memberships.
 <!-- refs: `kerbridge_idp::sync::build_desired` -->
@@ -88,7 +87,7 @@ closure therefore retires the account rather than only dropping its memberships.
 
 ### CN
 
-The first RDN value of a directory object's DN, and what ADUC shows.
+The first RDN value of a directory (realm) object's DN, and what ADUC shows.
 Sync derives it from the display name, not from the login name, and unlike a
 `sAMAccountName` it carries no length limit worth enforcing.
 <!-- avoid: common name, new_cn -->
@@ -105,7 +104,7 @@ that still applies — freeze at per-object radius, unlike the whole-run freeze 
 
 ### current state
 
-What the directory actually holds: everything under
+What the directory (realm) actually holds: everything under
 the IdP-specific OU plus a domain-wide `sAMAccountName` scan for collision-safe naming.
 Only objects carrying a `kb1` identity for the configured `source` reach the
 user and group maps; the rest land in the unmanaged set, reported and never
@@ -133,11 +132,11 @@ admission-group closure and the held-narrowing have been applied to the
 
 ### directory source
 
-One cloud IdP behind the seam, reduced to what the mirror needs of it: it
-advances, and yields a `source snapshot` or says why it could not. How it reads
-— the protocol, the credential, the
-[cursors](../kerbridge-idp/GLOSSARY.md#delta-cursor) — is its own, and
-reconciliation never enters one.
+One [directory (IdP)](../../GLOSSARY.md#directory-idp) behind the seam, reduced
+to what the mirror needs. It advances and yields a `source snapshot`, or it
+reports why it cannot. The adapter owns the protocol, credential, and
+[cursors](../kerbridge-idp/GLOSSARY.md#delta-cursor). Reconciliation does not
+enter the adapter.
 <!-- refs: `kerbridge_idp::sync::DirectorySource` -->
 <!-- avoid: connector, provider interface, source trait, reader -->
 
@@ -213,7 +212,7 @@ held but unsyncable user is reported as a refusal, not created.
 
 ### held (retention)
 
-Kept in the directory after Entra stopped listing the
+Kept in the directory (realm) after the directory (IdP) stopped listing the
 object, so the SID survives and a returning identity comes back to its own
 files. Only the SID is held: the name is released in the same cycle, and
 `kbmanage doctor` warns (`name still held`) when a retired object still carries
@@ -266,7 +265,7 @@ since.
 
 ### retired
 
-The state of a user sync no longer sees in Entra: disabled, marked
+The state of a user sync no longer sees in the directory (IdP): disabled, marked
 `kbstate1|retired|<timestamp>`, every device grant cleared, and renamed —
 `sAMAccountName` and UPN both — into the `_retired-` namespace, so the live name
 is freed and only the SID is held. Retirement is a revocation that must not undo
@@ -313,11 +312,13 @@ synchronized — is a separate guard in the planner.
 
 ### sync credential
 
-What a `directory source` authenticates to its own IdP with, read from a secret
-file: an empty file is the whole of "sync not configured", and writing content
-into it starts synchronization on the next poll, with no switch and no restart.
-Read-only, and never a user's token. Entra's is an app-only client secret, which
-never auto-renews, stops every read at once when it expires, and states its
-expiry as an operator assertion rather than a measurement.
-<!-- refs: `secrets/idp/<name>/credential`, `EntraSource::credential` in `crates/kerbridge-idp/src/entra/sync.rs`, `sync_credential_expires` in `configs/idp_<source>.toml`'s `[provider_config]` -->
+The credential that a `directory source` uses to authenticate to its IdP. Sync
+reads it from a secret file. An empty file means that sync is not configured.
+Content in the file starts synchronization on the next poll. The credential is
+read-only and is never a user's token.
+
+Entra uses an app-only client secret. It does not renew automatically. The
+operator can state its expiry date. Authentik uses an API token for a dedicated
+service account. The adapter reads the token's expiry from authentik.
+<!-- refs: `secrets/idp/<name>/credential`; `EntraSource::credential`; `AuthentikSource::credential`; `sync_credential_expires` -->
 <!-- avoid: graph credential, idp credential, entra credential, graph secret, secret value, secret id -->

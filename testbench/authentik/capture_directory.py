@@ -14,13 +14,13 @@ here is authored to a documented shape. Where a shape could not be produced
 against a real server, the run says so and writes no file rather than inventing
 one.
 
-MEASURED against ghcr.io/goauthentik/server:2026.8.0 (kerbridge #39), the same
-image `compose.authentik.yaml` pins. It seeds its own cast, so it wipes and
+MEASURED against ghcr.io/goauthentik/server:2026.8.0, the same image
+`compose.authentik.yaml` pins. It seeds its own cast, so it wipes and
 re-creates every object it owns on each run: the recordings are reproducible in
 *shape*, never byte-for-byte, because uuids and timestamps are the server's.
 
-The cast is #38's case list, as rows rather than files: a service account held
-by the admission group, a disabled service account, a two-level nesting, a group
+The cast includes a service account held by the admission group, a disabled
+service account, a two-level nesting, a group
 with two parents, a `cyc-a`/`cyc-b` cycle, and users whose display names are
 degenerate. It also seeds fillers, so that a page size well below the measured
 `page_size=100` splits the read in two and the terminating page is recorded
@@ -38,13 +38,13 @@ BASE = os.environ.get("AK_BASE", "http://127.0.0.1:9000")
 ADMIN_TOKEN = os.environ.get("AK_BOOTSTRAP_TOKEN", "kerbridge-bench-bootstrap-token")
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "captured")
 
-# Below the measured page_size=100 (#9) on purpose, and the only parameter that
+# Below the measured page size of 100, and the only parameter that
 # differs from the real read: 13 users and 11 groups will not split at 100, and
 # a corpus that never records the terminating page cannot pin `next: 0`.
 USER_PAGE_SIZE = 10
 GROUP_PAGE_SIZE = 8
 
-# The read #9 specified, minus page_size. `include_groups`/`include_users`
+# The production read, without its page size. `include_groups`/`include_users`
 # default to TRUE in the schema, so both must be passed explicitly or every row
 # carries an embedded object graph the adapter does not read.
 USER_QUERY = "ordering=pk&include_groups=false&include_roles=false"
@@ -147,10 +147,10 @@ USERS = [
     ("erin.filler", "Erin Filler", "erin.filler@bench.invalid", "internal", True),
     ("frank.filler", "Frank Filler", "frank.filler@bench.invalid", "internal", True),
     ("ada.lovelace", "Ada Lovelace", "ada.lovelace@bench.invalid", "internal", True),
-    # #9's headline decision: an account type Entra's rule refuses, admitted
-    # here because the admission group holds it.
+    # Authentik account type does not control admission. This service account is
+    # admitted because the admission group holds it.
     ("kb-svc-sync", "Kerbridge Sync Collector", "", "service_account", True),
-    # is_active is orthogonal to type (#18): a disabled service account still
+    # `is_active` is independent of type: a disabled service account still
     # arrives in the read rather than disappearing from it.
     ("kb-svc-retired", "Retired Collector", "", "service_account", False),
     ("bob.nested", "Bob Nested", "bob.nested@bench.invalid", "internal", True),
@@ -283,7 +283,7 @@ def main():
     assert u2["body"]["pagination"]["next"] == 0, u2["body"]["pagination"]
 
     record("users_page1", "RECORDED. First page of the full user read. "
-           "page_size is %d rather than #9's measured 100 purely to force a boundary. "
+           "page_size is %d rather than the production value 100 to force a boundary. "
            "The rows are the cast: a service account, a disabled service account, an "
            "ordinary person, and (on page 2) the degenerate display names. "
            "authentik's own three accounts are here because they are: /core/users/ has "
@@ -411,9 +411,8 @@ def main():
     ok(call("DELETE", "/api/v3/core/users/%d/" % zed["pk"]))
 
     say("Q1's consequence: a group inserted between page 1 and page 2")
-    # Only meaningful if the group sort key really is the random uuid; if a
-    # later authentik ever sorts /core/groups/ by num_pk instead, this
-    # experiment is asking a question that no longer exists.
+    # This experiment requires the random UUID sort key. Refuse a future
+    # authentik version that sorts groups by `num_pk`.
     assert q1["groups"]["sorted_by_uuid_pk"], "groups are not ordered by their uuid pk"
     boundary = g1["body"]["results"][-1]["pk"]
     g_page1_before = rows(g1, "pk")
@@ -448,7 +447,7 @@ def main():
         ok(call("DELETE", "/api/v3/core/groups/%s/" % pk))
 
     # -----------------------------------------------------------------------
-    # 4. the torn read a DELETE produces -- #38's users_torn_page2
+    # 4. the torn read that a DELETE produces
     # -----------------------------------------------------------------------
     say("a user deleted between page 1 and page 2")
     doomed = find("/core/users/", "username", "frank.filler")
@@ -463,8 +462,8 @@ def main():
            "RECORDED. Page 2 after user %d (frank.filler) was deleted between the two "
            "requests. `count` is %d against page 1's %d, and rows %s are in NEITHER "
            "page the reader holds: every row after the deleted one shifted back by "
-           "one index, so the boundary moved past them. This is the whole of #7 s9's "
-           "mitigation -- the lower count is the detectable half, and the skipped row "
+           "one index, so the boundary moved past them. The lower count is the "
+           "detectable half, and the skipped row "
            "is what it protects against. Expect SourceError::NotWhole, never a "
            "snapshot missing a user."
            % (doomed["pk"], u2_torn["body"]["pagination"]["count"],
@@ -477,7 +476,7 @@ def main():
     no_header = call("GET", "/api/v3/core/users/?page_size=1", token=None)
     record("err_403_not_provided",
            "RECORDED with no Authorization header at all. 403, not 401 -- authentik "
-           "has no 401 anywhere in its schema (#22), and the schema for "
+           "has no 401 anywhere in its schema, and the schema for "
            "/core/users/ documents exactly two failures, 400 and 403. A classifier "
            "keyed on the status collapses this with the two below; the `detail` "
            "string is the entire discriminator.", no_header)
@@ -497,7 +496,7 @@ def main():
                            "email": "", "type": "service_account", "path": "users"}))
     ok(call("POST", "/api/v3/core/tokens/",
             body={"identifier": "kb-unprivileged-token", "intent": "api",
-                  "user": unpriv["pk"], "description": "#39 capture", "expiring": False}))
+                  "user": unpriv["pk"], "description": "directory capture", "expiring": False}))
     unpriv_key = ok(call("GET", "/api/v3/core/tokens/kb-unprivileged-token/view_key/"))["key"]
     no_perm = call("GET", "/api/v3/core/users/?%s&page_size=%d&page=1" % (USER_QUERY, USER_PAGE_SIZE),
                    token=unpriv_key)
@@ -539,7 +538,7 @@ def main():
            "size of the FILTERED set, not of the directory (%d). The envelope is "
            "internally perfect: count matches the row count, total_pages is 1, next is "
            "0. Byte for byte this is indistinguishable from an honest read of a "
-           "two-person directory, which settles #38 s5: a count cross-check is "
+           "two-person directory. A count cross-check is "
            "STRUCTURALLY BLIND to a partial grant and the corpus must not carry a case "
            "pretending otherwise." % (pag["count"], whole["count"]), partial)
 

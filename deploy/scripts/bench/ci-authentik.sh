@@ -3,34 +3,28 @@
 # clone to a file read over SMB with a TGT and no password. What `make
 # test-authentik` runs.
 #
-# This is the authentik counterpart of ci-stack.sh. The two share
-# scripts/bench/provision.sh, which brings a realm up from nothing and waits for
-# the broker's `/config` over TLS; each supplies its source through the three
-# hooks below. Where the Entra tier fakes the IdP twice -- pre-forged tokens and a
-# key document off disk, and a directory hand-written by seed-demo.sh -- authentik
-# is real on both faces: it runs on the compose network behind the same Caddy, the
-# broker fetches its signing keys over TLS, and kerbridge-sync mirrors its
-# directory into the realm. That second face is why this tier exists: sync is not
-# optional here, it is the thing under test.
+# This tier shares realm provisioning with ci-stack.sh. Authentik runs behind
+# Caddy. The broker fetches its signing keys over TLS, and sync reads its live
+# directory (IdP).
 #
-# What it proves, beyond what provision.sh already does, in order:
+# Authentik-specific assertions:
 #
-#   1. The broker's FIRST REAL JWKS FETCH. The startup fetch is fatal on failure
+#   1. The broker's live JWKS fetch. The startup fetch is fatal on failure
 #      (kerbridge-idp/src/jwks.rs), so the broker answers `/config` only if it
 #      first fetched the application's keys from authentik, over TLS, trusting the
 #      bench CA. provision.sh waiting for `/config` is that proof.
-#   2. SYNC MIRRORS THE DIRECTORY. Pointed at the admission group's live pk, one
+#   2. Sync mirrors the directory (IdP). Pointed at the admission group's live pk, one
 #      cycle turns the blueprint's one user and one group into a realm account and
 #      a marked admission group. Asserted by OUTCOME, never an exit code: one user,
 #      one group, and the account's external identity byte-equal to the REST uuid.
-#   3. A SCRIPTED SIGN-IN TO A REAL TGT. approve.sh signs benchuser in through the
+#   3. A scripted sign-in to a real TGT. approve.sh signs benchuser in through the
 #      flow executor with no browser, the client posts the authentik token to
 #      /ticket, and a KDC-signed TGT comes back -- for the very account sync wrote.
 #      Then the neighbouring application mints a cross-application token, refused
 #      401 on the issuer (per-provider issuer mode makes it an issuer negative; its
 #      aud is correct).
-#   4. THAT TGT READS A FILE OVER SMB, with no password anywhere from the sign-in
-#      on. It is the only proof that sync wrote a user the KDC issues a usable PAC
+#   4. The TGT reads a file over SMB, with no password after sign-in.
+#      It is the only proof that sync wrote a user the KDC issues a usable PAC
 #      for -- the same end state ci-stack.sh reaches, driven by sync rather than by
 #      seed-demo.sh.
 set -euo pipefail
@@ -140,8 +134,8 @@ for line in lines:
 PY
 }
 
-# The uuid a signed-in token will carry and the value sync must write. Read it now,
-# from authentik itself, so the assertions below compare sync's output against the
+# The UUID a signed-in token carries and the value sync must write. Read it
+# from authentik so the assertions compare sync's output against the
 # authority rather than against a constant this script chose.
 say "reading benchuser's uuid and the admission group's pk from authentik"
 read_ak() {  # path -> stdout, via the bootstrap token inside authentik-server

@@ -144,9 +144,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # Builds the whole KerBridge stack and reads over SMB like the stack job,
-    # plus pulls the pinned authentik images with no layer cache, so it wants the
-    # stack job's budget.
+    # Includes a full stack, SMB read, and uncached authentik image pull.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

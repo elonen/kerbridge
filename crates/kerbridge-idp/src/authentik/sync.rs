@@ -1,12 +1,9 @@
-//! The authentik adapter: the REST directory, behind the directory seam.
+//! The authentik directory (IdP) adapter, behind the directory-source seam.
 //!
-//! Owns what one instance costs a cycle -- the API token, and a full read of
-//! every user and group -- and hands the mirror a whole enumeration or nothing
-//! at all. There is no cursor and no shadow: authentik has no delta, no
-//! group-side change filter and invisible deletions, so every cycle is a full
-//! read and absence in it is the only deletion channel. The seam takes no event
-//! input, not even a wake-up: an authentik event is absent exactly for a
-//! blueprint or worker change, so a push feed would miss the changes that matter.
+//! Each cycle reads all users and groups with an API token. It returns a complete
+//! enumeration or no enumeration. Authentik has no delta API or group change
+//! filter. A push feed is insufficient because blueprint and worker changes do
+//! not produce an authentik event.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,8 +20,8 @@ use crate::sync::{
 
 /// One authentik instance, read over its REST API.
 ///
-/// Nothing about the directory this feeds -- no bind identity, no OU -- is
-/// reachable from here: the fields below are the whole of what crosses the seam.
+/// Directory (realm) details such as the bind identity and OU do not cross the
+/// directory-source seam.
 pub struct AuthentikSource {
     /// This source's name, the subject of every problem raised below the seam.
     source: String,
@@ -62,8 +59,8 @@ impl AuthentikSource {
     /// This source's sync credential -- the API token the directory is read with
     /// -- or `None` while the operator has yet to paste one in.
     ///
-    /// Empty means the token does not exist yet: a deployment that has not got
-    /// there, not a fault, so the source is skipped and re-checked next cycle.
+    /// An empty file means that setup is incomplete, not that the source failed.
+    /// Sync checks the file again in the next cycle.
     ///
     /// Unlike Entra's, there is **no shape to refuse locally**: an authentik API
     /// token is an opaque string, so the prompt's words are the only local
@@ -78,8 +75,7 @@ impl AuthentikSource {
             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
                 anyhow::bail!("{}", kerbridge_core::secret::denial(&self.credential_file))
             }
-            // Absent is the fresh-deployment case, and anything else here is a
-            // path that is not there either.
+            // An absent path means that setup is incomplete.
             Err(_) => Ok(None),
         }
     }
@@ -112,16 +108,13 @@ impl DirectorySource for AuthentikSource {
             }
             Err(e) => return Err(SourceError::Credential(format!("credential unreadable: {e:#}"))),
         };
-        // Rebuilt every cycle rather than cached, so a rotated token is picked up
-        // by the next cycle with nothing to restart.
+        // Rebuild the client to use a rotated token without a restart.
         let client = AuthentikClient::new(&self.url, credential)
             .map_err(|e| SourceError::Unreachable(format!("authentik client: {e:#}")))?;
 
-        // Measured before the read, best-effort: the self-scoped token read is a
-        // different endpoint from the directory, and its headroom feeds
-        // `credential_state`, which the loop consults on the *next* cycle. A
-        // failure to measure leaves the last good reading standing rather than
-        // clobbering it, so a transient blip does not blank the countdown.
+        // Expiry measurement is advisory and uses a separate endpoint. Keep the
+        // last value if this read fails, so a transient error does not remove the
+        // countdown.
         if let Some(days) = client.measure_expiry(kerbridge_core::time::now_unix()).await {
             self.measured_days = Some(days);
         }
@@ -135,14 +128,13 @@ impl DirectorySource for AuthentikSource {
         .await;
         let (users, groups) = match read {
             Ok(pages) => {
-                // A read got through, so the token the operator was warned about
-                // has been rotated or was never the problem.
+                // A successful read proves that the credential works.
                 self.notifier.resolve_subject("sync-credential-expired", &subject).await;
                 pages
             }
             Err(e @ SourceError::CredentialRejected(_)) => {
-                // Reported on its own channel, which is why the seam does not
-                // count it: a second, vaguer alarm for one condition is noise.
+                // Use the credential event only. A second source-failure event
+                // would report the same condition.
                 self.notifier
                     .send(
                         Event::new("sync-credential-expired", Severity::Error, e.to_string())

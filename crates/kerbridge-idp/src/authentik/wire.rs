@@ -1,19 +1,14 @@
 //! authentik's REST wire shapes, and the assembly that turns a whole read into
 //! an [`Enumeration`].
 //!
-//! There is no shadow and no delta here, because authentik has neither: every
-//! cycle is a full read of `/core/users/` and `/core/groups/`, page by page,
-//! `?ordering=pk`. So this module's job is not to patch an accumulated copy but
-//! to prove a set of pages is one whole reading and refuse it when it is not.
+//! Authentik has no shadow or delta API. Each cycle reads `/core/users/` and
+//! `/core/groups/` in `pk` order. This module accepts only a complete set of
+//! pages.
 //!
-//! Completeness is **by construction, not by proof**: page-number pagination
-//! over a pk-ordered stream, so a
-//! `count` that falls between pages betrays a deletion mid-read and a pk that
-//! does not sort strictly after the last betrays an insertion or a repeat. A
-//! truncated 200 and an honest smaller 200 are the same bytes, so that hazard is
-//! not expressible here; what *is* expressible is the asymmetry it leaves --
-//! authentik's read has no races, so a **dangling id is a signal**, and any one
-//! makes the read not whole rather than dropping a single row.
+//! Page-number pagination cannot prove completeness. A lower `count` detects a
+//! deletion between pages. A non-increasing `pk` detects an insertion or repeat.
+//! A truncated `200` and an honest smaller `200` have the same shape. A dangling
+//! ID is therefore also a whole-read failure, not a row-level refusal.
 //!
 //! [`assemble`] produces the neutral [`Enumeration`]; the realm's own rules
 //! ([`build_desired`](crate::sync::build_desired)) narrow it to a desired state.
@@ -53,10 +48,9 @@ pub struct Pagination {
 
 /// A `/core/users/` row, cut to what the read consumes.
 ///
-/// `type` is deliberately absent: **nothing filters an account**. authentik puts
-/// people and service accounts in one collection, so a `?type=` gate or a
-/// `Member`-only rule would overrule the operator rather than protect them. The
-/// admission closure is the only gate, and it lives above this module.
+/// `type` is absent because the adapter does not filter account types. Authentik
+/// puts people and service accounts in one collection. The admission closure is
+/// the only account-selection gate.
 #[derive(Debug, Deserialize)]
 pub struct RawUser {
     /// The integer primary key. A group names its members by this, and it is the
@@ -103,14 +97,10 @@ pub struct RawGroup {
 
 /// The strings this account's login name may be minted from, best first.
 ///
-/// **Three spellings, `username` first**, each reduced by the shared name rule
-/// and dropped when nothing survives, deduplicated first-wins. `username` leads
-/// because it is authentik's stable login handle; the dotted display name and
-/// the address local part stand in where it collapses to nothing (a display name
-/// of `...` is three allowed characters and no name). The display name earns its
-/// place only to dodge a flattened external address like `alice.anderson_gmail`,
-/// a shape authentik cannot produce -- but it costs nothing to keep as a
-/// fallback, and the realm suffixes a collision either way.
+/// The candidates are username, display name, and email address, in that order.
+/// The shared rule removes unusable values and duplicate results. Username is
+/// authentik's stable login handle. The other values are fallbacks when it
+/// reduces to an empty name.
 fn name_candidates(u: &RawUser) -> Vec<NameCandidate> {
     let display = dotted(&u.name);
     let email = local_part(&u.email);
@@ -143,7 +133,7 @@ pub fn assemble(users: &[Page<RawUser>], groups: &[Page<RawGroup>]) -> Result<En
 
     let group_ids: HashSet<&str> = group_rows.iter().map(|g| g.pk.as_str()).collect();
 
-    // pk -> subject, refusing the whole cycle on the first non-canonical uuid.
+    // A noncanonical UUID invalidates the complete read.
     let mut by_pk: BTreeMap<i64, Subject> = BTreeMap::new();
     let mut read = Enumeration::default();
     for u in &user_rows {
@@ -167,9 +157,8 @@ pub fn assemble(users: &[Page<RawUser>], groups: &[Page<RawGroup>]) -> Result<En
         );
     }
 
-    // A visible user naming a group no page returned is a dangling id too, even
-    // though this edge is read from the group side: the read is meant to have no
-    // races, so any unresolved reference refuses it.
+    // A user-to-group edge must resolve even though group rows supply the
+    // membership used by reconciliation.
     for u in &user_rows {
         for gid in &u.groups {
             if !group_ids.contains(gid.as_str()) {
@@ -186,8 +175,7 @@ pub fn assemble(users: &[Page<RawUser>], groups: &[Page<RawGroup>]) -> Result<En
         let subject = Subject::new(g.pk.clone());
         read.groups.insert(subject.clone(), DesiredGroup { display_name: g.name.clone() });
 
-        // Members first, in wire order, then child groups: the order
-        // `build_desired` preserves into the mirrored membership.
+        // `build_desired` preserves members before child groups.
         let mut edges: Vec<Membership> = Vec::new();
         for member in &g.users {
             match by_pk.get(member) {

@@ -151,7 +151,7 @@ make test-all
 
 `make test-stack` is the interesting one. It provisions a Samba AD
 [realm](GLOSSARY.md#realm) into an empty Docker volume and bootstraps the
-[directory](GLOSSARY.md#directory). It issues an OIDC token against a throwaway
+[directory (realm)](GLOSSARY.md#directory-realm). It issues an OIDC token against a throwaway
 key, and exchanges the token at the [broker](GLOSSARY.md#broker) for a real
 KDC-signed [TGT](GLOSSARY.md#tgt). With that [ticket](GLOSSARY.md#ticket), it
 reads a file from the [file server's](GLOSSARY.md#file-server)

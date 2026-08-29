@@ -4,13 +4,9 @@
 //! `entra-token-validation`, whose ordering of the checks below is the one this
 //! reproduces.
 //!
-//! Two properties are structural rather than checked, and both are held in
-//! `crate::jwt` rather than here: the algorithm is never chosen by the token --
-//! `alg` is resolved against the allowlist before any key is loaded, and the
-//! only verification routine that half can reach is RSA, so the classic
-//! confusions have no code path rather than merely a guard in front of them;
-//! see the crate doc for why that rule is asymmetric-only rather than
-//! RS256-only. And the clock is a parameter, not configuration.
+//! `crate::jwt` enforces two structural properties. It allowlists `alg` before
+//! key lookup, and RSA is its only verification routine. Symmetric algorithm
+//! confusion has no code path. The clock is a parameter, not configuration.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -130,9 +126,7 @@ async fn verify(
     jwks: &Jwks,
     now: i64,
 ) -> Result<ExternalIdentity, Reject> {
-    // Structure, the algorithm allowlist, the key and the signature are
-    // `crate::jwt`'s, and the claims are not read until they hold. Everything
-    // below is policy against a payload whose authenticity is established.
+    // Do not read claims before `jwt::verify` authenticates the payload.
     let claims: Claims = jwt::verified_claims(token, jwks).await?;
 
     let iss = claims.iss.ok_or_else(|| reject("no iss"))?;

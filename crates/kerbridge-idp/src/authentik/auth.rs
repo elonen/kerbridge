@@ -1,17 +1,13 @@
 //! authentik's token face: an access token reduced to an [`ExternalIdentity`].
 //!
-//! The policy below is the one `testbench/authentik/authcode.sh` measured
-//! against a live 2026.8.0 provider, claim by claim. Where it differs from
-//! Entra's it is because authentik differs, not because a second adapter had a
-//! second opinion:
+//! `testbench/authentik/authcode.sh` measured this policy against authentik
+//! 2026.8.0:
 //!
-//! - **`azp` is the strong claim, and it is an access-token check.**
+//! - **`azp` is the access-token authorization claim.**
 //!   `to_dict()` ends in a blind `id_dict.update(self.claims)`
 //!   (`id_token.py:155-165`), so a scope mapping on this provider can rewrite
-//!   every claim in the token -- `aud` and `sub` included. `azp` and `uid` are
-//!   written *after* that merge, and `azp` only in `to_access_token()`. So it is
-//!   the one claim a mapping cannot forge, and an honest ID token carries none
-//!   at all.
+//!   `aud` and `sub`. authentik writes `azp` after this merge and only in
+//!   `to_access_token()`. A mapping cannot replace it. An ID token has no `azp`.
 //! - **`nbf` is validated only if present.** authentik emits none, ever, so
 //!   requiring one would refuse every token this provider issues.
 //! - **No scope is checked.** On authentik a scope selects which mappings run;
@@ -19,10 +15,9 @@
 //!   ask for. Admission is the group closure sync mirrors, as it is for every
 //!   source.
 //!
-//! Structure, the algorithm allowlist, the key and the signature are
-//! `crate::jwt`'s, shared with the Entra adapter: that half is the same
-//! wherever a JWT arrives, and it is the half where a mistake is an
-//! authentication bypass. The clock is a parameter, not configuration.
+//! `crate::jwt` validates the JWT structure, algorithm, key, and signature.
+//! These security checks are shared with Entra. The clock is a parameter, not
+//! configuration.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,12 +32,8 @@ use crate::jwks::{Jwks, JwksSource};
 use crate::jwt::{self, Audience};
 use crate::{IdentityProvider, OidcDiscovery, Reject, reject};
 
-/// Clock skew allowed on `exp` and on an `nbf` that is there to allow.
-///
-/// The same 300 s the Entra adapter allows, and for the same reason: skew is a
-/// property of the two clocks rather than of the IdP, and an operator reading a
-/// window in one broker log should not find a different one in the next.
-/// authentik publishes no number of its own to follow instead.
+/// Clock skew allowed on `exp` and `nbf`. All adapters use 300 seconds because
+/// the skew belongs to the two clocks, not to the IdP.
 const LEEWAY_SECONDS: i64 = 300;
 
 /// What the agent asks for. `offline_access` is what makes authentik issue a
@@ -143,9 +134,7 @@ async fn verify(
     jwks: &Jwks,
     now: i64,
 ) -> Result<ExternalIdentity, Reject> {
-    // Structure, the algorithm allowlist, the key and the signature are
-    // `crate::jwt`'s, and the claims are not read until they hold. Everything
-    // below is policy against a payload whose authenticity is established.
+    // Do not read claims before `jwt::verify` authenticates the payload.
     let claims: Claims = jwt::verified_claims(token, jwks).await?;
 
     let exp = claims.exp.ok_or_else(|| reject("no exp"))?;
@@ -156,28 +145,21 @@ async fn verify(
         return Err(reject("token is not valid yet"));
     }
 
-    // The audience before the issuer, because the neighbouring application's
-    // token differs in both and the audience is what is wrong with it: under
-    // the default per-provider issuer mode a token minted next door carries its
-    // own `iss`, its own `aud` and its own `azp`, and "addressed to another
-    // application" is the sentence an operator can act on.
+    // Check the audience first so a token for another application reports the
+    // error that the operator can act on.
     let aud = claims.aud.ok_or_else(|| reject("no aud"))?;
     if !aud.accepts(&policy.audience) {
         return Err(reject("aud is not this application"));
     }
-    // Compared byte for byte, trailing slash and all: `get_issuer()` is
-    // `reverse()` over a pattern that ends in one. What this catches on its own
-    // is the "same identifier for all providers" issuer mode, which publishes
-    // the bare instance root and stops telling one application from another.
+    // Compare the final slash. The global issuer mode publishes the bare
+    // instance root and cannot identify one application.
     let iss = claims.iss.ok_or_else(|| reject("no iss"))?;
     if iss != policy.issuer {
         return Err(reject("iss is not the configured issuer"));
     }
 
-    // The claim a scope mapping cannot reach, and the reason the two checks
-    // above are not the whole audience story. Absent means an ID token: honest,
-    // correctly signed, and not an authorization to act as anyone -- so the
-    // words say which token was sent rather than that a claim is missing.
+    // A scope mapping cannot replace `azp`. An absent `azp` identifies an ID
+    // token, which is not authorization to act for the user.
     match claims.azp.as_deref() {
         None => return Err(reject("no azp: an ID token is not an access token")),
         Some(azp) if azp != policy.client_id => {
@@ -186,22 +168,16 @@ async fn verify(
         Some(_) => {}
     }
 
-    // Presence is this function's, shape is `identity`'s -- sync goes through it
-    // too. The cause is interpolated, so a `sub` refused for the provider's
-    // subject mode says so rather than saying "not a subject".
+    // `identity` applies the same subject-shape rule to token and sync inputs.
     let sub = claims.sub.ok_or_else(|| reject("no sub"))?;
     identity(source, &sub).map_err(|e| reject(format!("sub is not a usable subject: {e}")))
 }
 
 /// `nbf`, honoured only when the token carries one.
 ///
-/// authentik emits none, on any token, in any version, so requiring one would
-/// refuse every token this provider issues -- and the corpus therefore has no
-/// future-`nbf` fixture to state the other half with, because fabricating a
-/// shape the IdP cannot produce would pin the fabrication. "Not emitted" is
-/// still not "not honoured": a token that does carry one is held to it, which
-/// is what this reads as a predicate rather than an `if let` in the middle of
-/// `verify`.
+/// Authentik does not emit `nbf`. If a token contains it, the verifier honors
+/// it. The corpus does not invent an authentik token shape that the IdP cannot
+/// produce.
 fn not_yet_valid(nbf: Option<i64>, now: i64, leeway_seconds: i64) -> bool {
     nbf.is_some_and(|nbf| now + leeway_seconds < nbf)
 }
@@ -476,7 +452,7 @@ mod tests {
 
         let why = idp.identify(&token("neg_wrong_audience.jwt"), VALID_AT).await.unwrap_err();
         assert!(why.to_string().contains("azp"), "{why}");
-        // And this source's own token now fails, on the audience the file moved.
+        // Moving the configured audience also rejects this source's token.
         let why = idp.identify(&token("positive.jwt"), VALID_AT).await.unwrap_err();
         assert!(why.to_string().contains("aud"), "{why}");
     }

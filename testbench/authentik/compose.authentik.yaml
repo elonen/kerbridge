@@ -5,7 +5,7 @@
 # iteration on the sign-in flow alone.
 #
 # Three containers and no Redis -- caching, the embedded outpost and the
-# WebSocket layer moved into Postgres in 2025.10 (#4). Any recipe that adds a
+# WebSocket layer moved into Postgres in 2025.10. Any recipe that adds a
 # `redis` service is stale.
 #
 # Both images are pinned tag-and-digest: half of this map depends on the version
@@ -49,7 +49,7 @@ services:
       AUTHENTIK_SECRET_KEY: bench-only-secret-key-not-for-anything-real
       # Read only on first startup, all targeting `akadmin`. The token string
       # becomes the token key verbatim and carries `intent: api`, which is the
-      # only intent `TokenAuthentication` will look up (#22).
+      # only intent `TokenAuthentication` will look up.
       AUTHENTIK_BOOTSTRAP_TOKEN: kerbridge-bench-bootstrap-token
       AUTHENTIK_BOOTSTRAP_EMAIL: akadmin@bench.invalid
       AUTHENTIK_BOOTSTRAP_PASSWORD: bench-akadmin-password

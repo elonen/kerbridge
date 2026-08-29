@@ -326,14 +326,9 @@ fn probe(sources: &[(&kerbridge_core::config::SourceFile, IdpSettings)]) -> Resu
     Ok(())
 }
 
-/// A source's sync credential, for the authenticated probe legs, or `None` when
-/// the operator has yet to paste one in.
-///
-/// The one secret this command reads, on the caller's side of the seam where the
-/// adapter's probe expects it. Kept lenient: a probe is advisory, run after the
-/// file already validated offline, so an empty, absent or unreadable credential
-/// leaves the authenticated legs to warn rather than stopping the check with an
-/// I/O error.
+/// Read a source's sync credential for authenticated probes. An empty, absent,
+/// or unreadable credential returns `None` so the advisory probe warns instead
+/// of replacing offline configuration validation with an I/O error.
 fn sync_credential(path: &std::path::Path) -> Option<String> {
     match std::fs::read_to_string(path) {
         Ok(raw) if raw.trim().is_empty() => None,

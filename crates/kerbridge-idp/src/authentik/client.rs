@@ -1,22 +1,19 @@
 //! The live authentik directory client: an API token, and a full page-by-page
 //! read of `/core/users/` and `/core/groups/`.
 //!
-//! Simpler than the Graph client, and deliberately: there is no cursor, no
-//! delta and no server-chosen next link. Every URL is built here from the
-//! instance URL and a page number, so the token is only ever sent to the
-//! instance the operator configured -- there is nothing to guard the way Graph's
-//! `@odata.nextLink` has to be guarded.
+//! Authentik has no cursor, delta, or server-selected next link. This client
+//! builds each URL from the configured instance and a page number. It cannot
+//! send the token to a host from a response.
 //!
-//! Runtime rules that are not cosmetic:
+//! Runtime rules:
 //! - authentik **never returns 401**. A dead or absent credential is a `403`,
 //!   and the `detail` string is the whole discriminator -- only "Token
 //!   invalid/expired" is a non-counting rejection; "no permission" is a loud
-//!   failure, because total loss of the grant must not read as an empty
-//!   directory.
+//!   failure. A missing grant must not read as an empty directory (IdP).
 //! - A `5xx` or an unparseable body is reachability, not a verdict: back off and
 //!   retry, and give up as [`SourceError::Unreachable`] only once no page has
-//!   arrived for [`STALL_LIMIT`]. A large directory is not a fault and has no
-//!   time bound.
+//!   arrived for [`STALL_LIMIT`]. This limit applies between pages, not to the
+//!   complete read.
 //! - No `429`: no throttle applies to an authenticated read.
 
 use std::time::{Duration, Instant};
@@ -85,8 +82,7 @@ impl AuthentikClient {
             let url = format!("{}{}&page={}", self.base, query, page_num);
             let outcome = match self.get(&url).await {
                 Ok((status, body)) => classify::<T>(status, &body),
-                // A send or body error is the world being unreachable, not a
-                // verdict -- treated exactly like a 5xx.
+                // A send or body error is reachability trouble, like a 5xx.
                 Err(e) => PageOutcome::Retry(format!("GET {what} page {page_num}: {e:#}")),
             };
             match outcome {
@@ -144,8 +140,7 @@ impl AuthentikClient {
     }
 }
 
-/// One page's outcome, before the read decides whether to continue, retry or
-/// stop.
+/// One page's outcome.
 enum PageOutcome<T> {
     Ready(Page<T>),
     /// Reachability trouble: warn and retry. Never a verdict on the data.
@@ -160,15 +155,14 @@ enum PageOutcome<T> {
 
 /// Map one HTTP response to a [`PageOutcome`].
 ///
-/// Split out and pure so the corpus's five error shapes are exercised without a
-/// server. The `detail` string is the whole discriminator among the 403s,
-/// because authentik has no 401 to tell a dead credential from a missing grant.
+/// The `detail` string distinguishes a dead credential from a missing grant.
+/// Authentik uses `403` for both and does not return `401`.
 fn classify<T: DeserializeOwned>(status: u16, body: &[u8]) -> PageOutcome<T> {
     if status == 200 {
         return match serde_json::from_slice::<Page<T>>(body) {
             Ok(page) => PageOutcome::Ready(page),
-            // A 200 whose body is not a page is a proxy or a truncation, not a
-            // directory: reachability, retried rather than parsed as empty.
+            // An invalid 200 body can be a proxy error or truncation. Retry it;
+            // do not parse it as an empty directory (IdP).
             Err(e) => PageOutcome::Retry(format!("a 200 whose body is not a directory page: {e}")),
         };
     }
@@ -196,8 +190,7 @@ fn classify<T: DeserializeOwned>(status: u16, body: &[u8]) -> PageOutcome<T> {
              or the data"
         ));
     }
-    // Nothing else is expected of an authenticated read; treat an unforeseen
-    // status as a loud refusal rather than an empty directory.
+    // Treat an unexpected status as a refusal, not an empty directory (IdP).
     PageOutcome::Refused(format!("authentik answered an unexpected {status}"))
 }
 
@@ -260,13 +253,10 @@ mod tests {
         assert!(matches!(classify::<RawUser>(s, &b), PageOutcome::Ready(_)));
     }
 
-    /// The class the seam draws from each outcome: only the rejection is spared
-    /// from counting against the source. Driven through the shared conformance,
-    /// which holds Entra's own classified errors to the same biconditional.
+    /// Only a rejected credential does not count as a source failure. The shared
+    /// conformance test applies the same rule to Entra.
     #[test]
     fn only_a_rejected_credential_is_spared_from_counting() {
-        // token_invalid rejects the credential (spared); no_permission and
-        // not_provided refuse the read (counted) -- both sides of the rule.
         for name in ["err_403_token_invalid", "err_403_no_permission", "err_403_not_provided"] {
             conformance::credential_rejection_is_the_only_non_failure(&classified(name));
         }

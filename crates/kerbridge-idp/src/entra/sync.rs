@@ -400,9 +400,7 @@ mod tests {
         serde_json::from_value(serde_json::json!({ "id": id, "displayName": id })).unwrap()
     }
 
-    /// A reader whose users cursor is refused on every attempt, so the resync
-    /// never takes: Entra's torn read, the shape authentik meets when a page set
-    /// does not assemble.
+    /// A reader whose user cursor stays corrupt after a full resync.
     struct CursorNeverRecovers;
 
     impl GraphReader for CursorNeverRecovers {
@@ -427,8 +425,7 @@ mod tests {
         }
     }
 
-    /// A bare source, enough to reach [`EntraSource::read`]. The notifier is
-    /// disabled: these tests read `read`'s return, not its alarms.
+    /// A source for direct [`EntraSource::read`] tests. Notifications are off.
     fn bare_source() -> EntraSource {
         EntraSource {
             source: "entra".to_owned(),
@@ -447,9 +444,7 @@ mod tests {
         }
     }
 
-    /// A read that cannot be made whole yields no snapshot, driven through the
-    /// shared conformance. Entra's torn read is a cursor still refused after a
-    /// full resync, the reader-level analogue of authentik's un-assemblable pages.
+    /// A cursor that stays corrupt after full resync yields no snapshot.
     #[tokio::test]
     async fn a_read_that_never_recovers_yields_no_snapshot() {
         let mut source = bare_source();
@@ -462,9 +457,7 @@ mod tests {
         assert!(why.contains("still refused after a full resync"), "{why}");
     }
 
-    /// Only a rejected credential is spared from counting, driven through the
-    /// shared conformance over the classes Entra's own paths build: the rejection
-    /// `read` raises from a dead token, and the errors `transport` maps.
+    /// Only a rejected credential does not count as a source failure.
     #[test]
     fn only_a_rejected_credential_is_spared_from_counting() {
         let errs = [

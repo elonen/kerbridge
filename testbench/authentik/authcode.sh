@@ -278,14 +278,14 @@ check("access alg",            ah["alg"], "RS256")
 check("id alg",                ih["alg"], "RS256")
 check("access aud",            ap["aud"], client_id)
 check("id aud",                ip["aud"], client_id)
-# #21's strong claim: written at id_token.py:172, AFTER the scope-mapping
+# Written at id_token.py:172 after the scope-mapping
 # dict.update, so a mapping cannot forge it. But it is written in
 # to_access_token() ONLY -- the ID token has no azp at all, and asserting one
 # there would refuse every honest authentik token.
 check("access azp",            ap["azp"], client_id)
 check("id azp absent",         "azp" in ip, False)
 check("access iss",            ap["iss"], issuer)
-# #6's proposal: the bare, lowercase, hyphenated user UUID -- byte-identical to
+# The subject is the bare, lowercase, hyphenated user UUID. It is identical to
 # what /api/v3/core/users/ returns and filterable there, which the default
 # hashed_user_id is not.
 check("access sub == user.uuid", ap["sub"], uuid)

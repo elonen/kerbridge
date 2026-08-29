@@ -102,7 +102,7 @@ allocating one at the same moment would each see the other's name as free.
   at once.
 
 `DESIGN.md`
-§ [Directory ownership and synchronization](../../docs/design/identity-and-directory.md#directory-ownership-and-synchronization)
+§ [Directory (realm) ownership and synchronization](../../docs/design/identity-and-directory.md#directory-realm-ownership-and-synchronization)
 and § [Sync credential lifetime](../../docs/design/identity-and-directory.md#sync-credential-lifetime).
 Operator configuration is the `[provider_config]` block in
 `configs/idp_<source>.toml`, the `secrets/idp/<name>/credential` file (empty

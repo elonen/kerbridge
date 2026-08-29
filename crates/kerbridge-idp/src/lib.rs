@@ -212,10 +212,8 @@ impl IdpSettings {
         }
     }
 
-    /// The file a source reads its directory with, so a caller can hand the
-    /// credential to [`probe`] without knowing which adapter owns it. Every
-    /// adapter has one -- an Entra client secret, an authentik API token -- and
-    /// both name it `sync_credential_file`.
+    /// The sync credential file. Callers can supply its content to [`probe`]
+    /// without knowing the adapter type.
     pub fn sync_credential_file(&self) -> &Path {
         match self {
             Self::Entra(settings) => &settings.sync_credential_file,
@@ -261,9 +259,7 @@ impl Probe {
     }
 }
 
-/// OIDC fixes the suffix. Hung off the authority rather than assembled from the
-/// provider's own derivation inputs, so the document fetched is the one a client
-/// signing in here would find.
+/// Append the standard OIDC discovery suffix to the configured authority.
 pub(crate) fn discovery_url(authority: &str) -> String {
     format!("{}/.well-known/openid-configuration", authority.trim_end_matches('/'))
 }
@@ -277,14 +273,10 @@ impl Trouble {
     }
 }
 
-/// One GET, bounded the same way the signing-key fetch is -- the IdP is remote
-/// and outside the deployment either way.
+/// One GET with the signing-key fetch limits.
 ///
-/// **Only the status is classified here.** Anything that stopped the exchange
-/// from completing is the world; a document that arrived and does not say what
-/// it should is the caller's to judge, because only the caller knows what it was
-/// reading for. That split is why this is shared: what a document *means* is
-/// provider-specific, and what a refused connection means is not.
+/// Classify only transport and status. The adapter decides what the response
+/// document means.
 pub(crate) async fn get(url: &str, timeout: Duration) -> Result<String, Trouble> {
     let response = jwks::http_client(timeout)
         .map_err(|e| Trouble(Verdict::Warn, format!("{e:#}")))?
@@ -301,9 +293,7 @@ pub(crate) async fn get(url: &str, timeout: Duration) -> Result<String, Trouble>
         .map_err(|e| Trouble(Verdict::Warn, format!("{url} answered, the body did not: {e:#}")))
 }
 
-/// The bottom of an error chain. `reqwest`'s own `Display` repeats the URL the
-/// line already names and says nothing about why; the DNS or connect failure is
-/// the last link.
+/// The DNS or connection cause at the bottom of an error chain.
 fn root_cause(error: &dyn std::error::Error) -> String {
     let mut cause = error;
     while let Some(next) = cause.source() {
@@ -490,9 +480,7 @@ mod tests {
         }
     }
 
-    /// The distinction the verdict table rests on, and nothing here touches the
-    /// network: an answer about the request settles it against the file, and no
-    /// answer settles nothing.
+    /// A 4xx rejects the request. A 5xx gives no configuration verdict.
     #[test]
     fn a_4xx_names_the_config_and_a_5xx_names_the_world() {
         for definitive in [400, 401, 403, 404, 410] {
