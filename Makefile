@@ -360,13 +360,15 @@ test-mac:
 # parsing when the deployment file is absent.
 test-build: build-docker installer
 
-# Bring a realm up beside a live authentik, and verify the broker fetches
-# authentik's signing keys over TLS and answers /config. Same disposable stack
-# as test-stack -- separate project, container names, subnet and port under
-# .local-tmp/ -- with authentik behind Caddy instead of the mock IdP. Pulls the
-# pinned authentik images, so unlike test-stack it needs the network. ARGS=--keep
-# preserves the stack. testbench/authentik/authcode.sh is the manual sign-in
-# proof this grew out of.
+# Bring a realm up beside a live authentik and drive it end to end: the broker
+# fetches authentik's signing keys over TLS, sync mirrors its directory into the
+# realm, a scripted sign-in issues a TGT for the mirrored user, and that ticket
+# reads a file over SMB -- the same end state as test-stack, driven by sync rather
+# than seed-demo.sh. Same disposable stack as test-stack -- separate project,
+# container names, subnet and port under .local-tmp/ -- with authentik behind Caddy
+# instead of the mock IdP. Pulls the pinned authentik images, so unlike test-stack
+# it needs the network. ARGS=--keep preserves the stack.
+# testbench/authentik/authcode.sh is the manual sign-in proof this grew out of.
 test-authentik:
 	deploy/scripts/bench/ci-authentik.sh $(ARGS)
 

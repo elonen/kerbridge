@@ -10,8 +10,8 @@
 #   macos    The gate for the other client half, on a Mac runner. Its tests
 #            link the real Kerberos.framework, so they run rather than compile.
 #            Billed at ten times an ubuntu runner, so the gate earns most here.
-#   authentik  The pinned blueprint and authorization-code proof, with no Rust
-#              or KerBridge container.
+#   authentik  A realm beside a live authentik: sync mirrors its directory, a
+#              scripted sign-in issues a TGT, and a file is read over SMB with it.
 #   build    Main, manual. Every shipping artifact still builds.
 #   stack    Main, manual. A realm provisioned from scratch, a TGT issued
 #            against it, and a file read over SMB with that ticket.
@@ -140,11 +140,14 @@ jobs:
       - run: make test-mac
 
   authentik:
-    name: authentik (blueprint, authorization code)
+    name: authentik (sync, sign-in, SMB)
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Builds the whole KerBridge stack and reads over SMB like the stack job,
+    # plus pulls the pinned authentik images with no layer cache, so it wants the
+    # stack job's budget.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - run: make test-authentik

@@ -157,15 +157,10 @@ services:
       IDP_FQDN: ${IDP_FQDN}
       AUTHENTIK_UPSTREAM: http://authentik-server:9000
 
-  # This build carries no authentik directory face, so the sync daemon would only
-  # crash-loop here: kerbridge_idp::sync::connect refuses the source at startup.
-  # Kept out of `up` -- ci-authentik.sh runs it once with `compose run` to assert
-  # that refusal by name. replicas: 0 rather than a profile, matching the `debs`
-  # service, because `compose run` starts it regardless and a profile would leak
-  # it past a plain `down`.
-  sync:
-    deploy:
-      replicas: 0
+  # sync runs here, unlike a token-only build: mirroring the directory is the
+  # tier's subject, so it takes the base service with no override. It starts idle
+  # until its credential file has content; ci-authentik.sh recreates it once
+  # against the admission group's live pk before asserting the mirror by outcome.
 
 volumes:
   authentik-db:
