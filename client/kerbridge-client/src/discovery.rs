@@ -7,8 +7,9 @@
 //! authority yields the authorize and token endpoints.
 //!
 //! TLS is mandatory (`client/DESIGN.md` @ security model): the broker is trusted
-//! to name the realm's KDCs, which is a decision about who may authenticate this
-//! machine, so a plaintext answer is refused outright rather than warned about.
+//! to name the realm's KDCs and to choose the OAuth authority, public client,
+//! scopes, resource/audience parameters and therefore the returned token's
+//! purpose. A plaintext answer is refused outright rather than warned about.
 
 use std::collections::BTreeMap;
 
@@ -31,7 +32,9 @@ pub struct OidcConfig {
     pub authority: String,
     pub scopes: Vec<String>,
     /// Extra query parameters the broker's IdP wants on the authorization
-    /// request, verbatim. Empty on every Entra deployment.
+    /// request, verbatim. These can select an OAuth resource or audience and
+    /// therefore share the broker trust boundary documented above. Empty on
+    /// every current Entra and authentik deployment.
     pub extra_auth_params: BTreeMap<String, String>,
     pub authorization_endpoint: String,
     pub token_endpoint: String,

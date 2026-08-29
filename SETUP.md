@@ -169,6 +169,9 @@ Keep these three defaults. Change one only if it is necessary:
 
 ---
 
+<!-- Keep the fragment shipped before KerBridge supported more than Entra. -->
+<a id="2-register-three-applications-in-entra"></a>
+
 ## 2. Set up your cloud identity provider(s)
 
 KerBridge asks two things of a cloud identity provider, and nothing more:

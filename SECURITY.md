@@ -229,6 +229,22 @@ They can also plant a device grant on any such account, up to
 `device_grant_max_per_user` (default 10). That grant keeps their access after
 you close the original hole.
 
+The broker also writes the client's sign-in instructions. Its TLS-authenticated
+`/config` reply chooses the OIDC authority, public client, scopes and any extra
+authorization parameters, as well as the realm and KDCs. Resource- or
+audience-style parameters can change what the returned access token is for, and
+the client sends that token to the broker. This is one trust decision, not a set
+of untrusted hints: controlling the broker can therefore obtain a token for any
+purpose that the chosen IdP, tenant policy and user consent permit. The current
+Entra and authentik adapters send no extra authorization parameters, but the
+authority, client and scopes already carry this power.
+
+PKCE and `state` still protect the mechanics of the browser flow. A displaced
+reserved parameter makes sign-in fail rather than bypassing those checks, and a
+stolen authorization code cannot be redeemed without the verifier. They do not
+constrain which OAuth client, resource, audience or scopes the trusted broker
+asked for.
+
 They cannot get a ticket for `Administrator`, for a machine account, or for a
 locally-created account.
 

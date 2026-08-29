@@ -126,6 +126,16 @@ This is the reference for the server work. The client depends on exactly this.
 
 TLS is required. The client refuses a plaintext URL.
 
+The authenticated reply is a trust decision. The broker chooses both sides of
+the sign-in: the realm and KDCs that may authenticate the machine, and the OIDC
+authority, public client, scopes and authorization parameters that determine
+what access token the browser flow returns. An extra parameter may name an
+OAuth resource or audience and thereby change the token's purpose. The client
+then sends that token to the broker. `state` and PKCE protect the flow from local
+interception or displaced reserved parameters; they do not narrow what the
+trusted broker may request. The current Entra and authentik adapters publish no
+extra authorization parameters.
+
 ```jsonc
 {
   "base_url": "/{source}",                   // source routing for multi-tenant, e.g., "/entra"

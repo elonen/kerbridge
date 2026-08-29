@@ -75,6 +75,10 @@ SOURCE_NAMES = {"Makefile", "Dockerfile"}
 # here live outside the tree this walks.
 LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+# A compatibility fragment can outlive the heading that originally generated it.
+# GitHub accepts an empty HTML anchor for that purpose, so treat it like a heading
+# anchor when checking links and the load-bearing SETUP.md fragments below.
+HTML_ANCHOR = re.compile(r'<a\s+(?:id|name)="([^"]+)"\s*></a>')
 # A fenced block's contents are not headings: a shell transcript full of `# comment`
 # lines would otherwise register every one of them as an anchor.
 FENCE = re.compile(r"^\s*(```|~~~)")
@@ -87,6 +91,14 @@ DOC_REF = re.compile(r"`([^`\s]*\.md)(?::\d+(?:-\d+)?)?`")
 # The per-line opt-out. Spelled with the script's own name so a reader who meets
 # one knows what to run to see what it is silencing.
 IGNORE = re.compile(r"doc-links:\s*ignore")
+
+# Released instructions, scripts and error messages link to SETUP.md steps. A
+# provider-neutral rename kept the old step-2 fragment explicitly; require both
+# names so a cleanup cannot silently break either generation of links.
+REQUIRED_SETUP_ANCHORS = {
+    "2-register-three-applications-in-entra",
+    "2-set-up-your-cloud-identity-providers",
+}
 
 
 def line_of(body: str, pos: int) -> int:
@@ -121,6 +133,8 @@ def anchors(path: str) -> set[str]:
                 continue
             if fenced:
                 continue
+            for explicit in HTML_ANCHOR.finditer(line):
+                out.add(explicit.group(1).casefold())
             m = HEADING.match(line)
             if not m:
                 continue
@@ -221,6 +235,12 @@ def main(root: str) -> int:
                     cache[target] = anchors(target)
                 if frag.lower() not in cache[target]:
                     broken.append(f"{rel}: {link} -- no such heading")
+
+    setup = os.path.join(root, "SETUP.md")
+    if os.path.isfile(setup):
+        setup_anchors = cache.setdefault(setup, anchors(setup))
+        for required in sorted(REQUIRED_SETUP_ANCHORS - setup_anchors):
+            broken.append(f"SETUP.md: #{required} -- required compatibility anchor is missing")
 
     cited = 0
     for path in sources:
