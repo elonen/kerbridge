@@ -5,7 +5,7 @@
 //! cause a silent mass retirement because an absent snapshot object means that
 //! the object departed.
 //!
-//! The adapters cannot share a wire corpus. Authentik assembles full pages;
+//! The adapters cannot share a wire corpus. authentik assembles full pages;
 //! Entra patches a shadow with sparse deltas. Each adapter converts its fixtures
 //! to the seam types. These checks validate the seam contract.
 

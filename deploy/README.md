@@ -54,13 +54,13 @@ this repository, and every base image is pinned by digest.
 | `issuer` | The custom `issuerd`. It is the only component that makes TGTs. It runs from the `realm` image, and it shares that container's volumes and network namespace, because it needs local access to the AD databases. A Debian deployment runs the same two programs as two systemd units. | none |
 | `broker` | It validates the Entra token, finds the identity under `OU=Entra,OU=CloudIdP,<base DN>` through LDAPS, and asks `issuerd` for the ticket through a unix socket. It holds no KDC authority. It runs unprivileged, with a read-only rootfs, and it executes nothing. | 443, on behalf of `caddy` |
 | `caddy` | The TLS terminator in front of the broker, and the only component that a client connects to. It shares the broker's network namespace, so that their loopback is the one that host networking gives them in production. | — (uses the broker's) |
-| `sync` | It reads the users and groups of each configured source from MS Graph, one source after another, over its own LDAP connection. It writes them to the `realm` directory over LDAPS as `svc-kerbridge-sync-entra`. A source stays idle until `secrets/idp/<name>/credential` has content. | none |
+| `sync` | It reads the users and groups of each configured source from MS Graph, one source after another, over its own LDAP connection. It writes them to the directory (realm) over LDAPS as `svc-kerbridge-sync-entra`. A source stays idle until `secrets/idp/<name>/credential` has content. | none |
 | `nas1` | **Optional.** A joined Samba member, so that the full path operates on one machine. It is a fixture, not a product — [`nas1` is not part of this stack](#nas1-is-not-part-of-this-stack). | 445 |
 
 `realm` and `broker` run with `cap_drop: ALL` and `no-new-privileges`. `realm`
 gets back only the capabilities that measurements showed necessary. The
 permanent state is in three Docker volumes: `samba` (domain SID, KDC keys,
-directory, SYSVOL), `etc-samba` and `caddy-data`. All other data is tmpfs, or
+directory (realm), SYSVOL), `etc-samba` and `caddy-data`. All other data is tmpfs, or
 the stack can make it again. To back the volumes up, see
 [Backup and restore](#backup-and-restore).
 
@@ -73,7 +73,7 @@ so `make up` works from either directory.
 |---|---|
 | `build` | `docker compose build` |
 | `up` | fresh clone → running stack; the ordered steps below |
-| `stack` | the rest of the stack, once the directory is bootstrapped |
+| `stack` | the rest of the stack, once the directory (realm) is bootstrapped |
 | `secrets` | `scripts/compose/bootstrap-secrets.sh` — the host tree, prepared by the shipped helper |
 | `directory` | `docker compose run --rm setup directory` |
 | `kbmanage-config` | the realm CA and config set a host-run `kbmanage` needs; re-run after a realm rebuild |
@@ -382,14 +382,14 @@ Append-only files, written by the services themselves onto bind mounts:
 |---|---|---|
 | `state/broker-audit/audit.log` | broker | device grant made (`GRANT`) or removed (`REVOKE`) — the account, the grant id `kbmanage device list` shows, and `by=<login>` when someone did it as that account's delegate |
 | `state/issuer-audit/audit.log` | `issuerd` | ticket issued (`ISSUE`), and the same two writes from the side that performed them |
-| `state/sync-audit/audit.log` | `kerbridge-sync` | cycle that changed the directory: the tally, then one `APPLY <operation> <dn>` per write that landed and one `APPLY-FAIL <dn>: <why>` per write the directory refused. A cycle that changed nothing writes nothing here |
+| `state/sync-audit/audit.log` | `kerbridge-sync` | cycle that changed the directory (realm): the tally, then one `APPLY <operation> <dn>` per write that landed and one `APPLY-FAIL <dn>: <why>` per write the directory (realm) refused. A cycle that changed nothing writes nothing here |
 
 The third is the one whose subject outlives the record. A ticket expires in
 hours and a device grant in days, but an account `kerbridge-sync` creates owns
 files and is a Kerberos principal until somebody retires it — and nothing else
 in the deployment says who was given one. It also records `STALLED` when a
 source has discarded three cycles in a row and stopped mirroring, and `RESUMED`
-when it starts again, so a stretch during which the directory was not being
+when it starts again, so a stretch during which the directory (realm) was not being
 updated can be dated afterwards.
 
 Every line is RFC 3339-stamped and is also on the service's console, unchanged —
@@ -679,7 +679,7 @@ the order a request meets them:
 |---|---|---|
 | `read_header 10s`, `read_body 30s`, `idle 60s` | `caddy/timeouts.caddyfile` | connections that hold the listener without making a request — Caddy sets none of these itself, and an idle connection would otherwise be kept five minutes |
 | `max_size 16KB` | `caddy/routes.caddyfile` | a request body larger than any token |
-| `max_inflight` in `configs/broker.toml` (16 by default) | broker | tickets past the cap, with **429** and no directory traffic at all; the helper reads that as "back off and retry" |
+| `max_inflight` in `configs/broker.toml` (16 by default) | broker | tickets past the cap, with **429** and no directory (realm) traffic at all; the helper reads that as "back off and retry" |
 | `max_inflight` in `configs/issuerd.toml` (8 by default) | `issuerd` | connections past the cap, before the thread and the forks exist |
 
 The two in-flight caps refuse rather than queue: a queue is the same unbounded
@@ -856,7 +856,7 @@ modules read credentials from the environment and cannot read a file.
 
 - `secrets/generated/` is machine territory: every file there was generated
   here and none should ever be opened, let alone edited — the value also lives
-  in the directory, so editing one desynchronizes a password rather than
+  in the directory (realm), so editing one desynchronizes a password rather than
   changing it.
 - Everything directly under `secrets/` is yours to place, from a portal, a CA or
   a DNS provider.

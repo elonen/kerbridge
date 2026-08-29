@@ -1,7 +1,7 @@
 //! The authentik directory (IdP) adapter, behind the directory-source seam.
 //!
 //! Each cycle reads all users and groups with an API token. It returns a complete
-//! enumeration or no enumeration. Authentik has no delta API or group change
+//! enumeration or no enumeration. authentik has no delta API or group change
 //! filter. A push feed is insufficient because blueprint and worker changes do
 //! not produce an authentik event.
 
@@ -56,7 +56,7 @@ impl AuthentikSource {
         }
     }
 
-    /// This source's sync credential -- the API token the directory is read with
+    /// This source's sync credential -- the API token used to read the directory (IdP)
     /// -- or `None` while the operator has yet to paste one in, which is the
     /// state [`kerbridge_core::secret::read_optional`] defines: setup is
     /// incomplete, the source has not failed, and the next cycle looks again.
@@ -71,7 +71,7 @@ impl AuthentikSource {
     /// The enumeration, narrowed to the population the realm should hold.
     fn snapshot(&self, read: crate::sync::Enumeration) -> SourceSnapshot {
         // The device-grant group joins the closure roots the way an allowlist
-        // entry does: someone held only by it gets a directory object and no
+        // entry does: someone held only by it gets a directory (realm) object and no
         // admission, so the two groups are additive, never alternatives.
         let mut roots: Vec<Subject> = self.allowlist.iter().cloned().map(Subject::new).collect();
         let grant = self.grant_group_id.clone().map(Subject::new);

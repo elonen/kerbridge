@@ -90,7 +90,7 @@ names the tag, and it stops if that section is absent or empty.
   provisions with gid 3000000, which an unprivileged container cannot use.
 - Audit logs moved to `/var/log/kerbridge/`, state to `/var/lib/kerbridge/`.
 - Secrets moved to `/etc/kerbridge.secrets/`.
-- New `kbsetup` provisions the realm and bootstraps the directory.
+- New `kbsetup` provisions the realm and bootstraps the directory (realm).
 - `kbconfig template` is now `kbconfig init`, with your answers in it.
 - A lowercase realm is refused, by `kbconfig check` and at startup.
 - Default Entra groups renamed: `KerBridge Allowed On-prem Users` and

@@ -113,7 +113,7 @@ Not durable:
 - The issuer socket volume is runtime state, and can be recreated.
 - Provider read state lives in the sync process only. Entra keeps delta cursors
   and a shadow. A restart causes a full reconciliation, which is also the
-  recovery for a Graph `410`. Authentik performs a full read in each cycle and
+  recovery for a Graph `410`. authentik performs a full read in each cycle and
   has no cursor. Persistent provider state would add a second value that can be
   stale. Broker configuration is environment plus one secret file, with nothing
   to persist.
@@ -492,7 +492,7 @@ The boundaries that those tiers exercise, and where each one lands:
   on each run.
 - Joined file-server authorization, with `idmap_rid` and nested groups —
   `test-stack`.
-- Authentik token verification, directory (IdP) reading, sync, ticket issuance,
+- authentik token verification, directory (IdP) reading, sync, ticket issuance,
   and joined file-server authorization — `test-authentik`.
 - Windows end-to-end ticket injection and the re-injection lifecycle —
   **manual**. The live Entra tenant and the ACME TLS strategies are manual too.

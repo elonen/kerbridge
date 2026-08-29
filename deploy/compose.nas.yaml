@@ -113,7 +113,7 @@ volumes:
   # name and its machine account in m1-samba. Nothing refuses to start on a
   # mismatch: change it afterwards and `net ads testjoin` simply fails, so the
   # entrypoint rejoins under the new name and leaves the old machine account and
-  # its SPNs stranded in the directory. To rename, delete that account and wipe
+  # its SPNs stranded in the directory (realm). To rename, delete that account and wipe
   # m1-samba.
   m1-samba:
   m1-share:

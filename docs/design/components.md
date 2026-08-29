@@ -197,13 +197,13 @@ Responsibilities:
   policy specifies.
 - Keep the locally managed Samba objects and the local group memberships.
 - Hold provider read state and reconciliation state in memory. Entra uses delta
-  cursors and a shadow. Authentik performs a full read and has no cursor.
+  cursors and a shadow. authentik performs a full read and has no cursor.
 - Monitor the expiry of its own sync credential and give a warning well before
   the credential lapses.
 
 Samba AD is the single source of truth for external-to-realm mappings. The
 broker has no second mapping database. Entra can rebuild its cursors and shadow
-with a full reconciliation. Authentik rebuilds its complete read in each cycle.
+with a full reconciliation. authentik rebuilds its complete read in each cycle.
 The mapping is part of the Samba database and cannot be discarded.
 
 ### `realm`

@@ -1,4 +1,4 @@
-//! The Entra adapter: Microsoft Graph, behind the directory seam.
+//! The Entra adapter: Microsoft Graph, behind the directory-source seam.
 //!
 //! Owns everything one tenant costs -- the credential, the app-only token, the
 //! two delta cursors and the [`Shadow`] they patch -- and hands the mirror a
@@ -21,7 +21,7 @@ use crate::sync::{
 
 /// One Entra tenant, read over Graph.
 ///
-/// Nothing about the directory this feeds -- no bind identity, no OU -- is
+/// Nothing about the directory (realm) this feeds -- no bind identity, no OU -- is
 /// reachable from here: the fields below are the whole of what crosses the seam.
 pub struct EntraSource {
     /// This source's name, the subject of every problem raised below the seam.
@@ -185,7 +185,7 @@ impl EntraSource {
     fn snapshot(&self) -> SourceSnapshot {
         // The device-grant group joins the closure roots the way an allowlist entry
         // does, so it synchronizes whether or not the operator nested it inside the
-        // admission group. Someone held only by this group gets a directory object
+        // admission group. Someone held only by this group gets a directory (realm) object
         // and no admission, so no ticket -- the two groups are additive, never
         // alternatives.
         let mut roots: Vec<Subject> = self.allowlist.iter().cloned().map(Subject::new).collect();

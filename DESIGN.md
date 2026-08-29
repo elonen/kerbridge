@@ -30,7 +30,7 @@ Samba, SMB or one identity provider.
 | Component | Executable or service |
 |---|---|
 | Public ticket API | `kerbridge-broker` |
-| Entra directory synchronization | `kerbridge-sync` |
+| Cloud IdP synchronization | `kerbridge-sync` |
 | Local privileged ticket issuer | `issuerd` |
 | Operator CLI | `kbmanage` (crate `kerbridge-manage`) |
 | Compose project | `kerbridge` |
@@ -119,7 +119,7 @@ flowchart TD
   nas["file server<br/>Samba member, winbind + idmap_rid"]
 
   wh -->|"OIDC browser"| entra
-  entra -->|"directory sync"| sync
+  entra -->|"directory (IdP) → directory (realm)"| sync
   wh -->|"HTTPS"| caddy
   caddy -->|"reverse proxy"| broker
   broker -->|"Unix socket"| realm
@@ -143,8 +143,8 @@ services that these tasks need:
 | Component | Sensitive authority |
 |---|---|
 | Caddy | Public TLS private key and DNS update credential |
-| Broker | Ability to validate users and request TGTs; read-only directory access |
-| Sync | Graph read authority and delegated writes to IdP-managed Samba OUs |
+| Broker | Ability to validate users and request TGTs; read-only directory (realm) access |
+| Sync | Cloud IdP read authority and delegated writes to IdP-managed Samba OUs |
 | Realm and `issuerd` | Complete Samba domain and KDC authority |
 
 Additional rules:
@@ -154,7 +154,7 @@ Additional rules:
 - The issuer has no TCP listener.
 - The broker never sees a user's long-term Kerberos account key, only TGT and its session key.
 - The sync identity cannot modify the local resource OUs.
-- The broker LDAP identity cannot write directory data.
+- The broker LDAP identity cannot write directory (realm) data.
 - The `svc-kerbridge-manage` credential is impersonation-grade, and not a
   low-privilege management tool. Its per-attribute `extensionName` write in the
   IdP parent OU was granted for the name pin, and it can also hand-write a

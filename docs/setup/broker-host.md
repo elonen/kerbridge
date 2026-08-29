@@ -53,7 +53,7 @@ so it takes effect within one `interval_seconds`, which is 300 by default.
 > **CAUTION: Store this credential as a secret, not as a read-only key.** It is
 > equivalent to realm access. Sync creates identities and manages the admission
 > group, so the holder can admit themselves to the realm and receive tickets.
-> The directory rights are confined to `OU=Entra,OU=CloudIdP`: the credential
+> The directory (realm) rights are confined to `OU=Entra,OU=CloudIdP`: the credential
 > cannot change `OU=Resources`, so it cannot authorize itself against a share
 > without your resource groups.
 
@@ -80,7 +80,7 @@ with a number that `adduser` chose, so there is no gid to check.
 
 Set `dry_run = true` in `sync.toml` **before sync first runs**. The template
 comments this line out, and the default is `false`, so a deployment that leaves
-the line alone writes to the directory on its first cycle. Remove the `#` from
+the line alone writes to the directory (realm) on its first cycle. Remove the `#` from
 `#dry_run = false`, then change the value to `true`.
 
 Watch one or two cycles:
@@ -90,7 +90,7 @@ docker compose logs -f sync          # Docker Compose
 journalctl -u kerbridge-sync -f      # Debian
 ```
 
-Check that sync reads the tenant, that it resolves the admission group, and
+Check that sync reads the directory (IdP), that it resolves the admission group, and
 that it logs the plan that it *would* apply.
 
 ### 3. Let it write

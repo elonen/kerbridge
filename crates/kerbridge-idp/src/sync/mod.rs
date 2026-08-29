@@ -1,9 +1,9 @@
-//! The directory face: what an adapter reads out of its IdP, and the shape it
+//! The directory (IdP) face: what an adapter reads out of its IdP, and the shape it
 //! hands over.
 //!
 //! This isolates IdP-specific things from LDAP types. The mirror receives a
-//! [`SourceSnapshot`] and makes AD directory changes from it; nothing about the
-//! directory -- no bind identity, no OU, no `sAMAccountName` -- is reachable
+//! [`SourceSnapshot`] and makes directory (realm) changes from it; nothing about the
+//! directory (realm) -- no bind identity, no OU, no `sAMAccountName` -- is reachable
 //! from below the seam.
 //!
 //! Behind the crate's `sync` feature, so the broker's binary carries none of it.
@@ -28,7 +28,7 @@ pub(crate) mod conformance;
 
 /// What one [`DirectorySource::advance`] concluded.
 pub enum Progress {
-    /// A whole-directory enumeration, observed in one uninterrupted read.
+    /// A whole directory (IdP) enumeration, observed in one uninterrupted read.
     Complete(SourceSnapshot),
     /// No credential yet. Not a fault, and never counted.
     Idle(String),
@@ -118,7 +118,7 @@ impl std::fmt::Display for SourceError {
 /// from. An IdP that reports its own credential's expiry needs no operator
 /// assertion; one that does not gets whatever the config set states.
 pub enum CredentialState {
-    /// Read from the IdP. Authentik reports API-token expiry to the bearer.
+    /// Read from the IdP. authentik reports API-token expiry to the bearer.
     Measured { days: i64 },
 
     /// Stated reminder from the operator.
@@ -128,7 +128,7 @@ pub enum CredentialState {
     Unknown,
 }
 
-/// One cloud directory, reduced to what the mirror needs of it.
+/// One directory (IdP), reduced to what the mirror needs of it.
 ///
 /// INVARIANT: cursors do not survive a restart. An adapter must be correct when
 /// its first cycle after start is a full read.
@@ -180,7 +180,7 @@ pub struct Desired {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DesiredUser {
-    /// What the directory shows: `displayName`, and the CN built from it.
+    /// What the directory (IdP) shows: `displayName`, and the CN built from it.
     pub display_name: String,
     /// What the login name may be minted from, best first.
     ///
@@ -227,7 +227,7 @@ const CANDIDATE_CHARS: usize = 20;
 ///
 /// NFC first, and this is the only place a read-path name is normalized:
 /// Unicode spells `å` as either `U+00E5` or `a` + `U+030A`, the two render
-/// identically, and deriving both would put two accounts in the directory that
+/// identically, and deriving both would put two accounts in the directory (realm) that
 /// no human can tell apart.
 ///
 /// The budget is not a parameter. An adapter that can pass a length can pass
@@ -370,7 +370,7 @@ pub fn build_desired(
                     mm.push(sub.clone());
                 }
                 // `selected`, not `groups`: a member group the read has but the
-                // closure did not select has no directory object, so naming it
+                // closure did not select has no directory (realm) object, so naming it
                 // here would put a member in `membership` that is absent from
                 // `groups`. The planner drops such a reference silently when it
                 // fails to resolve a DN for it, which makes this an invariant held
@@ -395,7 +395,7 @@ pub fn build_desired(
         membership.insert(gid.clone(), mm);
     }
 
-    // A directory object exists for someone a selected group holds, and for
+    // A directory (realm) object exists for someone a selected group holds, and for
     // nobody else. The admission group and the allowlist are therefore the whole
     // answer to "who has an account here", not merely "who may get a ticket":
     // an operator reading the IdP-specific OU in ADUC sees the admitted set and

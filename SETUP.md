@@ -164,7 +164,7 @@ KerBridge asks two things of a cloud identity provider, and nothing more:
    user against the provider over OIDC and receives a signed token. The broker
    validates that token, and that is the only thing that admits a user.
 2. **It lets KerBridge read users and groups, one direction only.** Sync reads
-   the directory on a read-only credential and mirrors the members of one
+   the directory (IdP) on a read-only credential and mirrors the members of one
    admission group into the realm. KerBridge writes nothing back to the
    provider.
 

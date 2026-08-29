@@ -180,7 +180,7 @@ async fn verify(
 
 /// `nbf`, honoured only when the token carries one.
 ///
-/// Authentik does not emit `nbf`. If a token contains it, the verifier honors
+/// authentik does not emit `nbf`. If a token contains it, the verifier honors
 /// it. The corpus does not invent an authentik token shape that the IdP cannot
 /// produce.
 fn not_yet_valid(nbf: Option<i64>, now: i64, leeway_seconds: i64) -> bool {
@@ -285,15 +285,15 @@ mod tests {
 
     /// The two faces of the adapter, held against each other on a token this
     /// verifier actually accepted: the broker builds an identity from a verified
-    /// token, sync from a directory `uuid`. `mod.rs` holds the same rule against
+    /// token, sync from a directory (IdP) `uuid`. `mod.rs` holds the same rule against
     /// itself on a bare string; this is it reached the way the broker reaches it.
     #[tokio::test]
-    async fn the_token_face_and_the_directory_face_agree_byte_for_byte() {
+    async fn the_token_face_and_the_directory_idp_face_agree_byte_for_byte() {
         let from_token = check("positive.jwt", VALID_AT).await.unwrap();
-        let from_directory =
+        let from_idp =
             crate::encode_identity(crate::Provider::Authentik, &source(), USER_UUID).unwrap();
-        assert_eq!(from_token.encode(), from_directory.encode());
-        assert_eq!(from_token, from_directory);
+        assert_eq!(from_token.encode(), from_idp.encode());
+        assert_eq!(from_token, from_idp);
     }
 
     #[tokio::test]

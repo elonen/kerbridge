@@ -1,4 +1,4 @@
-# A minimal, pinned Authentik for the standalone authorization-code proof.
+# A minimal, pinned authentik for the standalone authorization-code proof.
 #
 # Run `./authcode.sh`. The `make test-authentik` tier stands its own authentik up
 # on the compose network (deploy/compose.authentik.yaml); this pair is for manual

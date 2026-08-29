@@ -11,7 +11,7 @@ faces are:
 1. **Sign a person in** — one **OAuth2 provider** and the **application** that
    fronts it. The agent signs in against the application as a public client on
    authorization code plus PKCE, with no secret.
-2. **Read the directory one way** — a read-only **service account** with an API
+2. **Read the directory (IdP) one way** — a read-only **service account** with an API
    token, granted `view_user` and `view_group` globally through a Role.
 
 You do not build these by hand. Everything above is one blueprint, and this
@@ -98,7 +98,7 @@ Paste the token into the file named by `sync_credential_file`, never the config
 itself.
 
 > **The grant is global on purpose.** A per-object grant answers `200` with a
-> silently shortened list, and against authentik's directory — where a deletion
+> silently shortened list, and against authentik's directory (IdP) — where a deletion
 > is only ever an absence from a full read — sync would reconcile everyone
 > missing from that short list as having left. The blueprint's Role grants
 > `view_user` and `view_group` across all objects so a partial read cannot
@@ -125,7 +125,7 @@ re-application does:
 - **`state: present`** — on the **provider** and the **Role**. These carry the
   settings that fail *silently* when wrong, so they are re-applied every run and
   cannot drift: `sub_mode: user_uuid` (the default cannot be looked up through
-  the REST API, so sync could never match a signed-in user to a directory
+  the REST API, so sync could never match a signed-in user to a directory (IdP)
   entry), the Signing Key, the `offline_access` scope mapping (unattached, the
   scope is dropped without a word and the agent can never renew in the
   background), the regex loopback redirect, and the Role's global grant. None of

@@ -69,7 +69,7 @@ The source name is `name` in `configs/idp_<source>.toml`, and it is listed in
 > point an existing name at a different tenant.** Both operations replace every
 > synchronized account with a new one that has a *different SID*, and every file
 > whose owner came from the old SID loses its owner. To recover, you must restore
-> the directory.
+> the directory (realm).
 
 A new tenant gets a new name and its own `ou`, in its own
 `configs/idp_<source>.toml`. That is what a second source is.
@@ -87,10 +87,10 @@ working, and the files show unresolved SIDs.
 A repoint to a different tenant is at least loud, because the new tenant's
 object ids share none of the old ones. But the bill is the same.
 
-Nothing in the directory records which cloud IdP a name means. The OU holds the
+Nothing in the directory (realm) records which cloud IdP a name means. The OU holds the
 objects, and the config set says what filled it. So a name that you repoint in
 `configs/idp_<source>.toml` is a name that changed meaning silently. The
-directory has no older answer to contradict it with.
+directory (realm) has no older answer to contradict it with.
 
 </details>
 
@@ -98,7 +98,7 @@ directory has no older answer to contradict it with.
 
 `group_suffix` in `configs/idp_<source>.toml` is what this source's group login
 names end with. `payroll` in Entra then becomes `payroll-entra` in the
-directory.
+directory (realm).
 
 - Use up to 20 characters. Use no whitespace, and no character that AD refuses.
 - Use the literal `none` for no suffix.

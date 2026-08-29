@@ -2,7 +2,7 @@
 //! must be told to obtain one.
 //!
 //! The other face is [`encode_identity`](crate::encode_identity): the same
-//! [`ExternalIdentity`], built from a directory object instead of a token. See
+//! [`ExternalIdentity`], built from a directory (IdP) object instead of a token. See
 //! the crate doc for what a disagreement between the two costs.
 
 use std::collections::BTreeMap;

@@ -52,7 +52,7 @@ reconciliation loop. Thus there is one encoder, reached from both sides.
 enables this interface only for the mirror. The broker compiles no directory
 (IdP) reader. The adapter owns its read method. Entra keeps delta cursors and a
 shadow. A `400` rejects a stored cursor. A `410` means that a cursor expired.
-Both failures cause a full read. Authentik has no delta API, so its adapter reads
+Both failures cause a full read. authentik has no delta API, so its adapter reads
 all user and group pages in each cycle.
 
 An adapter **owns its loop rather than adding a branch to a shared loop**. Sync
@@ -229,7 +229,7 @@ The locked contract, live-verified
 Every claim the verifier reads, what Entra puts in it, and the order of the
 checks: [`crates/kerbridge-idp/entra.md`](../../crates/kerbridge-idp/entra.md).
 
-## Authentik validation
+## authentik validation
 
 The authentik adapter accepts access tokens from one configured OAuth2
 application. The [application
@@ -242,11 +242,11 @@ The adapter validates these values:
 - The signature, with the same asymmetric-only algorithm rule as Entra.
 - `exp`, and `nbf` when the token contains it, with bounded clock skew.
 - The exact issuer and audience.
-- `azp`, which must equal the configured client ID. Authentik adds this claim
+- `azp`, which must equal the configured client ID. authentik adds this claim
   after scope mappings run, so a mapping cannot replace it.
 - `sub`, which must be the canonical lowercase UUID of the user.
 
-Authentik must use `sub_mode: user_uuid`. The REST API can filter users by this
+authentik must use `sub_mode: user_uuid`. The REST API can filter users by this
 UUID. Thus, the token face and the directory (IdP) face use the same subject.
 The default hashed subject cannot provide this property. The adapter does not
 normalize a subject. It rejects a noncanonical value.
@@ -486,9 +486,9 @@ object, and not enough to alter one. Thus the operator CLI cannot race the
 reconciliation loop. It was measured on the bench (2026-07-28): sufficient for
 deletes, and insufficient for writes.
 
-### Authentik directory (IdP) read
+### authentik directory (IdP) read
 
-Authentik has no delta API for this use. The adapter reads all pages of
+authentik has no delta API for this use. The adapter reads all pages of
 `/core/users/` and `/core/groups/` in each cycle. It requests `?ordering=pk`:
 that key is an increasing integer for users and a UUID ordered lexicographically
 for groups. It constructs page URLs from the configured instance URL and does
@@ -503,7 +503,7 @@ repeat; the rising `count` alone does not, because an insert raises it.
 
 The two collections must form one complete enumeration. The adapter rejects a
 torn read, a repeated or missing row, and a membership edge that names an
-unknown object. A failed read yields no source snapshot. Authentik can return a
+unknown object. A failed read yields no source snapshot. authentik can return a
 complete but silently filtered collection for an object-scoped permission. A
 global `view_user` and `view_group` grant is mandatory. The setup blueprint
 maintains that grant.
@@ -531,7 +531,7 @@ candidate is safe in the directory (realm).
   from the Internet. ACME defaults to DNS-01 for the same reason. Thus v1 keeps a
   credential file, and makes its expiry a first-class operational input.
 
-Authentik uses an API token on a dedicated service account. The token reports
+authentik uses an API token on a dedicated service account. The token reports
 its own expiry to its bearer through a self-scoped API read. The adapter measures
 this value in each cycle. A rotated token supplies its new deadline without an
 operator setting or a restart. A non-expiring token has no countdown. The setup
@@ -592,7 +592,7 @@ it is refused for the same least-privilege reason as `Directory.Read.All`.
   debugging session into a startup error that names the actual mistake.
 - To rotate the credential, replace the credential file. If an Entra source uses
   a secret, update its expiry date. The adapter reads the replacement on the next
-  cycle. Authentik also measures the new token's expiry. The adapter state, the
+  cycle. authentik also measures the new token's expiry. The adapter state, the
   directory (realm) mapping, and the quarantine state are not affected. No
   resynchronization is necessary.
 

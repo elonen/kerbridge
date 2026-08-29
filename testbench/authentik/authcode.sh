@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Drive Authentik's authorization-code + PKCE flow to a verified token with
+# Drive authentik's authorization-code + PKCE flow to a verified token with
 # nothing but curl and a cookie jar. No browser, no human, no headless driver.
 #
 # A standalone proof, kept for manual iteration; the `make test-authentik` tier
 # is deploy/scripts/bench/ci-authentik.sh, which stands its own authentik up.
-# The sign-in itself -- the flow-executor loop -- is approve.sh, shared with that
+# The sign-in itself -- the flow executor loop -- is approve.sh, shared with that
 # tier; this drives PKCE, the authorize request and the code exchange around it.
 #
 #   ./authcode.sh                 # cold stack, proof, tear down with volume

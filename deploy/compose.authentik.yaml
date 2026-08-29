@@ -164,9 +164,9 @@ services:
       IDP_FQDN: ${IDP_FQDN}
       AUTHENTIK_UPSTREAM: http://authentik-server:9000
 
-  # sync runs here, unlike a token-only build: mirroring the directory is the
+  # sync runs here, unlike a token-only build: mirroring the directory (IdP) is the
   # tier's subject. It reads authentik over TLS at idp.kbci.test, so like the
-  # broker it needs the bench CA; without it the directory read cannot verify
+  # broker it needs the bench CA; without it the directory (IdP) read cannot verify
   # Caddy's leaf and is ridden out as unreachable (client.rs STALL_LIMIT) rather
   # than failing, so sync never mirrors. It starts idle until its credential file
   # has content; ci-authentik.sh recreates it once against the admission group's

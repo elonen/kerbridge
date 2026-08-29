@@ -44,14 +44,6 @@ carrying only the properties and membership edges that changed, never a whole
 object. Absent is not empty.
 <!-- avoid: delta slice, sparse patch, change -->
 
-### flow executor
-
-An authentik flow stage that performs one action during sign-in. The testbench
-posts the stages of the authorization flow to the flow executor until authentik
-returns an authorization code.
-<!-- refs: authentik `/api/v3/flows/executor/<slug>/` API; `testbench/authentik/approve.sh` -->
-<!-- avoid: executor, flow API, authorization endpoint -->
-
 ### hard delete
 
 Graph's permanent, non-restorable removal, reported as

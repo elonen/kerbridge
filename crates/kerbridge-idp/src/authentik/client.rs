@@ -1,7 +1,7 @@
-//! The live authentik directory client: an API token, and a full page-by-page
+//! The live authentik directory (IdP) client: an API token, and a full page-by-page
 //! read of `/core/users/` and `/core/groups/`.
 //!
-//! Authentik has no cursor, delta, or server-selected next link. This client
+//! authentik has no cursor, delta, or server-selected next link. This client
 //! builds each URL from the configured instance and a page number. It cannot
 //! send the token to a host from a response.
 //!
@@ -48,12 +48,12 @@ const GROUPS_QUERY: &str = "/api/v3/core/groups/?ordering=pk&include_users=false
 /// Exponential-backoff ceiling for reachability trouble.
 const BACKOFF_CAP: u64 = 300;
 /// How long a read may make no progress before it is abandoned. Bounds the gap
-/// between two pages, never the whole read, so it puts no limit on directory
-/// size.
+/// between two pages, never the whole read, so it puts no limit on the directory
+/// (IdP) size.
 const STALL_LIMIT: Duration = Duration::from_secs(3 * BACKOFF_CAP);
 /// How many pages one collection read may take before it is abandoned. At
 /// `page_size=100` that is a million users, or a million groups -- past any real
-/// directory, and short of the unbounded walk a server whose `next` keeps rising
+/// directory (IdP), and short of the unbounded walk a server whose `next` keeps rising
 /// would otherwise get. [`STALL_LIMIT`] does not bound this: it measures the gap
 /// between two pages, and every page that arrives resets it.
 const MAX_PAGES: usize = 10_000;
@@ -137,7 +137,7 @@ impl AuthentikClient {
     /// self-scoped `/core/tokens/` read. Advisory only: any trouble -- a refused
     /// read, a non-expiring token, an unreadable body -- answers `None`, because
     /// a countdown that could not be measured must never disturb the cycle that
-    /// carries the actual directory read.
+    /// carries the actual directory (IdP) read.
     pub async fn measure_expiry(&self, now: u64) -> Option<i64> {
         let url = format!("{}/api/v3/core/tokens/?intent=api&page_size=100", self.base);
         let (status, body) = self.get(&url).await.ok()?;
@@ -204,14 +204,16 @@ enum PageOutcome<T> {
 /// Map one HTTP response to a [`PageOutcome`].
 ///
 /// The `detail` string distinguishes a dead credential from a missing grant.
-/// Authentik uses `403` for both and does not return `401`.
+/// authentik uses `403` for both and does not return `401`.
 fn classify<T: DeserializeOwned>(status: u16, body: &[u8]) -> PageOutcome<T> {
     if status == 200 {
         return match serde_json::from_slice::<Page<T>>(body) {
             Ok(page) => PageOutcome::Ready(page),
             // An invalid 200 body can be a proxy error or truncation. Retry it;
             // do not parse it as an empty directory (IdP).
-            Err(e) => PageOutcome::Retry(format!("a 200 whose body is not a directory page: {e}")),
+            Err(e) => {
+                PageOutcome::Retry(format!("a 200 whose body is not a directory (IdP) page: {e}"))
+            }
         };
     }
     if status == 403 {
@@ -227,8 +229,8 @@ fn classify<T: DeserializeOwned>(status: u16, body: &[u8]) -> PageOutcome<T> {
             // or no token at all. Either way the read is refused, not emptied,
             // and total loss must be loud.
             PageOutcome::Refused(format!(
-                "authentik refused the directory read (403 {detail:?}): the read is refused, not \
-                 emptied, so this is a failure rather than an empty directory"
+                "authentik refused the directory (IdP) read (403 {detail:?}): the read is refused, \
+                 not emptied, so this is a failure rather than an empty directory (IdP)"
             ))
         };
     }

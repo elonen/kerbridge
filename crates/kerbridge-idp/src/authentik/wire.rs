@@ -1,7 +1,7 @@
 //! authentik's REST wire shapes, and the assembly that turns a whole read into
 //! an [`Enumeration`].
 //!
-//! Authentik has no shadow or delta API. Each cycle reads `/core/users/` and
+//! authentik has no shadow or delta API. Each cycle reads `/core/users/` and
 //! `/core/groups/` in `pk` order. This module accepts only a complete set of
 //! pages.
 //!
@@ -48,7 +48,7 @@ pub struct Pagination {
 
 /// A `/core/users/` row, cut to what the read consumes.
 ///
-/// `type` is absent because the adapter does not filter account types. Authentik
+/// `type` is absent because the adapter does not filter account types. authentik
 /// puts people and service accounts in one collection. The admission closure is
 /// the only account-selection gate.
 #[derive(Debug, Deserialize)]

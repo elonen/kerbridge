@@ -12,7 +12,7 @@ license.workspace = true
 # block needs core's renderer too.
 schema = ["dep:schemars", "kerbridge-core/schema"]
 
-# The directory face -- the seam, the desired state, and every adapter's reader.
+# The directory (IdP) face -- the seam, the desired state, and every adapter's reader.
 # Off by default so the broker, `kbconfig` and `kbsetup` compile none of it: they
 # link this crate for the token face alone. `kerbridge-sync` is the one consumer
 # and turns it on, and `unicode-normalization` rides with it.
@@ -49,9 +49,9 @@ base64.workspace = true
 # because reqwest already brings it to every build here.
 url.workspace = true
 
-# `name_candidate` composes before it derives a login name, so the directory
+# `name_candidate` composes before it derives a login name, so the directory (realm)
 # never holds two accounts spelled differently and rendered alike. Only the
-# directory face needs it, so it rides with `sync`.
+# directory (IdP) face needs it, so it rides with `sync`.
 unicode-normalization = { workspace = true, optional = true }
 
 [dev-dependencies]

@@ -1,9 +1,9 @@
-//! `kerbridge-sync` -- cloud directory synchronization.
+//! `kerbridge-sync` -- IdP-to-realm synchronization.
 //!
 //! Reads configured users and groups from each cloud IdP and reconciles them
 //! into dedicated Samba AD OUs over delegated LDAPS, stamping each object with
 //! its [`ExternalIdentity`](kerbridge_core::ExternalIdentity). Separate from the
-//! broker so sync credentials and directory write privileges stay out of the
+//! broker so sync credentials and directory (realm) write privileges stay out of the
 //! interactive authentication path.
 //!
 //! Samba AD is the single source of truth for external-to-realm mappings; this
@@ -12,7 +12,7 @@
 //!
 //! One process serves every source the config set lists, one after another. A
 //! cycle per source: ask that source's adapter to advance, diff the snapshot it
-//! returns against the current directory with the [`planner`], and apply the
+//! returns against the current directory (realm) with the [`planner`], and apply the
 //! plan over delegated LDAPS as that source's own account. How an IdP is read
 //! is the adapter's own business, behind
 //! [`kerbridge_idp::sync::DirectorySource`]; a cycle that produced no whole
@@ -63,7 +63,7 @@ const DEFAULT_CONFIG_DIR: &str = "/etc/kerbridge";
 static AUDIT: OnceLock<AuditLog> = OnceLock::new();
 
 /// A line that is also the record: an object this process created, renamed,
-/// disabled or emptied, and the writes the directory refused. Anything else is a
+/// disabled or emptied, and the writes the directory (realm) refused. Anything else is a
 /// plain `eprintln!`, which the console keeps and the file does not.
 ///
 /// One string for both, as the broker does it, so the console copy and the
@@ -76,9 +76,9 @@ fn audit(line: &str) {
 }
 
 /// One source's whole world: the account it binds as, the OU it owns, and the
-/// cloud directory it mirrors.
+/// directory (IdP) it mirrors.
 ///
-/// The directory client is owned here rather than shared. With one process
+/// The directory (realm) client is owned here rather than shared. With one process
 /// serving several sources, "apply this source's plan over that source's
 /// connection" would retire every object the bind identity did not recognize,
 /// and owning it is what makes the sentence unspellable.
@@ -100,9 +100,9 @@ impl SourceSync {
             &shared.ldap_ca_file,
             LDAP_TIMEOUT,
         )
-        .with_context(|| format!("configuring the directory client for {}", cfg.name()))?;
+        .with_context(|| format!("configuring the directory (realm) client for {}", cfg.name()))?;
         let source = connect(&cfg.settings, cfg.name(), notifier)
-            .with_context(|| format!("connecting to the cloud directory for {}", cfg.name()))?;
+            .with_context(|| format!("connecting to the directory (IdP) for {}", cfg.name()))?;
         Ok(Self { cfg, dir, source, consecutive_failures: 0 })
     }
 
@@ -133,7 +133,7 @@ impl SourceSync {
                     Ok(()) => {
                         // Cleared once the whole cycle has concluded, not on the read
                         // above. A cycle that reads the IdP perfectly and then cannot
-                        // write to the directory has not succeeded, and clearing it there
+                        // write to the directory (realm) has not succeeded, and clearing it there
                         // makes a standing LDAP outage alternate 1, 0, 1, 0 -- never
                         // reaching the threshold, however long it lasts.
                         if self.consecutive_failures >= FAIL_THRESHOLD {
@@ -154,9 +154,9 @@ impl SourceSync {
         }
     }
 
-    /// Diff a whole reading of the cloud directory against the current one, and
-    /// apply. Returns `Err` only on an infrastructure failure -- the directory
-    /// out of reach -- which the caller counts. Policy outcomes such as a frozen
+    /// Diff a whole reading of the directory (IdP) against the current directory
+    /// (realm), and apply. Returns `Err` only on an infrastructure failure -- the
+    /// directory (realm) out of reach -- which the caller counts. Policy outcomes such as a frozen
     /// admission group are handled in-band and count as a cycle that reached a
     /// conclusion.
     async fn reconcile(
@@ -176,8 +176,11 @@ impl SourceSync {
         for why in &refused {
             eprintln!("[sync/{name}] refused: {why}");
         }
-        let current =
-            self.dir.read_current(&cfg.source).await.context("reading current directory state")?;
+        let current = self
+            .dir
+            .read_current(&cfg.source)
+            .await
+            .context("reading current directory (realm) state")?;
 
         let now = now_rfc3339();
         let identity = cfg.identity();
@@ -305,7 +308,7 @@ impl SourceSync {
                         "sync-apply-failing",
                         Severity::Error,
                         format!(
-                            "the directory rejected {} of {} writes for source {name} this cycle",
+                            "the directory (realm) rejected {} of {} writes for source {name} this cycle",
                             report.failures.len(),
                             report.applied.len() + report.failures.len()
                         ),
@@ -326,7 +329,7 @@ impl SourceSync {
 /// hand-written: it names `--help` and nothing else, precisely so that there is
 /// no second copy of this to go stale.
 const HELP: &str = "\
-kerbridge-sync -- the KerBridge directory synchronisation daemon
+kerbridge-sync -- the KerBridge IdP-to-realm synchronization daemon
 
 usage: kerbridge-sync [--config <dir>] [--test-notification]
 
@@ -370,7 +373,7 @@ async fn main() -> Result<()> {
     };
     let (mut shared, warnings) = Config::load(&dir)
         .with_context(|| format!("reading the configuration under {}", dir.display()))?;
-    // Built before the IdP and the directory: it is what reports a deployment
+    // Built before the IdP and the directory (realm): it is what reports a deployment
     // that has no sync credential yet, and `--test-notification` must work on
     // exactly that deployment -- proving the channel is a step of installing,
     // not of running.
@@ -386,7 +389,7 @@ async fn main() -> Result<()> {
     }
 
     // Before the first cycle, and fatal if it cannot be opened: a deployment
-    // that asked for a durable record of what was done to its directory must not
+    // that asked for a durable record of what was done to its directory (realm) must not
     // get a running service that silently keeps none. After
     // `--test-notification`, which is a step of installing and runs on a
     // deployment whose audit directory may not exist yet.
@@ -618,7 +621,7 @@ async fn report_expiring_grants(
         .await;
 }
 
-/// The configured device-grant group and the directory's marker disagree.
+/// The configured device-grant group and the marker in the directory (realm) disagree.
 ///
 /// `Error`, not a warning, and in both directions: one leaves grants working on
 /// machines after the operator believes the feature is off, the other leaves no

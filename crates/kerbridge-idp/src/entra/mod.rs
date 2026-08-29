@@ -1,7 +1,7 @@
 //! The Entra adapter: the tenant a source file configures, and the subject
 //! encoding both faces share.
 //!
-//! `auth` is the token face; `sync`, `client` and `wire` are the directory one.
+//! `auth` is the token face; `sync`, `client` and `wire` are the directory (IdP) face.
 //! [`identity`] is what makes the two agree -- see the crate doc for what a
 //! divergence costs.
 
@@ -128,8 +128,8 @@ fn tenant_jwks_url(tenant_id: &str) -> String {
 /// One Entra tenant, as a source file's `[provider_config]` states it.
 ///
 /// Both faces are here because one file serves both binaries: the policy the
-/// broker verifies tokens against, and the sync credential used for directory
-/// (IdP) reads.
+/// broker verifies tokens against, and the sync credential used for directory (IdP)
+/// reads.
 /// Split across `broker.toml` and `sync.toml` they could name different
 /// tenants, and that disagreement retires every account and recreates it with a
 /// fresh SID.
@@ -481,7 +481,7 @@ pub(crate) const ENTRA_SRC: &str = r#"# Entra: the three app registrations from 
 {{jwks_url}}
 {{jwks_file}}
 
-# The directory sync app: app-only, read-only Graph, and the only one of the
+# The sync app: app-only, read-only Graph, and the only one of the
 # three holding a credential. Without admin consent on its permissions its token
 # carries no roles and every read is a 403.
 {{sync_client_id}}
@@ -576,7 +576,7 @@ pub mod tests {
         Source::new("entra").unwrap()
     }
 
-    /// One rule at both faces: the directory face is `encode_identity`, the
+    /// One rule at both faces: the directory (IdP) face is `encode_identity`, the
     /// token face is the reduction `verify` ends on. No fixture reaches the
     /// token face -- the corpus signing key is not committed, so one new token
     /// means regenerating all of them. The words are asserted because `verify`
@@ -587,7 +587,7 @@ pub mod tests {
         let uppercase = USER_OID.to_ascii_uppercase();
 
         let from_graph = crate::encode_identity(crate::Provider::Entra, &source(), &uppercase)
-            .expect_err("the directory face refuses it");
+            .expect_err("the directory (IdP) face refuses it");
         let from_token = identity(&source(), &uppercase).expect_err("the token face refuses it");
         assert_eq!(from_graph, from_token, "one rule, so one refusal");
 

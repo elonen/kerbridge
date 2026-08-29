@@ -44,7 +44,7 @@
 # nothing on its own and gates only who may create a device grant on that
 # account.
 #
-# Idempotent: re-running against a seeded directory is a no-op.
+# Idempotent: re-running against a seeded directory (realm) is a no-op.
 set -euo pipefail
 . "$(dirname "$0")/../lib.sh"
 cd "$(dirname "$0")/../.."
@@ -267,7 +267,7 @@ extensionName: kbrole1|delegates
 EOF
 ldbmodify -H /var/lib/samba/private/sam.ldb /tmp/demo.ldif; rm -f /tmp/demo.ldif"
 
-echo "--- seeded demo directory ---"
+echo "--- seeded demo directory (realm) ---"
 r ldbsearch -H /var/lib/samba/private/sam.ldb "(sAMAccountName=${SEED_USER_NAME})" \
   sAMAccountName userAccountControl msDS-ExternalDirectoryObjectId objectSid memberOf \
   | grep -vE '^(#|$|ref:)'
@@ -284,8 +284,8 @@ r ldbsearch -H /var/lib/samba/private/sam.ldb "(sAMAccountName=${SEED_SERVICE_NA
   | grep -vE '^(#|$|ref:)'
 
 # Share ACL on nas1: keyed by nas-share-rw's gid, which winbind resolves
-# only now that the group exists. This is file-server admin, not directory state sync
-# will own -- bundled here so one command takes the bench from up to testable.
+# only now that the group exists. This is operator-owned directory (realm) state,
+# not sync-owned state. It is bundled here so one command takes the bench from up to testable.
 NAS=nas1
 if docker compose ps --status running --services 2>/dev/null | grep -qx "$NAS"; then
   n() { docker compose exec -T "$NAS" "$@"; }

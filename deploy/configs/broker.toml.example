@@ -14,13 +14,13 @@
 #listen = "127.0.0.1:8080"
 
 # Ticket exchanges in flight at once; the rest get 429 without touching the
-# directory, and the client backs off. A valid token is not a budget -- each
+# directory (realm), and the client backs off. A valid token is not a budget -- each
 # ticket costs an LDAPS bind plus three forked root subprocesses on the DC.
 # Above issuerd's cap on purpose: this number also has to cover the requests
 # still in verification.
 #max_inflight = 16
 
-# The broker's own directory identity, read-only. It resolves identities and
+# The broker's own directory (realm) identity, read-only. It resolves identities and
 # reads the admission group; every write goes through issuerd, so there is
 # nothing here to confine and one account serves every source.
 #

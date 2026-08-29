@@ -37,7 +37,7 @@ entries:
     attrs:
       client_type: public
       client_id: kerbridge-bench-client
-      # The client binds an ephemeral port and sends no path. Authentik does not
+      # The client binds an ephemeral port and sends no path. authentik does not
       # implement RFC 8252 loopback matching, so use its full-match regex mode.
       # Plain-YAML backslashes are literal.
       redirect_uris:

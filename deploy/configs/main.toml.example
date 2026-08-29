@@ -40,7 +40,7 @@
 # The cloud IdPs this deployment serves, one per idp_<name>.toml beside this
 # file. The list is the enable switch: drop a name and keep the file, and sync
 # stops mirroring that source and the broker stops serving its path, with
-# nothing already in the directory touched.
+# nothing already in the directory (realm) touched.
 #
 # Never a wildcard, deliberately. A source that disappeared by glob would orphan
 # every object it owns -- SIDs, memberships, file ownership -- with nothing

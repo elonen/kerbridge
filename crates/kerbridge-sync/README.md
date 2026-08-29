@@ -13,9 +13,9 @@ allocating one at the same moment would each see the other's name as free.
 
 ## Why it is a separate service
 
-- **Credentials.** The read-only sync credential and directory *write* privileges have no
+- **Credentials.** The read-only sync credential and directory (realm) *write* privileges have no
   business in the interactive authentication path. The broker reads the
-  directory; only this service changes it.
+  directory (realm); only this service changes it.
 - **No second database.** Samba AD is the single source of truth for the
   external-to-realm mapping. This service persists nothing of its own: an
   adapter's read state — Entra's delta cursors and shadow — lives in memory, so
@@ -37,7 +37,7 @@ allocating one at the same moment would each see the other's name as free.
   group holds and for nobody else** — everyone else the adapter read is dropped.
   Leaving the closure therefore retires the account, which is what makes the OU
   readable as the admitted set. A pure planner diffs that against the current
-  directory and emits an ordered op list — every op asserted to target a DN
+  directory (realm) and emits an ordered op list — every op asserted to target a DN
   inside that OU, and a `sAMAccountName` collision refusing the whole cycle
   rather than half-applying it.
 - **A read that did not finish produces no plan at all**, and one that finished
@@ -69,7 +69,7 @@ allocating one at the same moment would each see the other's name as free.
   (`automatic_sam_renames` in `configs/sync.toml`, default on). It is what
   Windows shows as the file owner and in the *Security* tab, so a person who
   changes their name and keeps the old login name has been failed by the
-  directory. The cost is borne by that user alone and once: the sam is their
+  directory (realm). The cost is borne by that user alone and once: the sam is their
   Kerberos principal, so tickets issued under the old name stop working and
   they sign out and back in. Set the flag to `false` to freeze every live name
   instead, and rename by hand.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record a real authentik directory read, and settle the two ordering questions.
+"""Record a real authentik directory (IdP) read, and settle the two ordering questions.
 
     cd testbench/authentik && ./authcode.sh up      # the stack, once
     python3 capture_directory.py                    # seed, measure, record
@@ -147,7 +147,7 @@ USERS = [
     ("erin.filler", "Erin Filler", "erin.filler@bench.invalid", "internal", True),
     ("frank.filler", "Frank Filler", "frank.filler@bench.invalid", "internal", True),
     ("ada.lovelace", "Ada Lovelace", "ada.lovelace@bench.invalid", "internal", True),
-    # Authentik account type does not control admission. This service account is
+    # authentik account type does not control admission. This service account is
     # admitted because the admission group holds it.
     ("kb-svc-sync", "Kerbridge Sync Collector", "", "service_account", True),
     # `is_active` is independent of type: a disabled service account still
@@ -188,7 +188,7 @@ CAST_GROUPNAMES = [g[0] for g in GROUPS]
 
 # The one host `wipe` may run against. Every other object it removes is named
 # `kb-*` or `zz-*`, but the cast is not: the corpus records the names a real
-# directory carries, degenerate ones included, so those users are deleted by
+# directory (IdP) carries, degenerate ones included, so those users are deleted by
 # exact username. `AK_BASE` exists to point this recorder at another instance,
 # and pointing it at one that has an `ada.lovelace` would delete them.
 WIPEABLE = ("http://127.0.0.1:9000", "http://localhost:9000")
@@ -510,7 +510,7 @@ def main():
                            "email": "", "type": "service_account", "path": "users"}))
     ok(call("POST", "/api/v3/core/tokens/",
             body={"identifier": "kb-unprivileged-token", "intent": "api",
-                  "user": unpriv["pk"], "description": "directory capture", "expiring": False}))
+                  "user": unpriv["pk"], "description": "directory (IdP) capture", "expiring": False}))
     unpriv_key = ok(call("GET", "/api/v3/core/tokens/kb-unprivileged-token/view_key/"))["key"]
     no_perm = call("GET", "/api/v3/core/users/?%s&page_size=%d&page=1" % (USER_QUERY, USER_PAGE_SIZE),
                    token=unpriv_key)
@@ -549,10 +549,10 @@ def main():
     record("users_partial_grant_page1",
            "RECORDED against a credential granted authentik_core.view_user on exactly "
            "two user objects and nothing globally. 200. pagination.count is %d -- the "
-           "size of the FILTERED set, not of the directory (%d). The envelope is "
+           "size of the FILTERED set, not of the directory (IdP) (%d). The envelope is "
            "internally perfect: count matches the row count, total_pages is 1, next is "
            "0. Byte for byte this is indistinguishable from an honest read of a "
-           "two-person directory. A count cross-check is "
+           "two-person directory (IdP). A count cross-check is "
            "STRUCTURALLY BLIND to a partial grant and the corpus must not carry a case "
            "pretending otherwise." % (pag["count"], whole["count"]), partial)
 

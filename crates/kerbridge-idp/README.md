@@ -9,7 +9,7 @@ IdP is added.
 An adapter has **two faces**, and they have to agree byte for byte:
 
 - the broker turns a bearer credential into an `ExternalIdentity`;
-- sync turns a directory object from the same IdP into one.
+- sync turns a directory (IdP) object from the same IdP into one.
 
 Nothing connects those two processes. Separate containers, separate credentials,
 no channel between them. If they emit different bytes for the same account:
@@ -31,11 +31,11 @@ tests hold them against each other directly.
 all it needs of an identity is that the stored value parses — which
 `kerbridge-core` answers on its own, with no dependencies.
 
-The directory face is behind the `sync` feature, which only `kerbridge-sync`
+The directory (IdP) face is behind the `sync` feature, which only `kerbridge-sync`
 turns on: the broker, `kbconfig` and `kbsetup` link this crate for the token face
 alone and compile no reader at all. One directory per provider holds both —
 `src/entra/{mod,auth}.rs` is the token face, `src/entra/{sync,client,wire}.rs`
-the directory one — and `src/sync/` is the seam they meet the mirror at.
+the directory (IdP) face — and `src/sync/` is the seam they meet the mirror at.
 
 ## The adapters this build carries
 
@@ -48,7 +48,7 @@ rule and the verifier: `kbconfig` loads and checks a source, `kbconfig check
 --online` asks the provider the three questions that catch the settings a token
 never shows, and the broker verifies an access token against the shared
 conformance suite and the forged corpus at
-`testbench/fixtures/authentik-token/`. The **directory face**
+`testbench/fixtures/authentik-token/`. The **directory (IdP) face**
 (`src/authentik/{sync,client,wire}.rs`) is a full REST read every cycle —
 authentik has no delta, no group-side change filter and invisible deletions, so
 a torn read is refused rather than mirrored short a person, a dangling id refuses
@@ -73,7 +73,7 @@ golden included.
 - The **subject encoding** — what goes in field 3 of `kb1|<name>|<subject>`.
   Opaque to everything else. Entra's is the bare `oid`; authentik's is the
   user's `uuid`, chosen for being the only identifier its REST API can *filter*
-  on — a subject the directory cannot be queried by makes the two faces
+  on — a subject the directory (IdP) cannot be queried by makes the two faces
   impossible to hold together, whatever else recommends it.
 - **Whether a subject not in that shape is refused, and in whose words.** Nothing
   normalizes: a transformation over a value that is unrecoverable if wrong
@@ -81,7 +81,7 @@ golden included.
   causes apart says which — authentik's separates "the provider is on the
   wrong subject mode", which an operator fixes, from "the IdP changed how it
   spells a uuid", which is not theirs to fix.
-- Reading the directory: the protocol, the credential, the cursors, and which
+- Reading the directory (IdP): the protocol, the credential, the cursors, and which
   accounts the IdP's own rules accept. What comes back is a `SourceSnapshot`, and
   reconciliation never enters an adapter. The realm's own rules — the group
   closure, the held-narrowing, the refusal list — are `sync::build_desired`, and

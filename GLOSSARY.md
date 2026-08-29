@@ -42,6 +42,14 @@ is the *[NAS Access](#nas-access)* app.
 <!-- refs: binary `kerbridge-agent` -->
 <!-- avoid: helper, systray helper, winhelper.exe, tray, client app -->
 
+### authentik
+
+The cloud IdP product supported by KerBridge's authentik adapter. The product
+styles its name `authentik`: lowercase, including at the start of a sentence
+and in headings.
+<!-- refs: `PRODUCT_NAME` in `crates/kerbridge-idp/src/authentik/mod.rs` -->
+<!-- avoid: Authentik -->
+
 ### base_url
 
 The field in the [broker's](#broker) `/config` reply that names which
@@ -65,6 +73,14 @@ today.
 A disposable environment that represents a deployment. A bench can include the
 Compose stack, test tools, and test [workstations](#workstation). Do not put data
 that a person depends on in a bench.
+
+### blueprint
+
+An authentik YAML declaration of model objects, attributes, and relationships.
+A blueprint instance imports it, and authentik reapplies it on its schedule.
+Reapplication restores a `state: present` entry to the declared state. A
+`state: created` entry is created once; later operator changes remain.
+<!-- refs: `docs/setup/authentik-blueprint.yaml`; `testbench/authentik/blueprints/` -->
 
 ### broker
 
@@ -120,7 +136,7 @@ groups. KerBridge has Entra and authentik adapters.
 ### Organizational Unit
 
 The place in the LDAP [directory (realm)](#directory-realm) that contains an object.
-KerBridge compares the parts of a directory name to test containment. It does
+KerBridge compares the parts of a distinguished name to test containment. It does
 not compare text suffixes. Acronym: OU.
 <!-- refs: `kerbridge_core::dn::parent_of` -->
 <!-- avoid: container (confuses with Docker) -->
@@ -295,7 +311,7 @@ to remove the grant. Shown to users as *Remove authorization*.
 What every [synced group's](#synced-group) [`sAMAccountName`](#samaccountname) from
 one [source](#source) ends with — `payroll` becomes `payroll-entra` — so that two
 [cloud IdPs](#cloud-idp) which each hold a group of the same name do not need the
-same directory name for it.
+same name in the directory (realm).
 
 It exists because a `sAMAccountName` is unique across the whole [realm](#realm),
 not within an [IdP-specific OU](#idp-specific-ou). Without distinct suffixes, the
@@ -739,6 +755,15 @@ The part of [KerBridge](#kerbridge) that runs on the Linux host. It includes the
 server*.
 <!-- avoid: the stack, the broker stack, the compose project, the backend -->
 
+### service account (authentik)
+
+An authentik [directory (IdP)](#directory-idp) user object with type
+`service_account`, used by software instead of a person. KerBridge's
+`svc-kerbridge-sync` owns the sync API token and receives the global read-only
+Role. It is not a [service account (directory)](#service-account-directory) or a
+[service account (device grant)](#service-account-device-grant).
+<!-- refs: `docs/setup/authentik.md`; authentik type `service_account` -->
+
 ### service account (device grant)
 
 An ordinary cloud user account that an unattended machine uses to get [tickets](#ticket).
@@ -870,7 +895,7 @@ The KerBridge daemon that reads selected users and groups from a
 [IdP-specific OU](#idp-specific-ou) match the read. An adapter reads the
 directory (IdP). Sync writes to the [directory (realm)](#directory-realm) with
 LDAPS.
-<!-- refs: crate and service `kerbridge-sync`; directory accounts `svc-kerbridge-sync-<source>` -->
+<!-- refs: crate and service `kerbridge-sync`; directory (realm) accounts `svc-kerbridge-sync-<source>` -->
 <!-- avoid: reconciler -->
 
 ### syncable

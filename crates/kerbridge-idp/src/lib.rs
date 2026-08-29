@@ -2,7 +2,7 @@
 //!
 //! An adapter has **two faces**, and they are here together because they have to
 //! agree byte for byte. The broker turns a bearer credential into an
-//! [`ExternalIdentity`]; sync turns a directory object from the same IdP into
+//! [`ExternalIdentity`]; sync turns a directory (IdP) object from the same IdP into
 //! one. Nothing connects the two processes -- separate containers, separate
 //! credentials, no channel -- so a disagreement about what the stored value
 //! should be breaks every login for that source, and neither program looks

@@ -79,7 +79,7 @@ fn application_base(url: &str, slug: &str) -> String {
 
 /// The one `iss` this source accepts.
 ///
-/// The final slash is required. Authentik's reversed URL pattern includes it,
+/// The final slash is required. authentik's reversed URL pattern includes it,
 /// and `iss` comparison is exact.
 fn issuer(url: &str, slug: &str) -> String {
     format!("{}/", application_base(url, slug))
@@ -123,7 +123,7 @@ pub struct Settings {
     /// whatever happened to be on disk.
     pub jwks_url: String,
     pub display_name: String,
-    /// The file holding the API token sync reads the directory with.
+    /// The file holding the API token that sync uses to read the directory (IdP).
     ///
     /// There is deliberately no `sync_credential_expires` beside it: authentik
     /// reports an API token's own expiry to the bearer, so the adapter measures
@@ -308,7 +308,7 @@ const ISSUER: &str = "issuer";
 const SIGNING: &str = "signing algorithm";
 const REFRESH: &str = "offline_access";
 const CREDENTIAL: &str = "sync credential";
-const GRANT: &str = "directory grant";
+const GRANT: &str = "IdP read grant";
 const EXPIRY: &str = "credential expiry";
 
 /// The claims that the configuration probe reads.
@@ -325,7 +325,7 @@ struct Discovery {
 }
 
 /// Compare the public provider metadata and test the sync credential. The
-/// authenticated probes test the token, directory grant, and expiry.
+/// authenticated probes test the token, directory (IdP) grant, and expiry.
 pub(crate) async fn probe(
     settings: &Settings,
     credential: Option<&str>,
@@ -390,7 +390,7 @@ async fn credential_probe(base: &str, token: &str, timeout: Duration) -> Probe {
     credential_verdict(get_authed(&url, token, timeout).await)
 }
 
-/// Authentik returns `403`, not `401`, for an expired, revoked, or wrong token
+/// authentik returns `403`, not `401`, for an expired, revoked, or wrong token
 /// and for a deactivated service account. This condition cannot heal without a
 /// credential change.
 fn credential_verdict(fetched: Fetched) -> Probe {
@@ -408,7 +408,7 @@ fn credential_verdict(fetched: Fetched) -> Probe {
     }
 }
 
-/// `GET /core/groups/?page_size=1`: does the grant let the directory be read?
+/// `GET /core/groups/?page_size=1`: does the grant permit a directory (IdP) read?
 async fn grant_probe(base: &str, token: &str, timeout: Duration) -> Probe {
     let url = format!("{}/api/v3/core/groups/?page_size=1", base.trim_end_matches('/'));
     grant_verdict(get_authed(&url, token, timeout).await)
@@ -419,11 +419,11 @@ async fn grant_probe(base: &str, token: &str, timeout: Duration) -> Probe {
 /// so the permission must be global.
 fn grant_verdict(fetched: Fetched) -> Probe {
     match fetched {
-        Fetched::Body(_) => Probe::pass(GRANT, "the service account may list the directory"),
+        Fetched::Body(_) => Probe::pass(GRANT, "the service account may list the directory (IdP)"),
         Fetched::Status(403) => Probe::fail(
             GRANT,
-            "authentik refused the directory read (403): with the sync-credential leg green this \
-             is a missing grant -- give the service account view_user and view_group globally \
+            "authentik refused the directory (IdP) read (403): with the sync-credential leg green \
+             this is a missing grant -- give the service account view_user and view_group globally \
              through a Role. A per-object grant answers 200 with a silently truncated list, which \
              reconciles the people it left out as departures.",
         ),
@@ -647,8 +647,8 @@ pub(crate) fn measured_days(body: &str, now: u64) -> Option<i64> {
 /// not use, named a key the parser dropped or missed one it gained fails the
 /// build rather than misleading an operator.
 #[cfg(feature = "schema")]
-pub(crate) const AUTHENTIK_SRC: &str = r#"# authentik: one OAuth2 provider and one application, plus the API token sync
-# reads the directory with. authentik splits the protocol (the Provider) from
+pub(crate) const AUTHENTIK_SRC: &str = r#"# authentik: one OAuth2 provider and one application, plus the API token that
+# sync uses to read the directory (IdP). authentik splits the protocol (the Provider) from
 # the access control (the Application), so there is one of each and no third
 # object. The provider settings KerBridge needs are mandatory and none of them
 # shows up in a token: sub_mode, a Signing Key, the offline_access mapping and a
@@ -775,12 +775,12 @@ pub mod tests {
     /// test is where a divergence is caught or not at all.
     #[test]
     fn both_faces_derive_the_same_bytes_from_one_uuid() {
-        let directory = crate::encode_identity(crate::Provider::Authentik, &source(), USER_UUID)
-            .expect("the directory face encodes a uuid");
+        let from_idp = crate::encode_identity(crate::Provider::Authentik, &source(), USER_UUID)
+            .expect("the directory (IdP) face encodes a uuid");
         let token = identity(&source(), USER_UUID).expect("the token face encodes the same uuid");
-        assert_eq!(directory, token, "one rule, so one identity");
-        assert_eq!(directory.encode(), format!("kb1|authentik|{USER_UUID}"));
-        assert_eq!(directory.encode(), token.encode());
+        assert_eq!(from_idp, token, "one rule, so one identity");
+        assert_eq!(from_idp.encode(), format!("kb1|authentik|{USER_UUID}"));
+        assert_eq!(from_idp.encode(), token.encode());
     }
 
     /// Two rejects, because there are two causes, and the operator's next move
@@ -788,11 +788,10 @@ pub mod tests {
     #[test]
     fn a_non_canonical_subject_is_refused_on_both_faces_and_names_its_cause() {
         let uppercase = USER_UUID.to_ascii_uppercase();
-        let from_directory =
-            crate::encode_identity(crate::Provider::Authentik, &source(), &uppercase)
-                .expect_err("the directory face refuses it");
+        let from_idp = crate::encode_identity(crate::Provider::Authentik, &source(), &uppercase)
+            .expect_err("the directory (IdP) face refuses it");
         let from_token = identity(&source(), &uppercase).expect_err("the token face refuses it");
-        assert_eq!(from_directory, from_token, "one rule, so one refusal");
+        assert_eq!(from_idp, from_token, "one rule, so one refusal");
 
         // Upper case: authentik's serialization changed. Sending the operator
         // to `sub_mode` here would send them to a setting that is right.
@@ -945,7 +944,7 @@ pub mod tests {
 
     /// The required keys, each of them the whole deployment: a source with any
     /// one of them missing serves nobody, and serde reports one per file. The
-    /// admission group joins the token-face four for the directory face -- with
+    /// admission group joins the token-face four for the directory (IdP) face -- with
     /// no admission group sync mirrors nobody.
     #[test]
     fn the_block_requires_the_values_only_the_operator_has() {

@@ -42,7 +42,7 @@ const GROUP_SELECT: &str = "id,displayName,members";
 const BACKOFF_CAP_SECS: u64 = 300;
 /// How long a read may make no progress before it is abandoned. Bounds the gap
 /// between two pages, never the whole read, so it puts no limit on directory
-/// size. Set against the backoff ceiling, so a run of throttling is ridden out
+/// (IdP) size. Set against the backoff ceiling, so a run of throttling is ridden out
 /// rather than reported as a fault.
 const STALL_LIMIT: Duration = Duration::from_secs(3 * BACKOFF_CAP_SECS);
 
@@ -276,7 +276,7 @@ const GRAPH_PATH: &str = "/v1.0";
 /// Only the first URL of a stream is this crate's own; every one after it is
 /// `@odata.nextLink` as the server wrote it, and the stored cursor a later cycle
 /// resumes from is the same string read back from disk. The request carries a
-/// bearer token issued for Graph and for the whole tenant's directory, so a URL
+/// bearer token issued for Graph and for the whole tenant's directory (IdP), so a URL
 /// pointing elsewhere is that token handed to whoever is there -- and the read
 /// would then look like an ordinary empty page. Checked on every request rather
 /// than where links are parsed, so a new call site cannot skip it.
@@ -354,7 +354,7 @@ fn carries_cursor(url: &str) -> bool {
 
 /// Graph refused the request itself, not the transport. `401` is an access token
 /// Graph no longer accepts -- normally one that aged out during a long read, which
-/// the next cycle's own token clears. `403` is a directory permission the
+/// the next cycle's own token clears. `403` is a directory (IdP) permission the
 /// application never had, which no retry fixes.
 #[derive(Debug)]
 pub(super) struct AuthRefused {

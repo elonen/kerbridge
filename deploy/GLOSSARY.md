@@ -123,7 +123,7 @@ broker.
 The deployment-shape file, holding what compose itself interpolates and what the
 deploy scripts source as shell. Its keys are classified by **where the operator
 gets the value** — the realm being created, the portal,
-the directory, or nowhere but the operator's own decision, which is unprefixed.
+the directory (realm), or nowhere but the operator's own decision, which is unprefixed.
 It carries no secrets; those are one-value files under `secrets/`.
 
 Read last, after [`bench.env`](#benchenv), by compose and by the scripts alike:
@@ -150,7 +150,7 @@ bench file server, the mock IdP, and the accounts and identifiers
 
 The subdirectory of `secrets/` holding machine-generated
 values, never to be opened or edited: the same value also lives in the
-directory, so editing one desynchronizes a password rather than changing it.
+directory (realm), so editing one desynchronizes a password rather than changing it.
 It is the whole of what [`kbsetup`](../GLOSSARY.md#kbsetup) writes and the only
 part of `secrets/` the [setup service](#setup-service) is given, which is why a
 per-source `bind_password` lives at `generated/idp/<name>/` rather than beside

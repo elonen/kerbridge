@@ -6,7 +6,7 @@ SETUP.md](../../SETUP.md#2-set-up-your-cloud-identity-providers). It holds what
 is true on both paths: what you create, the values that it produces, and the
 Entra defaults that are wrong for KerBridge.
 
-Entra spells KerBridge's two faces — sign a person in, read the directory
+Entra spells KerBridge's two faces — sign a person in, read the directory (IdP)
 one way — as **three application registrations and one security group**, in
 your one tenant. All three applications are read-only in Entra, and no
 application is an administrator:
@@ -92,7 +92,7 @@ occurs:
 > no grant, no consent and no app role. This is the design of Entra, and you
 > cannot turn it off. The presence of `scp` together with `idtyp != "app"` is
 > the *only* mark that separates a real user from any service principal in your
-> directory. Both paths request this claim.
+> directory (IdP). Both paths request this claim.
 
 ## What this does not touch
 
@@ -105,7 +105,7 @@ the broker host, that attacker gets no more *in Entra* than read access to the
 names, groups and memberships that the on-prem realm already holds.
 
 The one exception is on-prem, not in Entra. The sync credential is read-only in
-Entra, but it writes to the realm directory: it creates the identities in
+Entra, but it writes to the directory (realm): it creates the identities in
 `OU=Entra,OU=CloudIdP` and it manages the admission group. See
 [Enable synchronization (`broker-host.md`)](broker-host.md#enable-synchronization).
 

@@ -44,6 +44,14 @@ certificate. Every identifier in one is synthetic, and the committed tokens are
 expired on purpose.
 <!-- avoid: golden file -->
 
+### flow executor
+
+The authentik API endpoint that advances a named flow. The testbench answers the
+identification and password challenges, then follows the redirect target until
+the re-entry returns an authorization code.
+<!-- refs: authentik `/api/v3/flows/executor/<slug>/` API; `testbench/authentik/approve.sh` -->
+<!-- avoid: executor, flow API, authorization endpoint -->
+
 ### generator
 
 A script, the only sanctioned way to change the [corpus](#corpus) it owns.
@@ -127,6 +135,6 @@ instead.
 
 ### zoo
 
-A deliberately exhaustive cast of directory objects assembled so that every
+A deliberately exhaustive cast of directory (IdP) objects assembled so that every
 claimed member type or name case appears at least once.
 <!-- avoid: object zoo, cast, menagerie -->

@@ -1,9 +1,9 @@
-# The Authentik directory fixture corpus
+# The authentik directory (IdP) fixture corpus
 
 Sixteen pinned files that let `cargo test` exercise the authentik directory
-read -- the `advance()` face -- and the sync credential's own expiry measurement,
-with no container. It is the directory-side
-companion to `../authentik-token/`, and it is loaded as a set: the reader points
+(IdP) read -- the `advance()` face -- and the sync credential's own expiry measurement,
+with no container. It is the directory (IdP) companion to
+`../authentik-token/`, and it is loaded as a set: the reader points
 at this directory the way the Entra reader points at `../graph-sync/`.
 
 **Derived, not recorded.** Every file here is trimmed and pinned from the live
@@ -15,7 +15,7 @@ assert exact bytes. The trim is deliberate and the same on every read page:
 
 - response headers reduced to `content-type` alone,
 - the `autocomplete` UI-hint block dropped from every page body -- the
-  directory read never looks at it,
+  directory (IdP) read never looks at it,
 - object rows cut to the fields the read consumes plus the ones that carry a
   structural case: users keep `pk`, `username`, `name`, `is_active`, `groups`,
   `groups_obj`, `email`, `type`, `uuid`; groups keep `pk`, `num_pk`, `name`,
@@ -24,7 +24,7 @@ assert exact bytes. The trim is deliberate and the same on every read page:
 The `*_obj` keys are kept at their recorded `null`: under `include_users=false`
 and `include_groups=false` authentik nulls the object arrays but keeps the id
 arrays, so a reader that follows `children_obj`/`groups_obj` instead of
-`children`/`groups` reads an empty directory, and this corpus is a test of that.
+`children`/`groups` reads an empty directory (IdP), and this corpus is a test of that.
 
 There is no generator. The corpus is hand-derived and edited in place, like
 `../planner/`; regenerating it would mean re-recording, which is
@@ -33,7 +33,7 @@ There is no generator. The corpus is hand-derived and edited in place, like
 ## The read pages
 
 Four pages, `?ordering=pk`, `page_size` forced to a two-page boundary. Together
-they are one whole read of a 13-user, 11-group directory. The structural cases
+they are one whole read of a 13-user, 11-group directory (IdP). The structural cases
 ride as rows, never as files of their own.
 
 | File | What it pins |
@@ -79,7 +79,7 @@ three 403 bodies are byte-faithful to the recordings.
 | `err_403_token_invalid.json` | 403 | A bearer token naming no `Token` row -- a rejected credential, which must not count the cycle as a failure. |
 | `err_403_no_permission.json` | 403 | A real token with no grant. The read is refused, not emptied: total loss is loud. |
 | `err_503_starting.json` | 503 | Hand-authored -- unrecordable on this stack, which runs no reverse proxy. Reachability, not a verdict. |
-| `err_non_json_body.json` | 502 | Hand-authored -- a reverse proxy's HTML error page, `text/html`, body unparseable as JSON. Reachability, not a malformed directory. |
+| `err_non_json_body.json` | 502 | Hand-authored -- a reverse proxy's HTML error page, `text/html`, body unparseable as JSON. Reachability, not a malformed directory (IdP). |
 
 Every identifier here is synthetic.
 
@@ -98,6 +98,6 @@ headroom.
 | `tokens_self_nonexpiring.json` | 200, one api-intent token, `expiring` false and `expires` a **junk** already-past value. A reader that trusted `expires` regardless of `expiring` would report a live credential as expired; the correct reading is no countdown. |
 
 A refused token read is not a file of its own: it is the same 403 the directory
-read already pins -- authentik has no 401, so an expired, revoked, wrong or
+(IdP) read already pins -- authentik has no 401, so an expired, revoked, wrong or
 app_password credential all answer one status, and the `check --online` legs name
 that collapse apart in their own words.

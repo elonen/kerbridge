@@ -318,7 +318,7 @@ Content in the file starts synchronization on the next poll. The credential is
 read-only and is never a user's token.
 
 Entra uses an app-only client secret. It does not renew automatically. The
-operator can state its expiry date. Authentik uses an API token for a dedicated
+operator can state its expiry date. authentik uses an API token for a dedicated
 service account. The adapter reads the token's expiry from authentik.
-<!-- refs: `secrets/idp/<name>/credential`; `EntraSource::credential`; `AuthentikSource::credential`; `sync_credential_expires` -->
+<!-- refs: `secrets/idp/<name>/credential`; `EntraSource::credential`; `AuthentikSource::credential`; `sync_credential_expires` in `configs/idp_entra.toml`'s `[provider_config]` -->
 <!-- avoid: graph credential, idp credential, entra credential, graph secret, secret value, secret id -->

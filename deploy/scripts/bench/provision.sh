@@ -1,5 +1,5 @@
 # Shared provisioning for all stack tiers. Sourcing this file creates an
-# isolated realm, bootstraps its directory, and waits for `/config` over TLS.
+# isolated realm, bootstraps its directory (realm), and waits for `/config` over TLS.
 # The caller performs source-specific setup and assertions.
 #
 # This file executes when sourced. It has no shebang and is not executable.
@@ -71,7 +71,7 @@ esac
 REALM_IP=${SUBNET%.0/24}.10
 NAS_IP=${SUBNET%.0/24}.20
 USER_NAME=alice
-# seed-demo.sh maps this token object ID to $USER_NAME in the directory.
+# seed-demo.sh maps this token object ID to $USER_NAME in the directory (realm).
 OID=33334444-dddd-5555-eeee-6666ffff7777
 # OTHER is admitted but cannot delegate. SERVICE receives a delegated grant and
 # does not sign in.
@@ -328,7 +328,7 @@ docker build -f "$ROOT/client/kerbridge-client/Dockerfile" --target dist \
 # client world-readable and executable. The ccache remains 0600.
 chmod 0755 "$CLIENTDIR/kerbridge"
 
-say "make up -- provision, bootstrap the directory, start the stack"
+say "make up -- provision, bootstrap the directory (realm), start the stack"
 # Do not run `make up`; it writes host configuration for the development bench.
 # Run only its deployment steps in the disposable copy.
 scripts/config/check-env.sh

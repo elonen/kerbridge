@@ -12,7 +12,7 @@ You get passwordless access to a local file server with your [cloud identity](GL
 You manage the users in a **[cloud IdP](GLOSSARY.md#cloud-idp)** (MS Entra ID). They authenticate, without
 password, to your **on-prem Kerberos services** — a Samba file server, an
 SPNEGO HTTP app, and so on. A local Samba AD DC syncs the users **from** cloud:
-the sync process is read-only and one-way. Your IdP directory is not modified.
+the sync process is read-only and one-way. Your directory (IdP) is not modified.
 
 ### [Sign-in](GLOSSARY.md#sign-in)
 
@@ -77,7 +77,7 @@ flowchart TB
   nas["file server<br/>Samba member, winbind + idmap_rid"]
 
   wh -->|"OIDC browser"| entra
-  entra -->|"directory sync"| sync
+  entra -->|"directory (IdP) → directory (realm)"| sync
   wh -->|"HTTPS"| caddy
   caddy -->|"reverse proxy"| broker
   broker -->|"Unix"| iss
@@ -101,7 +101,7 @@ users in the cloud, this is backwards. It also has costs:
 
 - You operate a full AD DC — licensing, patches, replication, DNS/SYSVOL/GPO,
   hardening — only so that a file server can know who you are.
-- You operate a fragile, mostly one-directional directory sync: schema, sync
+- You operate a fragile, mostly one-directional identity synchronization: schema, sync
   cycles, immutableID anchors, conflicts, writeback limits.
 - Your cloud IdP then depends on on-prem infrastructure.
 
