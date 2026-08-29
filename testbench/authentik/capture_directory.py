@@ -186,7 +186,21 @@ CAST_USERNAMES = [u[0] for u in USERS]
 CAST_GROUPNAMES = [g[0] for g in GROUPS]
 
 
+# The one host `wipe` may run against. Every other object it removes is named
+# `kb-*` or `zz-*`, but the cast is not: the corpus records the names a real
+# directory carries, degenerate ones included, so those users are deleted by
+# exact username. `AK_BASE` exists to point this recorder at another instance,
+# and pointing it at one that has an `ada.lovelace` would delete them.
+WIPEABLE = ("http://127.0.0.1:9000", "http://localhost:9000")
+
+
 def wipe():
+    if BASE not in WIPEABLE:
+        sys.exit(
+            "FAIL: AK_BASE is %s, and this run would delete users by exact username\n"
+            "      (%s) there. Point it at %s, the stack `authcode.sh up` starts."
+            % (BASE, ", ".join(CAST_USERNAMES[:3]) + ", ...", WIPEABLE[0])
+        )
     say("removing anything a previous run left behind")
     for name in list_all("/core/groups/", "name"):
         if name.startswith("kb-") or name.startswith("zz-"):

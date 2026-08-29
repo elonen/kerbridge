@@ -32,6 +32,13 @@ use crate::sync::SourceError;
 /// admission closure), and `include_groups=false`/`include_roles=false` so the
 /// object arrays come back null and the id arrays -- which the read consumes --
 /// come back whole.
+///
+/// Measured on 2026.8.0: an `ordering` value the filter does not allow is
+/// dropped rather than refused, and the read falls back to the model's default
+/// -- `username` for users, `name` for groups. Both are mutable and neither is
+/// append-only, so a typo in this one parameter is not a smaller version of the
+/// right read; it is the least stable sort authentik has, and the response says
+/// nothing. `pk` is honoured on both streams.
 const USERS_QUERY: &str =
     "/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=100";
 /// The whole groups read: `include_users=false` for the same reason, keeping the

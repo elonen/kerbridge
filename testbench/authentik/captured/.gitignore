@@ -1,0 +1,4 @@
+# The measurements as data, rewritten by every `capture_directory.py` run. The
+# recordings beside it are committed; this one is the run's own report, and the
+# README states the same numbers in prose.
+findings.json

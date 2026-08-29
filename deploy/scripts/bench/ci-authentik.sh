@@ -234,11 +234,18 @@ echo "sync mirrored one user and one group ($admgrp), the admission group carryi
 # benchuser -> admission group (synced) -> nas-share-rw (operator's).
 # ---------------------------------------------------------------------------
 say "granting the share to the synced admission group"
-have_group() { r samba-tool group list 2>/dev/null | grep -qxF "$1"; }
+# Both lists are read whole rather than piped into `grep -q`, which exits at the
+# first match and can SIGPIPE samba-tool: under `pipefail` that makes a group
+# that exists read as absent, on the `--keep` re-run path.
+have_group() { grep -qxF "$1" <<<"$(r samba-tool group list)"; }
+has_member() { grep -qxF "$2" <<<"$(r samba-tool group listmembers "$1")"; }
 have_group nas-share-rw ||
   r samba-tool group add nas-share-rw --groupou=OU=Resources \
     --group-scope=Domain --group-type=Security  # samba-tool spelling of domain-local
-r samba-tool group addmembers nas-share-rw "$admgrp" 2>/dev/null || true
+# Asked before it is added, rather than added and the failure swallowed: the
+# whole SMB leg hangs off this nesting, and a swallowed failure resurfaces much
+# later as an empty SMB read.
+has_member nas-share-rw "$admgrp" || r samba-tool group addmembers nas-share-rw "$admgrp"
 
 # The ACL on nas1, keyed by nas-share-rw's gid, which winbind resolves only now
 # that the group exists. README.txt is the file the SMB read returns.

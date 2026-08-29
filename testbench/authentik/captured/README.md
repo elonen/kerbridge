@@ -2,7 +2,6 @@
 
 Bytes, recorded against `ghcr.io/goauthentik/server:2026.8.0` — the image
 `../compose.authentik.yaml` pins — by `../capture_directory.py` on 2026-08-27.
-Resolution of gitea issue #39; the corpus these unblock is #38's.
 
 **These are recordings, not the corpus.** Every file is one HTTP exchange the
 way `testbench/fixtures/graph-sync/` already writes them —
@@ -11,8 +10,8 @@ way `testbench/fixtures/graph-sync/` already writes them —
 They are not `testbench/fixtures/authentik-directory/`: they carry the full
 response header block including per-request noise (`date`, `x-authentik-id`),
 they are re-recorded whole on every run, and their uuids and integer ids differ
-run to run. #38's corpus is *derived* from these, trimmed and pinned; this
-directory is the evidence it is derived from.
+run to run. `testbench/fixtures/authentik-directory/` is *derived* from these,
+trimmed and pinned; this directory is the evidence it is derived from.
 
 Re-record with the stack up:
 
@@ -39,7 +38,7 @@ the *shapes* below and none of the identifiers.
 | `err_403_no_permission.json` | 403 | A real account with a real token and no permission. |
 | `findings.json` | — | The measurements below, as data, from the run that wrote these files. |
 
-The cast rides in the rows rather than in files of its own, as #38 specified: a
+The cast rides in the rows rather than in files of its own: a
 `service_account` held by the admission group, a disabled (`is_active: false`)
 service account, `kb-admission` → `kb-mid` → `kb-inner`, a `kb-two-parents`
 group with two entries in `parents`, the `kb-cyc-a` ↔ `kb-cyc-b` cycle, a user
@@ -79,11 +78,11 @@ page 2.
   uuid sorting before page 1's last row; that insert pushed a group the reader
   already had onto page 2, and the recording holds it twice.
 
-So the torn-read case is **not symmetric**, and #38's case list needs one more
-file (see the amendments below). It is also worse than the skip it sits beside:
-a delete lowers `count`, which is the signal #7 §9's mitigation keys on, while
-**an insert raises it — so the count comparison passes while the reader's
-membership set is wrong.**
+So the torn-read case is **not symmetric**, and the derived corpus carries both
+halves of it. The insert is also worse than the skip it sits beside: a delete
+lowers `count`, which is the signal a count comparison keys on, while **an
+insert raises it — so the count comparison passes while the reader's membership
+set is wrong.**
 
 ### And a hazard neither question asked about
 
@@ -118,8 +117,9 @@ gets back. The directory holds 13 users. The response:
 
 `count` is the size of the filtered set. The envelope is internally perfect:
 `count` matches the row count, `total_pages` is 1, `next` is `0`. Byte for byte
-it is an honest read of a two-person directory. This settles the clause #38 §5
-flagged as unverified, and it settles it the way #38 feared.
+it is an honest read of a two-person directory. So a count cross-check cannot
+tell a partial grant from a small directory, and the derived corpus carries no
+case that pretends otherwise.
 
 ### Two things found while settling it, both worth more than the answer
 
@@ -138,8 +138,8 @@ members in `users`, one of which (`kb-svc-sync`) the credential's own user read
 will not return, and naming three groups in `children` that it cannot read. The
 object filter touches neither array. Nor does it touch the third: in
 `users_partial_grant_page1.json` the *visible* users' own `groups` arrays name a
-group uuid the credential cannot read. #38 §5's recommendation — any dangling id
-in a full read is `NotWhole` — is confirmed against real bytes, and it has three
+group uuid the credential cannot read. So the rule — any dangling id in a full
+read is `NotWhole` — is confirmed against real bytes, and it has three
 independent detectors rather than one.
 
 ## What could not be recorded, and why that is in this file
@@ -152,30 +152,7 @@ independent detectors rather than one.
 - **`err_non_json_body`** — needs the operator's reverse proxy, which is exactly
   the component this stack does not run.
 
-Both stay hand-authored in #38's corpus, and the `note` on each should say so.
-The recorder writes no file it did not receive; a recorder that quietly authored
-these two would be a generator wearing the wrong name.
-
-## Amendments this forces on #38's case list
-
-1. **Add `groups_torn_insert_page2.json`.** A duplicate-row torn read on the
-   *group* stream, which #38 left conditional on Q1. The condition is met: a
-   group's sort key is random. The `note` must say that `count` goes **up**, so
-   this case is the one the count comparison does not catch.
-2. **`users_torn_page2.json` stays a skip and needs no duplicate twin.** The
-   user sort key is append-only, so an insert cannot reorder that stream. #38's
-   text should say which stream the asymmetry lives on rather than leaving it
-   open.
-3. **Drop any count-based detection of a partial grant, and say why in a `note`
-   rather than a case.** §5's "flagged as unverified" clause is now measured:
-   `count` is filtered too.
-4. **Add the zero-permission 403 to the reasoning around `err_403_no_permission`.**
-   It is not only a third body string; it is the fact that total revocation
-   refuses the read rather than emptying it, which is the half of #22's hazard
-   that turns out to be safe.
-5. **The dangling-id check has three inputs, not one** — a group's `users`, a
-   group's `children`, and a user's own `groups`. #38 named the first two.
-6. **State the silent-`ordering` hazard wherever the read parameters are
-   pinned** (#9's table, and whatever asserts the adapter's request URL). An
-   ignored `ordering` is not a smaller version of the right read; it is the
-   least stable sort authentik has.
+Both stay hand-authored in `testbench/fixtures/authentik-directory/`, and the
+`note` on each says so. The recorder writes no file it did not receive; a
+recorder that quietly authored these two would be a generator wearing the wrong
+name.
