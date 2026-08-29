@@ -29,10 +29,11 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
+use kerbridge_core::time::{days_from_ymd, now_unix};
 use kerbridge_core::{ExternalIdentity, IdentityError, Source, is_guid};
 use serde::Deserialize;
 
-use crate::{Probe, discovery_url, get};
+use crate::{Probe, Verdict, discovery_url, get, jwks, status_verdict};
 
 pub(crate) use auth::Authentik;
 
@@ -305,12 +306,17 @@ pub(crate) fn paths(settings: &Settings) -> BTreeMap<String, String> {
     .collect()
 }
 
-/// The checks, named as `kbconfig` prints them. Three questions about the
-/// provider, and the fetch that answers all three at once.
+/// The checks, named as `kbconfig` prints them. The three public questions about
+/// the provider (answered by one discovery fetch), then the three the sync
+/// credential answers -- each named apart, because they fail for unrelated
+/// reasons and which one failed is the whole diagnosis.
 const DISCOVERY: &str = "discovery document";
 const ISSUER: &str = "issuer";
 const SIGNING: &str = "signing algorithm";
 const REFRESH: &str = "offline_access";
+const CREDENTIAL: &str = "sync credential";
+const GRANT: &str = "directory grant";
+const EXPIRY: &str = "credential expiry";
 
 /// The three claims the probe reads. Everything else the document carries is a
 /// client's business rather than this deployment's.
@@ -328,10 +334,28 @@ struct Discovery {
     scopes_supported: Vec<String>,
 }
 
-/// What the provider says about itself, against what this file derived.
+/// What the provider says about itself, against what this file derived, and what
+/// the sync credential can actually do.
 ///
-/// One fetch, three verdicts, each of them a hard fail.
-pub(crate) async fn probe(settings: &Settings, timeout: Duration) -> Vec<Probe> {
+/// **Five legs.** The first fetch answers the three public questions at once,
+/// each a hard fail. The last three are authenticated -- they present the sync
+/// credential -- and are the half a public document cannot answer: that the
+/// token authenticates at all, that its grant lets the directory be read, and
+/// how much headroom it has left before it lapses.
+pub(crate) async fn probe(
+    settings: &Settings,
+    credential: Option<&str>,
+    timeout: Duration,
+) -> Vec<Probe> {
+    let mut probes = public_probes(settings, timeout).await;
+    probes.extend(authenticated_probes(settings, credential, timeout).await);
+    probes
+}
+
+/// The three legs the discovery document answers -- issuer, signing algorithm,
+/// and the offline_access mapping attached -- each a hard fail. Kept whole so the
+/// authenticated legs append after them and leave these three unchanged.
+async fn public_probes(settings: &Settings, timeout: Duration) -> Vec<Probe> {
     let url = discovery_url(&settings.authority);
     let body = match get(&url, timeout).await {
         Ok(body) => body,
@@ -346,6 +370,143 @@ pub(crate) async fn probe(settings: &Settings, timeout: Duration) -> Vec<Probe> 
         signing_probe(&document.id_token_signing_alg_values_supported),
         offline_access_probe(&document.scopes_supported),
     ]
+}
+
+/// The three legs the sync credential answers, presented as `Bearer`.
+///
+/// With no credential pasted in yet all three warn rather than fail: an empty
+/// file is a deployment mid-bootstrap, not a wrong one, and the same rule that
+/// idles the source here must not fail the check.
+async fn authenticated_probes(
+    settings: &Settings,
+    credential: Option<&str>,
+    timeout: Duration,
+) -> Vec<Probe> {
+    let Some(token) = credential.map(str::trim).filter(|t| !t.is_empty()) else {
+        let why = format!(
+            "no sync credential in {} yet -- paste the read-only service account's API token in \
+             and re-run; the three authenticated legs are skipped until then",
+            settings.sync_credential_file.display()
+        );
+        return [CREDENTIAL, GRANT, EXPIRY]
+            .into_iter()
+            .map(|check| Probe { check, verdict: Verdict::Warn, detail: why.clone() })
+            .collect();
+    };
+    vec![
+        credential_probe(&settings.url, token, timeout).await,
+        grant_probe(&settings.url, token, timeout).await,
+        expiry_probe(&settings.url, token, now_unix(), timeout).await,
+    ]
+}
+
+/// `GET /core/users/me/`: does the token authenticate at all?
+///
+/// The self endpoint needs zero grants, so a 403 here is the credential itself,
+/// not a missing permission. The fetch and the verdict are split so the verdict
+/// -- the part that decides Pass from Fail from Warn -- is a pure function the
+/// tests drive without a server.
+async fn credential_probe(base: &str, token: &str, timeout: Duration) -> Probe {
+    let url = format!("{}/api/v3/core/users/me/", base.trim_end_matches('/'));
+    credential_verdict(get_authed(&url, token, timeout).await)
+}
+
+/// Expired, revoked, wrong and a deactivated service account all collapse to one
+/// 403 -- authentik emits no 401 -- so a probe keyed on 401 would silently never
+/// fire. An expired token rotates on lapse, so that 403 is permanent: `Fail`,
+/// never `Warn`.
+fn credential_verdict(fetched: Fetched) -> Probe {
+    match fetched {
+        Fetched::Body(_) => Probe::pass(CREDENTIAL, "the service account authenticates"),
+        Fetched::Status(403) => Probe::fail(
+            CREDENTIAL,
+            "authentik refused the sync credential (403): expired, revoked, wrong, and a \
+             deactivated service account all answer one 403 here -- authentik emits no 401 -- and \
+             an expired token rotates on lapse, so this will not heal on its own. Replace the \
+             token on the read-only service account (Intent: API).",
+        ),
+        Fetched::Status(status) => at(CREDENTIAL, status),
+        Fetched::World(why) => Probe { check: CREDENTIAL, verdict: Verdict::Warn, detail: why },
+    }
+}
+
+/// `GET /core/groups/?page_size=1`: does the grant let the directory be read?
+async fn grant_probe(base: &str, token: &str, timeout: Duration) -> Probe {
+    let url = format!("{}/api/v3/core/groups/?page_size=1", base.trim_end_matches('/'));
+    grant_verdict(get_authed(&url, token, timeout).await)
+}
+
+/// A list, unlike the self endpoint, needs `view_group`. A 403 with the
+/// credential leg green is a missing grant; a per-object grant is worse than
+/// none, because it answers 200 with a silently shorter list that reconciles the
+/// people it left out as departures.
+fn grant_verdict(fetched: Fetched) -> Probe {
+    match fetched {
+        Fetched::Body(_) => Probe::pass(GRANT, "the service account may list the directory"),
+        Fetched::Status(403) => Probe::fail(
+            GRANT,
+            "authentik refused the directory read (403): with the sync-credential leg green this \
+             is a missing grant -- give the service account view_user and view_group globally \
+             through a Role. A per-object grant answers 200 with a silently truncated list, which \
+             reconciles the people it left out as departures.",
+        ),
+        Fetched::Status(status) => at(GRANT, status),
+        Fetched::World(why) => Probe { check: GRANT, verdict: Verdict::Warn, detail: why },
+    }
+}
+
+/// `GET /core/tokens/?intent=api`: how much headroom is left, and is the token
+/// even an API token?
+///
+/// `TokenViewSet.owner_field = "user"` makes this self-scoped with zero grants,
+/// and `key` is absent from the serializer, so the read measures the expiry
+/// while being structurally unable to read the secret. `intent=api` is
+/// load-bearing: an `app_password` token authenticates nothing here and fails
+/// byte-identically to a wrong one, so a credential that reached a 200 on the
+/// legs above is already known to be an API token -- this leg reads its clock.
+async fn expiry_probe(base: &str, token: &str, now: u64, timeout: Duration) -> Probe {
+    let url =
+        format!("{}/api/v3/core/tokens/?intent=api&page_size=100", base.trim_end_matches('/'));
+    expiry_verdict(get_authed(&url, token, timeout).await, now)
+}
+
+fn expiry_verdict(fetched: Fetched, now: u64) -> Probe {
+    match fetched {
+        Fetched::Body(body) => match read_expiry(&body, now) {
+            Ok(Expiry::Days(days)) => Probe::pass(EXPIRY, format!("{days} days of headroom")),
+            Ok(Expiry::NonExpiring) => {
+                Probe::pass(EXPIRY, "the sync credential is set never to expire")
+            }
+            // A 200 here means the credential authenticated, so it is an API
+            // token -- but none is visible to read a clock from. Not the file
+            // being wrong, so a warning rather than a fail.
+            Ok(Expiry::Absent) => Probe {
+                check: EXPIRY,
+                verdict: Verdict::Warn,
+                detail: "no api-intent token is visible to measure the credential's headroom"
+                    .to_owned(),
+            },
+            Err(e) => Probe {
+                check: EXPIRY,
+                verdict: Verdict::Warn,
+                detail: format!("the token read answered, but not with a token list: {e}"),
+            },
+        },
+        Fetched::Status(403) => Probe::fail(
+            EXPIRY,
+            "authentik refused the token read (403): the sync credential is not an API token -- an \
+             app_password token authenticates nothing here and fails byte-identically to a wrong \
+             or expired one. Create the token with Intent: API.",
+        ),
+        Fetched::Status(status) => at(EXPIRY, status),
+        Fetched::World(why) => Probe { check: EXPIRY, verdict: Verdict::Warn, detail: why },
+    }
+}
+
+/// A non-200, non-403 status sorted onto the same line the world/config split
+/// draws everywhere else: a 5xx is reachability, anything else is the request.
+fn at(check: &'static str, status: u16) -> Probe {
+    Probe { check, verdict: status_verdict(status), detail: format!("authentik answered {status}") }
 }
 
 /// The check that earns the whole feature.
@@ -411,6 +572,121 @@ fn offline_access_probe(scopes: &[String]) -> Probe {
                  or the agent is issued no refresh token and nothing says so"
             ),
         )
+    }
+}
+
+/// One authenticated GET for a probe leg, classified into three outcomes the
+/// caller can name in its own words.
+///
+/// Deliberately not [`crate::get`]: that one has no bearer and folds every
+/// non-2xx into one generic line, and these legs turn on telling a 403 (the
+/// credential or its grant) apart from a 5xx (the world). The same client the
+/// signing-key fetch uses -- the IdP is remote and outside the deployment either
+/// way.
+enum Fetched {
+    /// A 2xx, body in hand.
+    Body(String),
+    /// A non-2xx the server chose to answer with. The status is the whole of it.
+    Status(u16),
+    /// The exchange never completed, or a 2xx body would not read: the world,
+    /// which says nothing about whether the file is right.
+    World(String),
+}
+
+async fn get_authed(url: &str, token: &str, timeout: Duration) -> Fetched {
+    let client = match jwks::http_client(timeout) {
+        Ok(client) => client,
+        Err(e) => return Fetched::World(format!("{e:#}")),
+    };
+    let response = match client.get(url).bearer_auth(token).send().await {
+        Ok(response) => response,
+        Err(e) => return Fetched::World(format!("{url} did not answer: {e}")),
+    };
+    let status = response.status();
+    if !status.is_success() {
+        return Fetched::Status(status.as_u16());
+    }
+    match jwks::bounded_body(response).await {
+        Ok(body) => Fetched::Body(body),
+        Err(e) => Fetched::World(format!("{url} answered, the body did not: {e:#}")),
+    }
+}
+
+/// What the self-scoped `/core/tokens/?intent=api` read says about the sync
+/// credential's headroom.
+enum Expiry {
+    /// Days until the soonest expiring API token lapses. Negative once past --
+    /// though a live expired token would already have been refused, so this
+    /// stays a measurement rather than a verdict.
+    Days(i64),
+    /// An API token is visible and set never to expire, so there is no countdown
+    /// to run. `expiring=false`, and its `expires` field is junk to be ignored.
+    NonExpiring,
+    /// No API-intent token is visible to the bearer at all.
+    Absent,
+}
+
+/// One `/core/tokens/` row, cut to the two fields that decide expiry.
+///
+/// `key` is absent from the serializer and so cannot be read here even by name.
+/// Unknown fields are tolerated: the live row carries `pk`, `user`, `intent`,
+/// `description` and more that this read has no use for.
+#[derive(Deserialize)]
+struct TokenRow {
+    /// The datetime the token lapses, RFC 3339. **Junk whenever `expiring` is
+    /// false** -- authentik leaves a stale or default value in the field rather
+    /// than nulling it -- so it is read only when `expiring` is true.
+    #[serde(default)]
+    expires: Option<String>,
+    /// Whether the token expires at all. The gate on `expires`.
+    expiring: bool,
+}
+
+#[derive(Deserialize)]
+struct TokenList {
+    results: Vec<TokenRow>,
+}
+
+/// Read the credential's headroom from a self-scoped token list, `now` supplied
+/// rather than read for the reason the broker's verifier gives -- a function
+/// that reads the clock can only be tested against it, and this one straddles a
+/// day boundary that would flake once every 86 400 runs.
+///
+/// The soonest expiring token binds, because the account is meant to hold one
+/// API token and a conservative reading of any surplus is the right default.
+/// Only when every visible token is non-expiring is there no countdown; an empty
+/// list is [`Expiry::Absent`].
+fn read_expiry(body: &str, now: u64) -> Result<Expiry, serde_json::Error> {
+    let list: TokenList = serde_json::from_str(body)?;
+    if list.results.is_empty() {
+        return Ok(Expiry::Absent);
+    }
+    let today = (now / 86_400) as i64;
+    let soonest = list
+        .results
+        .iter()
+        .filter(|row| row.expiring)
+        // The date part alone: a day-granularity countdown dodges the fractional
+        // seconds and offset spellings a datetime parser would have to chase,
+        // and `expiring=false` rows never reach here so their junk `expires` is
+        // never parsed.
+        .filter_map(|row| row.expires.as_deref())
+        .filter_map(|expires| expires.split('T').next())
+        .filter_map(days_from_ymd)
+        .map(|day| day - today)
+        .min();
+    Ok(soonest.map_or(Expiry::NonExpiring, Expiry::Days))
+}
+
+/// The self-scoped token read, for the sync loop's own measurement. Same shape
+/// as the probe's [`expiry_probe`], reduced to the days the countdown needs:
+/// [`Expiry::Days`] becomes a number, and everything else -- non-expiring,
+/// absent, unparseable -- is no countdown.
+#[cfg(feature = "sync")]
+pub(crate) fn measured_days(body: &str, now: u64) -> Option<i64> {
+    match read_expiry(body, now) {
+        Ok(Expiry::Days(days)) => Some(days),
+        _ => None,
     }
 }
 
@@ -834,5 +1110,153 @@ pub mod tests {
 
         assert!(serde_json::from_str::<Discovery>(r#"{"jwks_uri":"https://x/jwks/"}"#).is_err());
         assert!(serde_json::from_str::<Discovery>("<html>sign in</html>").is_err());
+    }
+
+    // ---- the five legs: the three authenticated ones ---------------------
+
+    /// The `body` half of one of the corpus's response envelopes -- the bytes
+    /// authentik would have put on the wire, which is what the reads above parse.
+    fn token_body(name: &str) -> String {
+        let path = format!(
+            "{}/../../testbench/fixtures/authentik-directory/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        serde_json::to_string(&file["response"]["body"]).unwrap()
+    }
+
+    /// Midnight, unix seconds, of a `YYYY-MM-DD` day -- a fixed `now` for the
+    /// countdown, so the measurement is asserted against a known headroom rather
+    /// than against the wall clock.
+    fn day(date: &str) -> u64 {
+        (days_from_ymd(date).unwrap() as u64) * 86_400
+    }
+
+    /// The measurement that lets `sync_credential_expires` stop being an operator
+    /// assertion. Two api tokens, and the soonest binds -- a surplus token
+    /// further out cannot mask a nearer deadline. The clock is read at midday to
+    /// prove only the date part counts.
+    #[test]
+    fn the_soonest_expiring_token_binds_the_measured_headroom() {
+        let body = token_body("tokens_self_api");
+        let now = day("2027-05-02") + 45_000;
+        assert!(matches!(read_expiry(&body, now), Ok(Expiry::Days(30))), "30 days to 2027-06-01");
+        // The sync loop's own reading agrees with the probe's.
+        assert_eq!(measured_days(&body, now), Some(30));
+    }
+
+    /// The trap: `expires` is junk whenever `expiring` is false. The fixture's
+    /// junk value is years in the past, and a reader that trusted it would
+    /// report a live credential as long expired. The right reading is no
+    /// countdown, on both faces.
+    #[test]
+    fn a_non_expiring_token_is_not_read_as_expired() {
+        let body = token_body("tokens_self_nonexpiring");
+        // `now` well after the junk 2020 `expires`, so a bug would surface as a
+        // large negative headroom rather than as `NonExpiring`.
+        let now = day("2026-08-29");
+        assert!(matches!(read_expiry(&body, now), Ok(Expiry::NonExpiring)));
+        assert_eq!(measured_days(&body, now), None, "no countdown for a non-expiring token");
+    }
+
+    /// A 200 with no api token to read, and a 200 that is not a token list at
+    /// all: neither is a headroom and neither is the file being wrong.
+    #[test]
+    fn an_empty_or_unreadable_token_list_measures_nothing() {
+        let empty = r#"{"pagination":{"next":0,"count":0},"results":[]}"#;
+        assert!(matches!(read_expiry(empty, 0), Ok(Expiry::Absent)));
+        assert_eq!(measured_days(empty, 0), None);
+        assert!(read_expiry("<html>not a token list</html>", 0).is_err());
+        assert_eq!(measured_days("<html>", 0), None);
+    }
+
+    /// The credential leg, keyed on the 403 authentik actually emits rather than
+    /// on a 401 it never does. Expired/revoked/wrong/deactivated all collapse to
+    /// that one 403, and it is a permanent `Fail` because the token rotates on
+    /// lapse. A 5xx is the world, not the credential.
+    #[test]
+    fn the_credential_leg_fails_on_the_403_and_never_keys_on_401() {
+        assert_eq!(credential_verdict(Fetched::Body("{}".into())).verdict, Verdict::Pass);
+        let dead = credential_verdict(Fetched::Status(403));
+        assert_eq!(dead.verdict, Verdict::Fail);
+        assert_eq!(dead.check, CREDENTIAL);
+        assert!(dead.detail.contains("no 401"), "{}", dead.detail);
+        // A 5xx is reachability; a stray other 4xx still settles against the request.
+        assert_eq!(credential_verdict(Fetched::Status(503)).verdict, Verdict::Warn);
+        assert_eq!(credential_verdict(Fetched::Status(404)).verdict, Verdict::Fail);
+        assert_eq!(credential_verdict(Fetched::World("dns".into())).verdict, Verdict::Warn);
+    }
+
+    /// The grant leg, named apart from the credential leg: its 403 is a missing
+    /// view_group, and it says so in its own words.
+    #[test]
+    fn the_grant_leg_names_the_missing_grant() {
+        assert_eq!(grant_verdict(Fetched::Body("{}".into())).verdict, Verdict::Pass);
+        let refused = grant_verdict(Fetched::Status(403));
+        assert_eq!(refused.verdict, Verdict::Fail);
+        assert_eq!(refused.check, GRANT);
+        assert!(refused.detail.contains("view_group"), "{}", refused.detail);
+    }
+
+    /// The expiry leg over the corpus: a 200 measures the headroom, a 403 names
+    /// the app_password trap, and a non-expiring token passes with no countdown.
+    #[test]
+    fn the_expiry_leg_measures_or_names_the_app_password_trap() {
+        let now = day("2027-05-02");
+        let ok = expiry_verdict(Fetched::Body(token_body("tokens_self_api")), now);
+        assert_eq!(ok.verdict, Verdict::Pass);
+        assert_eq!(ok.check, EXPIRY);
+        assert!(ok.detail.contains("30 days"), "{}", ok.detail);
+
+        let never = expiry_verdict(Fetched::Body(token_body("tokens_self_nonexpiring")), now);
+        assert_eq!(never.verdict, Verdict::Pass);
+        assert!(never.detail.contains("never to expire"), "{}", never.detail);
+
+        let app_password = expiry_verdict(Fetched::Status(403), now);
+        assert_eq!(app_password.verdict, Verdict::Fail);
+        assert!(app_password.detail.contains("app_password"), "{}", app_password.detail);
+
+        // A 200 with no api token is odd but not a config error.
+        let empty = r#"{"pagination":{"next":0,"count":0},"results":[]}"#;
+        assert_eq!(expiry_verdict(Fetched::Body(empty.into()), now).verdict, Verdict::Warn);
+    }
+
+    /// The three 403s are named apart: three distinct labels and three distinct
+    /// details, so which leg failed is the diagnosis.
+    #[test]
+    fn the_three_authenticated_403s_are_named_apart() {
+        let legs = [
+            credential_verdict(Fetched::Status(403)),
+            grant_verdict(Fetched::Status(403)),
+            expiry_verdict(Fetched::Status(403), 0),
+        ];
+        let checks: std::collections::BTreeSet<_> = legs.iter().map(|p| p.check).collect();
+        assert_eq!(checks.len(), 3, "each leg carries its own label");
+        let details: std::collections::BTreeSet<_> =
+            legs.iter().map(|p| p.detail.as_str()).collect();
+        assert_eq!(details.len(), 3, "each 403 explains its own leg");
+        for leg in &legs {
+            assert_eq!(leg.verdict, Verdict::Fail);
+        }
+    }
+
+    /// With no credential yet the five-leg shape still holds: the three
+    /// authenticated legs warn rather than fail, because an empty credential file
+    /// is a deployment mid-bootstrap, not a wrong one. No network is touched.
+    #[test]
+    fn no_credential_yet_warns_on_the_authenticated_legs() {
+        let settings = Settings::parse(&required()).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        let probes = runtime.block_on(authenticated_probes(
+            &settings,
+            None,
+            std::time::Duration::from_secs(1),
+        ));
+        assert_eq!(probes.iter().map(|p| p.check).collect::<Vec<_>>(), [CREDENTIAL, GRANT, EXPIRY]);
+        for probe in &probes {
+            assert_eq!(probe.verdict, Verdict::Warn, "{}", probe.check);
+            assert!(probe.detail.contains("no sync credential"), "{}", probe.detail);
+        }
     }
 }

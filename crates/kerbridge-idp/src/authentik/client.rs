@@ -116,6 +116,20 @@ impl AuthentikClient {
         }
     }
 
+    /// Best-effort headroom on the sync credential, in days, from the
+    /// self-scoped `/core/tokens/` read. Advisory only: any trouble -- a refused
+    /// read, a non-expiring token, an unreadable body -- answers `None`, because
+    /// a countdown that could not be measured must never disturb the cycle that
+    /// carries the actual directory read.
+    pub async fn measure_expiry(&self, now: u64) -> Option<i64> {
+        let url = format!("{}/api/v3/core/tokens/?intent=api&page_size=100", self.base);
+        let (status, body) = self.get(&url).await.ok()?;
+        if status != 200 {
+            return None;
+        }
+        super::measured_days(std::str::from_utf8(&body).ok()?, now)
+    }
+
     async fn get(&self, url: &str) -> Result<(u16, Vec<u8>)> {
         let resp = self
             .http

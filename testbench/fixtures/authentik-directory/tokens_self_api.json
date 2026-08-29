@@ -1,0 +1,46 @@
+{
+  "note": "PROBE + MEASURE SHAPE, byte-faithful body. The self-scoped read GET /api/v3/core/tokens/?intent=api the sync account makes of its own tokens. TokenViewSet.owner_field = 'user' scopes it to the bearer with zero grants, and `key` is absent from the serializer -- so this reads the expiry while being structurally unable to read the secret. Two api-intent tokens, both Expiring: the soonest binds the headroom, so a surplus token can never hide a nearer deadline. Identifiers and pks are synthetic.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/tokens/?intent=api&page_size=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 0,
+        "count": 2,
+        "current": 1,
+        "total_pages": 1,
+        "start_index": 1,
+        "end_index": 2
+      },
+      "results": [
+        {
+          "pk": "3f2a1b0c-9d8e-4f7a-8b6c-5d4e3f2a1b0c",
+          "managed": null,
+          "identifier": "kb-svc-sync-token",
+          "intent": "api",
+          "user": 7,
+          "description": "KerBridge sync read-only credential",
+          "expires": "2027-06-01T12:00:00Z",
+          "expiring": true
+        },
+        {
+          "pk": "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+          "managed": null,
+          "identifier": "kb-svc-sync-spare",
+          "intent": "api",
+          "user": 7,
+          "description": "a further api token on the same account, further out",
+          "expires": "2030-01-01T00:00:00Z",
+          "expiring": true
+        }
+      ]
+    }
+  }
+}

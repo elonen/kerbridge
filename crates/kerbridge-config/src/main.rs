@@ -307,7 +307,10 @@ fn probe(sources: &[(&kerbridge_core::config::SourceFile, IdpSettings)]) -> Resu
         .context("starting the probe runtime")?;
     let mut failures = 0;
     for (source, settings) in sources {
-        for probe in runtime.block_on(kerbridge_idp::probe(settings, PROBE_TIMEOUT)) {
+        let credential = sync_credential(settings.sync_credential_file());
+        for probe in
+            runtime.block_on(kerbridge_idp::probe(settings, credential.as_deref(), PROBE_TIMEOUT))
+        {
             let mark = match probe.verdict {
                 Verdict::Pass => "ok  ",
                 Verdict::Warn => "warn",
@@ -321,6 +324,22 @@ fn probe(sources: &[(&kerbridge_core::config::SourceFile, IdpSettings)]) -> Resu
         bail!("{failures} probe(s) contradict the configuration");
     }
     Ok(())
+}
+
+/// A source's sync credential, for the authenticated probe legs, or `None` when
+/// the operator has yet to paste one in.
+///
+/// The one secret this command reads, on the caller's side of the seam where the
+/// adapter's probe expects it. Kept lenient: a probe is advisory, run after the
+/// file already validated offline, so an empty, absent or unreadable credential
+/// leaves the authenticated legs to warn rather than stopping the check with an
+/// I/O error.
+fn sync_credential(path: &std::path::Path) -> Option<String> {
+    match std::fs::read_to_string(path) {
+        Ok(raw) if raw.trim().is_empty() => None,
+        Ok(raw) => Some(raw.trim().to_owned()),
+        Err(_) => None,
+    }
 }
 
 fn get(dir: &Path, path: &str) -> Result<()> {

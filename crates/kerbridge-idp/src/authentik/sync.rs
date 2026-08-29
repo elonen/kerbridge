@@ -36,6 +36,12 @@ pub struct AuthentikSource {
     grant_group_id: Option<String>,
     /// Group pks to mirror beyond the admission-group closure.
     allowlist: Vec<String>,
+    /// Days of headroom the last cycle measured on the sync credential, from the
+    /// self-scoped `/core/tokens/` read. `None` until a cycle has measured it, or
+    /// whenever the token is set never to expire -- either way there is no
+    /// countdown to run. Refreshed each cycle rather than at startup, so a
+    /// rotated token's new deadline is picked up with nothing to restart.
+    measured_days: Option<i64>,
     notifier: Arc<Notifier>,
 }
 
@@ -48,6 +54,7 @@ impl AuthentikSource {
             admission_group_id: settings.admission_group_id.clone(),
             grant_group_id: settings.device_grant_group_id.clone(),
             allowlist: settings.extra_group_ids.clone(),
+            measured_days: None,
             notifier,
         }
     }
@@ -110,6 +117,15 @@ impl DirectorySource for AuthentikSource {
         let client = AuthentikClient::new(&self.url, credential)
             .map_err(|e| SourceError::Unreachable(format!("authentik client: {e:#}")))?;
 
+        // Measured before the read, best-effort: the self-scoped token read is a
+        // different endpoint from the directory, and its headroom feeds
+        // `credential_state`, which the loop consults on the *next* cycle. A
+        // failure to measure leaves the last good reading standing rather than
+        // clobbering it, so a transient blip does not blank the countdown.
+        if let Some(days) = client.measure_expiry(kerbridge_core::time::now_unix()).await {
+            self.measured_days = Some(days);
+        }
+
         let subject = self.credential_subject();
         let read = async {
             let users = client.read_users().await?;
@@ -142,12 +158,16 @@ impl DirectorySource for AuthentikSource {
         Ok(Progress::Complete(self.snapshot(read)))
     }
 
-    /// authentik reports an API token's own expiry only to a live probe of
-    /// `/core/tokens/`, which this read does not make, and there is no
-    /// operator-asserted expiry to fall back on. So the headroom is unknown here
-    /// until the probe that measures it is wired.
+    /// authentik reports an API token's own expiry to the bearer through the
+    /// self-scoped `/core/tokens/` read, so the last cycle's measurement is the
+    /// answer -- no operator assertion, which would go stale the first time the
+    /// token is rotated. `Unknown` until a cycle has measured it, and for a token
+    /// set never to expire: neither has a countdown to run.
     fn credential_state(&self) -> CredentialState {
-        CredentialState::Unknown
+        match self.measured_days {
+            Some(days) => CredentialState::Measured { days },
+            None => CredentialState::Unknown,
+        }
     }
 
     /// The sync credential is an API token on a dedicated service account, not a

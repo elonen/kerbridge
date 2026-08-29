@@ -1,7 +1,8 @@
 # The Authentik directory fixture corpus
 
-Fourteen pinned files that let `cargo test` exercise the authentik directory
-read -- the `advance()` face -- with no container. It is the directory-side
+Sixteen pinned files that let `cargo test` exercise the authentik directory
+read -- the `advance()` face -- and the sync credential's own expiry measurement,
+with no container. It is the directory-side
 companion to `../authentik-token/`, and it is loaded as a set: the reader points
 at this directory the way the Entra reader points at `../graph-sync/`.
 
@@ -81,3 +82,22 @@ three 403 bodies are byte-faithful to the recordings.
 | `err_non_json_body.json` | 502 | Hand-authored -- a reverse proxy's HTML error page, `text/html`, body unparseable as JSON. Reachability, not a malformed directory. |
 
 Every identifier here is synthetic.
+
+## The self-scoped token reads
+
+Two, for the sync credential's own expiry -- the `credential_state` measurement
+and the `check --online` `credential expiry` leg. `GET /core/tokens/?intent=api`
+is self-scoped through `TokenViewSet.owner_field = "user"` with zero grants, and
+`key` is absent from the serializer, so the read measures the expiry while being
+structurally unable to read the secret. The soonest expiring token binds the
+headroom.
+
+| File | What it pins |
+|---|---|
+| `tokens_self_api.json` | 200, two api-intent tokens, both `expiring`. The soonest deadline binds, so a surplus token further out cannot mask a nearer expiry. |
+| `tokens_self_nonexpiring.json` | 200, one api-intent token, `expiring` false and `expires` a **junk** already-past value. A reader that trusted `expires` regardless of `expiring` would report a live credential as expired; the correct reading is no countdown. |
+
+A refused token read is not a file of its own: it is the same 403 the directory
+read already pins -- authentik has no 401, so an expired, revoked, wrong or
+app_password credential all answer one status, and the `check --online` legs name
+that collapse apart in their own words.

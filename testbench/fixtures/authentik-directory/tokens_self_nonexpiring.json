@@ -1,0 +1,36 @@
+{
+  "note": "PROBE + MEASURE SHAPE, byte-faithful body. The same self-scoped read for an account whose one api token is set never to expire: `expiring` is false, and `expires` is JUNK -- authentik leaves a stale, here already-past, value in the field rather than nulling it. A reader that trusted `expires` regardless of `expiring` would report this live credential as long expired; the correct reading is that there is no countdown to run. Identifiers and pks are synthetic.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/tokens/?intent=api&page_size=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 0,
+        "count": 1,
+        "current": 1,
+        "total_pages": 1,
+        "start_index": 1,
+        "end_index": 1
+      },
+      "results": [
+        {
+          "pk": "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d",
+          "managed": null,
+          "identifier": "kb-svc-sync-token",
+          "intent": "api",
+          "user": 7,
+          "description": "KerBridge sync read-only credential, non-expiring",
+          "expires": "2020-01-01T00:00:00Z",
+          "expiring": false
+        }
+      ]
+    }
+  }
+}

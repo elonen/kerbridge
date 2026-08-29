@@ -68,6 +68,7 @@ mod jwt;
 pub mod sync;
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Result, bail};
@@ -210,6 +211,17 @@ impl IdpSettings {
             Self::Authentik(settings) => authentik::paths(settings),
         }
     }
+
+    /// The file a source reads its directory with, so a caller can hand the
+    /// credential to [`probe`] without knowing which adapter owns it. Every
+    /// adapter has one -- an Entra client secret, an authentik API token -- and
+    /// both name it `sync_credential_file`.
+    pub fn sync_credential_file(&self) -> &Path {
+        match self {
+            Self::Entra(settings) => &settings.sync_credential_file,
+            Self::Authentik(settings) => &settings.sync_credential_file,
+        }
+    }
 }
 
 /// One `check --online` question, and the answer the IdP gave it.
@@ -316,10 +328,21 @@ pub(crate) fn status_verdict(status: u16) -> Verdict {
 /// Never called at startup or on the bootstrap path. A transient IdP outage must
 /// not become a local one, which is why every verdict here is advisory to a
 /// caller that already validated the file offline.
-pub async fn probe(settings: &IdpSettings, timeout: Duration) -> Vec<Probe> {
+///
+/// `credential` is the source's sync credential, read from
+/// [`IdpSettings::sync_credential_file`] by the caller, or `None` when the
+/// operator has yet to paste one in. Entra's probe reads only public documents
+/// and ignores it; authentik's uses it for the three authenticated legs that a
+/// public document cannot answer. Passing it rather than reading the file here
+/// keeps the one secret read on the caller's side of the seam.
+pub async fn probe(
+    settings: &IdpSettings,
+    credential: Option<&str>,
+    timeout: Duration,
+) -> Vec<Probe> {
     match settings {
         IdpSettings::Entra(settings) => entra::probe(settings, timeout).await,
-        IdpSettings::Authentik(settings) => authentik::probe(settings, timeout).await,
+        IdpSettings::Authentik(settings) => authentik::probe(settings, credential, timeout).await,
     }
 }
 

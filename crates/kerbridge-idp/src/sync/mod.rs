@@ -119,9 +119,11 @@ impl std::fmt::Display for SourceError {
 /// from. An IdP that reports its own credential's expiry needs no operator
 /// assertion; one that does not gets whatever the config set states.
 pub enum CredentialState {
-    /// Read from the IdP. Unconstructed while Entra is the only adapter: an
-    /// app-registration secret carries no expiry a Graph read can see.
-    #[allow(dead_code)]
+    /// Read from the IdP. Entra never constructs it -- an app-registration
+    /// secret carries no expiry a Graph read can see -- but authentik does: a
+    /// self-scoped `/core/tokens/` read reports the sync token's own expiry to
+    /// the bearer, so the adapter measures the headroom rather than asking the
+    /// operator to assert it.
     Measured { days: i64 },
 
     /// Stated reminder from the operator.
