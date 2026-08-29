@@ -185,7 +185,8 @@ BROKER_FQDN=$FQDN
 TLS_STRATEGY=external
 CI_HTTPS_PORT=$PORT
 # The container names in compose.ci.yaml and the tier overlays. A fixed
-# `container_name` is global, so this is what lets two tiers run at once.
+# container name is global, so this is what lets two tiers run at once.
+# (No backticks in this heredoc: EOF is unquoted, so they would run.)
 CI_PROJECT=$PROJECT
 # compose.ci.yaml mounts the client and CA into nas1. The tier fragment adds its
 # sign-in helper.

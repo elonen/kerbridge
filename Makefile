@@ -260,6 +260,15 @@ test-fast:
 				exit 1; }; \
 		done; \
 	done
+	@# provision.sh writes .env from an unquoted heredoc, so a backtick anywhere
+	@# inside it runs as a command. One comment already did, and it reached a
+	@# passing run: shellcheck does not see this, and the tier stays green while
+	@# printing "command not found" and writing the line with a hole in it.
+	@if sed -n '/^cat > .env <<EOF$$/,/^EOF$$/p' deploy/scripts/bench/provision.sh | grep -nE '`|\$$\('; then \
+		echo "FAIL: the lines above are inside provision.sh's .env heredoc, which is unquoted" >&2; \
+		echo "      a backtick or a \$$( there runs as a command -- write the comment without one" >&2; \
+		exit 1; \
+	fi
 	@# provision.sh must not depend on one identity source. Otherwise, one tier can
 	@# pass while the shared provisioning code is no longer reusable. Every source
 	@# any tier uses belongs in the pattern, not only the first one.
