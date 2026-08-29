@@ -15,6 +15,9 @@
 //!   arrived for [`STALL_LIMIT`]. This limit applies between pages, not to the
 //!   complete read.
 //! - No `429`: no throttle applies to an authenticated read.
+//! - The page cursor is a number authentik computes, and nothing makes it
+//!   advance. A `next` that does not is a not-whole read, never a page to fetch
+//!   again -- see [`next_page`].
 
 use std::time::{Duration, Instant};
 
@@ -41,6 +44,12 @@ const BACKOFF_CAP: u64 = 300;
 /// between two pages, never the whole read, so it puts no limit on directory
 /// size.
 const STALL_LIMIT: Duration = Duration::from_secs(3 * BACKOFF_CAP);
+/// How many pages one collection read may take before it is abandoned. At
+/// `page_size=100` that is a million users, or a million groups -- past any real
+/// directory, and short of the unbounded walk a server whose `next` keeps rising
+/// would otherwise get. [`STALL_LIMIT`] does not bound this: it measures the gap
+/// between two pages, and every page that arrives resets it.
+const MAX_PAGES: usize = 10_000;
 
 pub struct AuthentikClient {
     http: reqwest::Client,
@@ -92,10 +101,12 @@ impl AuthentikClient {
                 PageOutcome::Ready(page) => {
                     let next = page.pagination.next;
                     pages.push(page);
-                    if next == 0 {
-                        return Ok(pages);
+                    match next_page(page_num, next, pages.len(), what)
+                        .map_err(SourceError::NotWhole)?
+                    {
+                        None => return Ok(pages),
+                        Some(n) => page_num = n,
                     }
-                    page_num = next;
                     backoff = 1;
                     last_progress = Instant::now();
                 }
@@ -141,6 +152,33 @@ impl AuthentikClient {
         let body = resp.bytes().await.context("reading the authentik response body")?;
         Ok((status, body.to_vec()))
     }
+}
+
+/// The page to ask for after the one just read, `None` once the read is whole,
+/// or the reason it is not.
+///
+/// authentik is deployed behind a reverse proxy by design. A cache there that
+/// ignores the query string answers every request with page 1's body, so `next`
+/// comes back `2` for a page-2 request and stays `2`. Following it is an
+/// unbounded loop with no sleep in it -- the stall clock is reset by every page
+/// that arrives, and [`super::wire::assemble`]'s pk check would catch the
+/// repeated rows but is never reached. So a cursor that does not advance ends
+/// the read here rather than being fetched again.
+fn next_page(page_num: i64, next: i64, read: usize, what: &str) -> Result<Option<i64>, String> {
+    if next == 0 {
+        return Ok(None);
+    }
+    if next <= page_num {
+        return Err(format!(
+            "torn {what} read: page {page_num} points at page {next}, which does not advance --              following it would ask for the same page forever"
+        ));
+    }
+    if read >= MAX_PAGES {
+        return Err(format!(
+            "torn {what} read: {read} pages in and the cursor still advances, past the              {MAX_PAGES}-page ceiling a read is bounded by"
+        ));
+    }
+    Ok(Some(next))
 }
 
 /// One page's outcome.
@@ -263,6 +301,20 @@ mod tests {
         for name in ["err_403_token_invalid", "err_403_no_permission", "err_403_not_provided"] {
             conformance::credential_rejection_is_the_only_non_failure(&classified(name));
         }
+    }
+
+    /// A cursor that does not advance ends the read instead of spinning on it,
+    /// and a cursor that never stops advancing meets the ceiling.
+    #[test]
+    fn a_cursor_that_does_not_advance_ends_the_read() {
+        assert!(matches!(next_page(1, 2, 1, "users"), Ok(Some(2))), "a cursor that advances");
+        assert!(matches!(next_page(3, 0, 3, "users"), Ok(None)), "the terminating page");
+        // A cache that ignores the query string: page 1's body answers a page-2
+        // request, so `next` is 2 however many times it is asked.
+        for (page_num, next) in [(2, 2), (2, 1), (2, -1)] {
+            assert!(next_page(page_num, next, 2, "users").is_err(), "page {page_num} -> {next}");
+        }
+        assert!(next_page(1, 2, MAX_PAGES, "users").is_err(), "the page ceiling");
     }
 
     /// The [`SourceError`] the read builds from a classified 403, mapping each
