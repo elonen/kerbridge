@@ -7,7 +7,7 @@
 | Step | What | Where | Read this first |
 |---|---|---|---|
 | [1](#1-decide-the-names) | Decide the names | on paper | [names-and-decisions.md](docs/setup/names-and-decisions.md) |
-| [2](#2-register-three-applications-in-entra) | Register three applications in Entra | Entra admin center | [entra.md](docs/setup/entra.md) |
+| [2](#2-set-up-your-cloud-identity-providers) | Set up your cloud identity provider(s) | your IdP's admin UI | [entra.md](docs/setup/entra.md) · [authentik.md](docs/setup/authentik.md) |
 | [3](#3-publish-the-dns-records) | Publish the DNS records | your DNS zone | [dns-and-firewall.md](docs/setup/dns-and-firewall.md) |
 | [4](#4-stand-up-the-broker-host) | Stand up the broker host | the Linux host | [broker-host.md](docs/setup/broker-host.md) |
 | [5](#5-join-your-file-server) | Join your file server | the file server | [file-server.md](docs/setup/file-server.md) |
@@ -18,7 +18,7 @@
 
 ```mermaid
 flowchart LR
-  S1["1. Names"] --> S2["2. Entra apps"]
+  S1["1. Names"] --> S2["2. Identity provider(s)"]
   S1 --> S3["3. DNS records"]
   S2 --> S4["4. Broker host"]
   S3 -->|"first, if acme / acme-dns"| S4
@@ -156,33 +156,35 @@ Keep these three defaults. Change one only if it is necessary:
 
 ---
 
-## 2. Register three applications in Entra
+## 2. Set up your cloud identity provider(s)
 
-Create three application registrations and one security group, in your one
-tenant. All three applications are read-only in Entra, and no application is an
-administrator:
+KerBridge asks two things of a cloud identity provider, and nothing more:
 
-1. **Broker API app** — it validates the tokens that are addressed to it. It
-   holds no credential.
-2. **Public client app** — the app that signs users in over OIDC. It is native,
-   and it has no secret.
-3. **Sync app** — the only app with a credential. It can list users, groups and
-   memberships. It can change nothing.
+1. **It signs a person in to the agent.** The workstation agent authenticates a
+   user against the provider over OIDC and receives a signed token. The broker
+   validates that token, and that is the only thing that admits a user.
+2. **It lets KerBridge read users and groups, one direction only.** Sync reads
+   the directory on a read-only credential and mirrors the members of one
+   admission group into the realm. KerBridge writes nothing back to the
+   provider.
 
-Select one path. The two paths give the same result:
+Both faces are read-only in the provider, and neither is an administrator. One
+group — the admission group — is what admits a user to the realm; nothing
+KerBridge does changes *whether* a person may sign in, only *who* is mirrored.
 
-| | |
-| --- | --- |
-| **[Terraform](docs/setup/entra-terraform.md)** — recommended | `terraform apply && ./print-provider-config.sh` creates all of it. It then prints a `[provider_config]` block for `configs/idp_entra.toml`. It needs `az login` to your tenant. |
-| **[By hand](docs/setup/entra-manual.md)** | The steps in the portal, and an `az` script that gives the same values. Use this path if the Azure CLI cannot connect to your tenant. |
+Each provider spells these two faces differently and calls its objects by
+different names. Follow the page for yours, and give each provider its own
+source name from step 1:
 
-On both paths, you must also put the sync app's secret in place yourself. No
-path does this for you —
-[The sync credential (`entra-manual.md`)](docs/setup/entra-manual.md#the-sync-credential).
+| Provider | Read this first |
+|---|---|
+| **Microsoft Entra ID** — the reference provider | **→ [entra.md](docs/setup/entra.md)** |
+| **authentik** — self-hosted; the one you can stand up yourself | **→ [authentik.md](docs/setup/authentik.md)** |
 
-Go to **→ [entra.md](docs/setup/entra.md)**. It gives the values that these
-applications produce, and **the Entra defaults that are wrong for KerBridge**.
-Those defaults break a deployment and show no error message.
+Each page gives the values its provider produces for that source's
+`[provider_config]`, and the provider defaults that break a deployment and show
+no error message. A realm can carry more than one provider at once: repeat this
+step per provider.
 
 ---
 

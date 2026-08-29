@@ -1,14 +1,33 @@
 # What is configured in Entra
 
-This page is [step 2 (*Register three applications in Entra*) in
-SETUP.md](../../SETUP.md#2-register-three-applications-in-entra). It holds what
+This page is the Entra path for [step 2 (*Set up your cloud identity
+provider(s)*) in
+SETUP.md](../../SETUP.md#2-set-up-your-cloud-identity-providers). It holds what
 is true on both paths: what you create, the values that it produces, and the
 Entra defaults that are wrong for KerBridge.
 
-The procedure itself is one of:
+Entra spells KerBridge's two faces — sign a person in, read the directory
+one way — as **three application registrations and one security group**, in
+your one tenant. All three applications are read-only in Entra, and no
+application is an administrator:
 
-- **[entra-terraform.md](entra-terraform.md)** — recommended.
-- **[entra-manual.md](entra-manual.md)** — the portal walk-through, or `az`.
+1. **Broker API app** — it validates the tokens that are addressed to it. It
+   holds no credential.
+2. **Public client app** — the app that signs users in over OIDC. It is native,
+   and it has no secret.
+3. **Sync app** — the only app with a credential. It can list users, groups and
+   memberships. It can change nothing.
+
+Select one path. The two paths give the same result:
+
+| | |
+| --- | --- |
+| **[Terraform](entra-terraform.md)** — recommended | `terraform apply && ./print-provider-config.sh` creates all of it. It then prints a `[provider_config]` block for `configs/idp_entra.toml`. It needs `az login` to your tenant. |
+| **[By hand](entra-manual.md)** | The steps in the portal, and an `az` script that gives the same values. Use this path if the Azure CLI cannot connect to your tenant. |
+
+On both paths, you must also put the sync app's secret in place yourself. No
+path does this for you —
+[The sync credential (`entra-manual.md`)](entra-manual.md#the-sync-credential).
 
 ## The `[provider_config]` values
 

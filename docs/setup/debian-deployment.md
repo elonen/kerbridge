@@ -160,7 +160,7 @@ Three questions, and no fourth. The identifiers that name your Entra tenant and
 its applications are **not** asked for here: each is a line to complete in
 `/etc/kerbridge/idp_entra.toml`, and the postinst ends by running
 `kbconfig check`, which lists every one of them at once. Complete them from
-[step 2](../../SETUP.md#2-register-three-applications-in-entra), then run
+[step 2](../../SETUP.md#2-set-up-your-cloud-identity-providers), then run
 `kbconfig check` again. Until they are done no daemon starts — which is the
 point: an install that filled them in with the documented example would leave
 you a set nobody completed that looked finished.

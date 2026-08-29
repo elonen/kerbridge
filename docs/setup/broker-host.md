@@ -25,7 +25,7 @@ idle` is the normal state until you do this.
 ### 1. Write the credential
 
 Write the client secret from
-[step 2](../../SETUP.md#2-register-three-applications-in-entra) into
+[step 2](../../SETUP.md#2-set-up-your-cloud-identity-providers) into
 `<secrets-dir>/idp/entra/credential`. The file must be mode `0640`, and it must
 be group-readable by the account that sync runs as:
 
