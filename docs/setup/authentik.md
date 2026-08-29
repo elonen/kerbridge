@@ -88,6 +88,11 @@ Create it yourself, on `svc-kerbridge-sync`:
 - **Leave *Expiring* on.** With it off, `expires` is junk: KerBridge reads an
   API token's own expiry to warn you before it lapses, and an off `Expiring`
   makes that countdown read nothing.
+- **Give this account one API token, and no other.** KerBridge cannot tell which
+  row is its own — authentik never shows a token's secret again — so it counts
+  down from the soonest expiry of every API token the account holds. A second,
+  shorter-lived one makes that warning permanent, and rotating the sync token
+  does not clear it.
 
 Paste the token into the file named by `sync_credential_file`, never the config
 itself.

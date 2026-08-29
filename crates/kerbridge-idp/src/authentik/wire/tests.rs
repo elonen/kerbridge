@@ -94,6 +94,19 @@ fn a_deleted_user_lowers_the_count_and_refuses_the_read() {
     assert!(why.contains("deleted mid-read"), "{why}");
 }
 
+/// A read that stops a page early is short of its own count. Every row it lost
+/// that the closure could reach dangles, so this mostly restates the dangling-id
+/// checks -- but it names the length rather than one row, and it holds for rows
+/// bound for nothing.
+#[test]
+fn a_read_short_of_its_own_count_is_refused_as_truncated() {
+    let why = conformance::a_torn_read_yields_no_snapshot(verdict(
+        &["users_page1"],
+        &["groups_page1", "groups_page2"],
+    ));
+    assert!(why.contains("truncated user read") && why.contains("counts 13"), "{why}");
+}
+
 /// A group inserted between two reads reorders a uuid-sorted stream and repeats a
 /// row the reader already held. The count went *up*, so only the repeated pk
 /// catches it -- the detector the delete case cannot exercise.

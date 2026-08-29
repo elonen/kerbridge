@@ -22,10 +22,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use kerbridge_core::time::{days_from_ymd, now_unix};
 use kerbridge_core::{ExternalIdentity, IdentityError, Source, is_guid};
 use serde::Deserialize;
+use url::Url;
 
 use crate::{Probe, Verdict, discovery_url, get, jwks, status_verdict};
 
@@ -212,7 +213,8 @@ impl Settings {
             .map(|id| group_id(id, "device_grant_group_id"))
             .transpose()?;
 
-        Ok(Self {
+        https(&raw.url, "url")?;
+        let settings = Self {
             issuer: raw.issuer.unwrap_or_else(|| issuer(&raw.url, &raw.application_slug)),
             authority: raw.authority.unwrap_or_else(|| authority(&raw.url, &raw.application_slug)),
             jwks_url: raw.jwks_url.unwrap_or_else(|| jwks_url(&raw.url, &raw.application_slug)),
@@ -225,8 +227,41 @@ impl Settings {
             admission_group_id,
             device_grant_group_id,
             extra_group_ids: raw.extra_group_ids,
-        })
+        };
+        // As resolved, so an override cannot reintroduce what `url` refuses.
+        for (key, value) in [
+            ("issuer", &settings.issuer),
+            ("authority", &settings.authority),
+            ("jwks_url", &settings.jwks_url),
+        ] {
+            https(value, key)?;
+        }
+        Ok(settings)
     }
+}
+
+/// Refuse a plaintext endpoint.
+///
+/// This is the first operator-supplied host in a broker configuration -- Entra
+/// needs no such check because its endpoints are Microsoft's fixed ones. The
+/// sync credential rides to this host in a bearer header, and the broker trusts
+/// the signing keys that come back from it, so plaintext hands both to whoever
+/// is on the path.
+///
+/// Parsed rather than prefix-matched, as `assert_graph_url` and the client's
+/// `require_https` are: a prefix test is wrong in both directions -- it refuses
+/// `HTTPS://`, which is a good https URL, and accepts `https://` alone, which
+/// fails much later at the request while naming the wrong thing.
+fn https(url: &str, key: &str) -> Result<()> {
+    let parsed = Url::parse(url)
+        .map_err(|e| anyhow!("[provider_config]: {key} is not a URL: {url:?} ({e})"))?;
+    if parsed.scheme() != "https" {
+        bail!(
+            "[provider_config]: {key} is {url:?}. authentik is reached over https -- a \
+             plaintext scheme sends the sync credential and takes the signing keys in the clear."
+        );
+    }
+    Ok(())
 }
 
 /// Reject a group name pasted in place of the UUID primary key.
@@ -560,8 +595,18 @@ struct TokenList {
 /// Read credential headroom from a self-scoped token list. The supplied clock
 /// makes day-boundary tests deterministic.
 ///
-/// The soonest expiry binds. Only a list of non-expiring tokens has no
-/// countdown. An empty list is [`Expiry::Absent`].
+/// The soonest expiry binds, across *every* api-intent token the bearer can see
+/// and not the one being measured: `key` is absent from the serializer, so the
+/// sync credential cannot identify its own row. Conservative is the only safe
+/// direction here, and the cost is visible to an operator -- a service account
+/// holding a second, shorter-lived API token warns for ever, and rotating the
+/// sync token does not clear it. `docs/setup/authentik.md` says to keep the
+/// account to one token.
+///
+/// Only a list of non-expiring tokens has no countdown. An empty list is
+/// [`Expiry::Absent`]. The caller asks for `page_size=100` and does not page, so
+/// an account past a hundred tokens measures an arbitrary subset -- one more
+/// reason the account holds one.
 fn read_expiry(body: &str, now: u64) -> Result<Expiry, serde_json::Error> {
     let list: TokenList = serde_json::from_str(body)?;
     if list.results.is_empty() {
@@ -912,6 +957,28 @@ pub mod tests {
             let err = format!("{:#}", Settings::parse(&absent).unwrap_err());
             assert!(err.contains(key), "{key}: {err}");
         }
+    }
+
+    /// The sync credential rides to this host in a bearer header and the signing
+    /// keys come back from it, so a plaintext scheme is refused where it is
+    /// stated rather than trusted. The three derived endpoints are refused as
+    /// resolved, so an override cannot reintroduce what `url` refuses.
+    #[test]
+    fn a_plaintext_endpoint_is_refused_by_the_key_that_states_it() {
+        for key in ["url", "issuer", "authority", "jwks_url"] {
+            let mut plain = required();
+            plain.insert(key.into(), "http://authentik.example.site".into());
+            let err = format!("{:#}", Settings::parse(&plain).unwrap_err());
+            assert!(err.contains(key) && err.contains("https"), "{key}: {err}");
+        }
+        // A prefix test would accept this and fail at the request instead.
+        let mut torso = required();
+        torso.insert("jwks_url".into(), "https://".into());
+        assert!(Settings::parse(&torso).is_err());
+        // And it would refuse this, which is a good https URL.
+        let mut shouted = required();
+        shouted.insert("jwks_url".into(), "HTTPS://authentik.example.site/jwks/".into());
+        assert!(Settings::parse(&shouted).is_ok());
     }
 
     /// The admission group is bound by pk, a uuid, and the likely mistake is the

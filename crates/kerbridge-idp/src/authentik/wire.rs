@@ -207,12 +207,21 @@ pub fn assemble(users: &[Page<RawUser>], groups: &[Page<RawGroup>]) -> Result<En
 
 /// Collect a collection's rows across its pages, refusing a torn read.
 ///
-/// Two checks, each catching a torn read the other misses: the `count` must not
-/// fall from one page to the next (a
-/// deletion lowers it and slips a row between the pages), and each row's pk must
-/// sort strictly after the last (an insertion into a pk-ordered stream reorders
-/// it and repeats a row a falling count would not catch, because an insert
-/// *raises* the count).
+/// Three checks. The `count` must not fall from one page to the next (a deletion
+/// lowers it and slips a row between the pages); each row's pk must sort strictly
+/// after the last (an insertion into a pk-ordered stream reorders it and repeats
+/// a row a falling count would not catch, because an insert *raises* the count);
+/// and the rows collected must number what the last page counted.
+///
+/// The third states the whole-read guarantee rather than adding to it: a read
+/// short of its own count is short a page, and every row on a page never asked
+/// for is a dangling id to something inside the admission closure, which
+/// [`assemble`] refuses. What it adds is the case where the missing rows were
+/// bound for nothing -- and a message that names the length rather than one row.
+///
+/// It does not see a partial grant. `count` is the size of the *filtered* set,
+/// measured on 2026.8.0, so a credential granted two objects reads two rows and
+/// counts two.
 fn ordered<'a, T, K, F>(pages: &'a [Page<T>], key: F, what: &str) -> Result<Vec<&'a T>, String>
 where
     K: PartialOrd + std::fmt::Debug,
@@ -245,6 +254,15 @@ where
             last_key = Some(this);
             rows.push(row);
         }
+    }
+    if let Some(count) = prev_count
+        && rows.len() as i64 != count
+    {
+        return Err(format!(
+            "truncated {what} read: {} row(s) across {} page(s), where the last page counts {count}",
+            rows.len(),
+            pages.len()
+        ));
     }
     Ok(rows)
 }
