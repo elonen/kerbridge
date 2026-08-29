@@ -174,7 +174,15 @@ while IFS= read -r pair; do
   if [ "$(echo "$m" | cut -c5)" != "r" ] || [ "$(ls -lnL "$f" | awk '{print $4}')" != "$GID" ]; then
     echo "  $f is $m and not owned by group $GID, so ${pair#*:} cannot read it."
     echo "    Fix: chgrp $GID $f && chmod 0640 $f"
-    echo "    (or re-run \`docker compose run --rm setup directory\`, which sets this on every run)"
+    # Only for the files that command writes. `kbsetup directory` writes what it
+    # generates and nothing else, and the setup service mounts
+    # secrets/generated alone -- so it cannot reach a source's pasted credential
+    # or notify_url, and offering it there sends the operator round a loop that
+    # changes nothing.
+    case "$f" in
+      secrets/generated/*)
+        echo "    (or re-run \`docker compose run --rm setup directory\`, which sets this on every run)";;
+    esac
     fail=1
   fi
 done <<EOF
