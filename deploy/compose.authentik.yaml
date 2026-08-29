@@ -69,10 +69,14 @@ services:
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
       AUTHENTIK_AVATARS: none
     volumes:
-      # The CI blueprint at a path authentik does NOT auto-discover (/blueprints
-      # is the discovery root): authentik-init applies it once, by absolute path,
-      # so there is no second uncontrolled apply racing the explicit one.
-      - ../testbench/authentik/blueprints/kerbridge-ci.yaml:/kerbridge/kerbridge-ci.yaml:ro
+      # The CI blueprint under /blueprints, authentik's discovery root:
+      # `ak apply_blueprint` (retrieve_file in blueprints/models.py) refuses any
+      # path outside it. authentik-init applies it synchronously by absolute path
+      # before the broker starts; the worker's discovery may also apply it, but a
+      # blueprint is keyed by its entry identifiers and idempotent, so a second
+      # apply reaches the same state -- the same coexistence the token tier relies
+      # on (testbench/authentik/compose.authentik.yaml).
+      - ../testbench/authentik/blueprints/kerbridge-ci.yaml:/blueprints/kerbridge/kerbridge-ci.yaml:ro
       # The gate the healthcheck runs; see it below.
       - ../testbench/authentik/wait_defaults.py:/wait_defaults.py:ro
     networks: [kerbridge]
@@ -114,7 +118,7 @@ services:
   authentik-init:
     <<: *authentik
     container_name: kerbridge-ci-authentik-init
-    command: ["apply_blueprint", "/kerbridge/kerbridge-ci.yaml"]
+    command: ["apply_blueprint", "/blueprints/kerbridge/kerbridge-ci.yaml"]
     restart: "no"
     healthcheck:
       disable: true

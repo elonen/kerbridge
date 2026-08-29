@@ -20,9 +20,9 @@
 #   3. A scripted sign-in to a real TGT. approve.sh signs benchuser in through the
 #      flow executor with no browser, the client posts the authentik token to
 #      /ticket, and a KDC-signed TGT comes back -- for the very account sync wrote.
-#      Then the neighbouring application mints a cross-application token, refused
-#      401 on the issuer (per-provider issuer mode makes it an issuer negative; its
-#      aud is correct).
+#      The issuer negative (correct aud, foreign iss) is not driven here: authentik
+#      keys client_id uniquely, so it cannot mint that token; it is forged in the
+#      token corpus and checked under test instead. See the note above the sign-in.
 #   4. The TGT reads a file over SMB, with no password after sign-in.
 #      It is the only proof that sync wrote a user the KDC issues a usable PAC
 #      for -- the same end state ci-stack.sh reaches, driven by sync rather than by
@@ -46,6 +46,9 @@ idp_prepare() {
   say "writing the constant bench sync credential"
   mkdir -p "$ROOT/deploy/secrets/idp/authentik"
   printf '%s' 'bench-authentik-sync-token' > "$ROOT/deploy/secrets/idp/authentik/credential"
+  # The broker refuses a secret that other can read; a fresh file inherits the
+  # umask (0644), so tighten it to the 0640 the permission check demands.
+  chmod 0640 "$ROOT/deploy/secrets/idp/authentik/credential"
 }
 
 # IDP_FQDN is the alias Caddy answers for and proxies to authentik on; the broker
@@ -233,48 +236,14 @@ n setfacl -m "g:${NETBIOS}\\nas-share-rw:rwx" \
           -m "d:g:${NETBIOS}\\nas-share-rw:rwx" /srv/share
 n sh -c 'printf "KerBridge: reached over SMB with a cloud identity, no password.\n" > /srv/share/README.txt && chmod 664 /srv/share/README.txt'
 
-# ---------------------------------------------------------------------------
-# The cross-application negative, before the sign-in that writes the ccache. The
-# neighbour kerbridge-second shares client_id, so its token carries the correct
-# aud and a different iss -- an issuer negative no forged single-instance corpus
-# can make. Mint it inside nas1, the only place a token with a port-free iss can
-# be minted, and hand it to /ticket. No PKCE: the check under test is issuer
-# verification, and a public client without a code_challenge needs none.
-# ---------------------------------------------------------------------------
-say "a cross-application token is refused 401 on its issuer, aud being correct"
-cross=$ROOT/.local-tmp/ci-authentik-crosstoken
-docker compose exec -T nas1 sh -s > "$cross" <<'SH'
-set -eu
-base=https://idp.kbci.test
-ruri=http://127.0.0.1:9799
-authz="$base/application/o/authorize/?response_type=code&client_id=kerbridge&redirect_uri=$ruri&response_mode=query&scope=openid&state=crossapp"
-out=$(KB_APPROVE_CA=/etc/kerbridge-ci-ca.crt KB_APPROVE_LOG=/tmp/kb-cross.log \
-      KB_APPROVE_USER=benchuser KB_APPROVE_PASSWORD=bench-user-password \
-      /usr/local/bin/kb-approve "$authz")
-code=$(printf '%s\n' "$out" | sed -n 's/^code=//p')
-[ -n "$code" ] || { echo "no code from approve.sh" >&2; cat /tmp/kb-cross.log >&2; exit 1; }
-tokresp=$(curl -sS --cacert /etc/kerbridge-ci-ca.crt "$base/application/o/token/" \
-  --data-urlencode grant_type=authorization_code \
-  --data-urlencode "code=$code" \
-  --data-urlencode "redirect_uri=$ruri" \
-  --data-urlencode client_id=kerbridge)
-at=$(printf '%s' "$tokresp" | perl -0777 -ne 'print $1 if /"access_token"\s*:\s*"([^"]*)"/')
-[ -n "$at" ] || { echo "token exchange returned no access_token: $tokresp" >&2; exit 1; }
-printf '%s' "$at"
-SH
-token=$(tr -d '\r\n' < "$cross")
-[ -n "$token" ] || { cat "$cross"; die "could not mint a cross-application token in nas1"; }
-
-resp=$ROOT/.local-tmp/ci-authentik-cross.json
-code=$(api POST "/$SOURCE/ticket" "$resp" -H "Authorization: Bearer $token")
-[ "$code" = 401 ] || { cat "$resp"; echo; die "the cross-application token answered $code, wanted 401"; }
-# The 401 body carries only "invalid identity proof"; the issuer-vs-audience
-# distinction is in the broker's DENY log line, keyed by this request's id.
-rid=$(jget "$resp" request_id)
-docker compose logs --no-color broker 2>&1 |
-  grep -- "$rid" | grep -q "iss is not the configured issuer" ||
-  die "broker refused the cross-application token, but not on the issuer -- check what it caught"
-echo "the cross-application token was refused 401 on its issuer, not its audience"
+# The cross-application issuer negative -- a token with the correct audience but
+# a foreign issuer, refused on `iss` -- is not driven here: a real authentik
+# cannot mint it. The authorize and token endpoints resolve a provider by
+# `client_id`, which is unique per instance, so no second application can share
+# it to differ only on the slug-keyed issuer. That token is forged in the token
+# corpus (testbench/fixtures/authentik-token/neg_wrong_issuer.jwt) and the
+# adapter rejects it under test with "iss is not the configured issuer"
+# (kerbridge-idp/src/authentik/auth.rs).
 
 # ---------------------------------------------------------------------------
 # The real client, signing in through authentik with no browser and no human, and
