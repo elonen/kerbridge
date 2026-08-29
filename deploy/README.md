@@ -103,7 +103,7 @@ source-specific configuration, and runs the assertions.
 — and the same shape over the same `provision.sh`. It puts a pinned, live
 authentik on the compose network behind this Caddy on `idp.kbci.test`, so the
 broker fetches real signing keys over TLS instead of reading a key document off
-disk; answering `/config` at all is the proof that fetch succeeded. `approve.sh`
+disk; answering `/config` at all is the proof that fetch succeeded.
 Sync reads that live instance and mirrors its blueprint user and admission group
 into the realm. `approve.sh` then signs that same user in through the flow
 executor with no browser, the client turns the authentik token into a KDC-signed

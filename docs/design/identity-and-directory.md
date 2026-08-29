@@ -494,6 +494,13 @@ that key is an increasing integer for users and a UUID ordered lexicographically
 for groups. It constructs page URLs from the configured instance URL and does
 not follow a server-supplied URL with the sync credential.
 
+The two sort differently, and that is why an insert mid-read is a hazard on one
+collection only. The user stream is append-only, so a user created mid-read
+lands after everything already returned and disturbs nothing. A group's UUID can
+sort anywhere, including before a page the reader has passed, which pushes a
+group into a later page and repeats it. The pk-ordering check catches that
+repeat; the rising `count` alone does not, because an insert raises it.
+
 The two collections must form one complete enumeration. The adapter rejects a
 torn read, a repeated or missing row, and a membership edge that names an
 unknown object. A failed read yields no source snapshot. Authentik can return a
