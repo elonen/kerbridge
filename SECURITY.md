@@ -81,7 +81,7 @@ The table shows what each part protects. Each row links to the full risk.
 | [The broker](#2-a-broker-compromise-issues-tickets-for-any-synchronized-user) | A Kerberos ticket for any synchronized user, on demand. |
 | [The token verifier](#3-the-token-verifier-is-hand-written) | The same, from the internet, with no host access. |
 | [The TLS certificate chain](#4-the-reply-carries-the-session-key) | Every ticket that passes over the wire, for one ticket lifetime. |
-| [The sync credential](#6-the-sync-credential) | Read access to your whole Entra directory, plus a way to admit an account into the realm. |
+| [The sync credential](#6-the-sync-credential) | Read access to your whole cloud IdP directory, plus a way to admit an account into the realm. |
 | [The `kbmanage` credential](#7-the-kbmanage-credential-is-impersonation-grade) | The ability to act as any user in the device-grant group. |
 | [A device grant, on Windows](#8-device-grants-remove-the-browser-from-the-loop) | Tickets as one account, from that machine, until the grant expires. |
 | [A backup tarball](#10-one-backup-file-holds-the-whole-deployment) | All of the above, in one file. |
@@ -358,16 +358,22 @@ nothing. Do not use it as a kill switch.
 
 ### 6. The sync credential
 
-**Risk.** Sync holds two credentials: a Microsoft Graph application credential,
-and an LDAPS bind password for its own Samba account.
+**Risk.** Sync holds two credentials: a read credential for the cloud IdP
+directory, and an LDAPS bind password for its own Samba account. The IdP
+credential is a Microsoft Graph application credential for Entra, or an API
+token on a dedicated service account for authentik.
 
-**What limits it, on the Graph side.**
+**What limits it, on the IdP side.** Both adapters ask for read permissions
+only, but those permissions deliberately cover the provider's whole directory.
+Sync requires a complete read; a silently filtered one can look complete.
 
-- Exactly two application permissions: `User.Read.All` and `Group.Read.All`.
-  Both are read-only. `Directory.Read.All` was rejected on least-privilege
-  grounds.
-- The app registration has no redirect URI and no exposed API scope. It cannot
-  be used interactively.
+- Entra uses exactly `User.Read.All` and `Group.Read.All`; the broader
+  `Directory.Read.All` is not granted. Its app registration has no redirect URI
+  or exposed API scope and cannot be used interactively.
+- authentik uses only `view_user` and `view_group`, granted globally to its
+  service account. An object-level grant is not a safer equivalent: authentik
+  returns `200` and a silently shortened collection, so sync cannot know what
+  the credential hid.
 
 **What limits it, on the Samba side.** Each source's bind account holds one ACE,
 `(A;CI;CCDCWP;...)`, on its own IdP-specific OU and nowhere else. The AD ACL
@@ -391,18 +397,21 @@ group object inside that source's OU. The planner is not in the path.
 freeze. If 40 % of your admitted users disappear from a *complete* directory read in
 one cycle, sync retires 40 % of your directory that cycle.
 
-**Worst case.** A stolen sync credential reads every user and every group in
-your tenant, including the ones that KerBridge never syncs. It writes nothing.
+**Worst case, on the IdP side.** A stolen credential reads every user and every
+group in the configured IdP directory, including the ones that KerBridge never
+syncs. It writes nothing.
 
-A stolen Samba bind password is worse. An attacker creates an account inside the
-source OU. They stamp any external identity on it. They add it to the local
-admission group mirror. That admits them to every Kerberos-protected service in
-the realm. `DESIGN.md` names this accepted risk directly.
+**Worst case, on the Samba side.** A stolen bind password is worse. An attacker
+creates an account inside the source OU. They stamp any external identity on it.
+They add it to the local admission group mirror. That admits them to every
+Kerberos-protected service in the realm. `DESIGN.md` names this accepted risk
+directly.
 
-The sync credential is a **client secret**, not a certificate. A certificate
-credential is the intended default and is not built. Set
-`sync_credential_expires` so that sync warns you before the secret lapses, and
-update the value each time you rotate.
+**Credential lifetime.** Entra uses a client secret; certificate credentials are
+not built. The operator states its expiry in `sync_credential_expires` and must
+update that value on rotation. authentik reports an API token's own expiry to
+its bearer, so the adapter measures it directly. There is deliberately no
+`sync_credential_expires` setting for authentik.
 
 ### 7. The `kbmanage` credential is impersonation-grade
 
@@ -649,8 +658,8 @@ The repository states this itself, and it is worth repeating in one place:
 - **Operator notification against a real event.** A synthetic test message
   reached a real channel. A real event, a real recovery, and real suppression
   over time did not.
-- **Most hostile input.** The 543 tests cover correct behaviour far more than
-  they cover attacks. Tests for injection and malformed input exist in
+- **Most hostile input.** The automated tests cover correct behaviour far more
+  than they cover attacks. Tests for injection and malformed input exist in
   `issuerd` and `kerbridge-core`. They are thinner elsewhere.
 
 Three further scope limits:
