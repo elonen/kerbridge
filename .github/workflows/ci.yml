@@ -10,8 +10,9 @@
 #   macos    The gate for the other client half, on a Mac runner. Its tests
 #            link the real Kerberos.framework, so they run rather than compile.
 #            Billed at ten times an ubuntu runner, so the gate earns most here.
-#   authentik  A realm beside a live authentik: sync mirrors its directory, a
-#              scripted sign-in issues a TGT, and a file is read over SMB with it.
+#   authentik  Main, manual. A realm beside a live authentik: sync mirrors its
+#              directory, a scripted sign-in issues a TGT, and a file is read
+#              over SMB with it.
 #   build    Main, manual. Every shipping artifact still builds.
 #   stack    Main, manual. A realm provisioned from scratch, a TGT issued
 #            against it, and a file read over SMB with that ticket.
@@ -21,6 +22,17 @@
 #   audit    Manual. Advisories against the tree's dependencies.
 #
 # No job needs a secret. `stack` mocks Entra with a locally generated key document.
+#
+# Why the four Docker tiers are main-only rather than merely expensive. A pull
+# request runs unreviewed code in a repository whose Actions hold the apt
+# signing key, so nothing that pulls images or builds a shipping artifact runs
+# on that path. Merges here are made by hand for the same reason, and these
+# tiers are run by hand beside them -- `make test-authentik`, `make test-stack`,
+# `make test-build`, `make test-deb`, each the same command CI runs.
+#
+# Do not read a fast tier as grounds to move one back. `authentik` takes about
+# four minutes with the layer cache warm, against a 30-minute limit; the limit
+# was never what kept it off pull requests.
 name: CI
 
 on:
