@@ -16,7 +16,7 @@ Nothing here is production code, for testing only.
 The `make_fixtures` scripts stay because they are the only way to regenerate
 their corpus. The two token generators share `tokenforge.py`, which owns the
 signing key, the JWKS and the negatives `conformance::Forged` demands, so a
-third IdP inherits `neg_alg_confusion`'s load-bearing assert instead of copying
+third IdP inherits `neg_alg_confusion`'s assert instead of copying
 it; each corpus forks only its own claim shape and its own claim-level
 negatives. `entra-token` and `graph-sync` take `--out` and default to the corpus
 they live in:

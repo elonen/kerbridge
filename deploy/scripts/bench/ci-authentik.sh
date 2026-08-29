@@ -113,8 +113,12 @@ lsearch() { r ldbsearch -H /var/lib/samba/private/sam.ldb "$@"; }
 # folds a line past ~78 columns onto a continuation line beginning with a space,
 # and the external identity is long enough to fold, so unfold before matching or
 # the value comes back truncated.
-attr1() {  # attribute-name
-  python3 - "$1" <<'PY'
+#
+# The program is on fd 3, not stdin: `python3 -` would read it from stdin and
+# leave the piped LDIF unreachable, so `sys.stdin.read()` would come back empty
+# and every attribute would read as absent.
+attr1() {  # attribute-name; LDIF on stdin
+  python3 /dev/fd/3 "$1" 3<<'PY'
 import base64, sys
 want = sys.argv[1].lower()
 lines = []
