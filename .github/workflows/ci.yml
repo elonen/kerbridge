@@ -142,7 +142,7 @@ jobs:
   authentik:
     name: authentik (sync, sign-in, SMB)
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     # Includes a full stack, SMB read, and uncached authentik image pull.
     timeout-minutes: 30
@@ -153,7 +153,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      # The same key `build`, `stack` and `deb` use: all four reach the six-crate
+      # compile through debian/Dockerfile's `build` stage, so whichever runs
+      # first populates it and a second write under one key is dropped rather
+      # than duplicated.
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/buildx-cache
+          key: buildx-amd64-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
+          restore-keys: buildx-amd64-
       - run: make test-authentik
+        env:
+          KB_CACHE_FROM: type=local,src=/tmp/buildx-cache
+          KB_CACHE_TO: type=local,dest=/tmp/buildx-cache-new,mode=max
+      - name: rotate the layer cache
+        if: always()
+        run: |
+          if [ -d /tmp/buildx-cache-new ]; then
+            rm -rf /tmp/buildx-cache
+            mv /tmp/buildx-cache-new /tmp/buildx-cache
+          fi
 
   build:
     name: artifacts (images, exes, MSI)
