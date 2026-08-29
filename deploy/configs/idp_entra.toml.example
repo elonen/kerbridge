@@ -81,7 +81,7 @@
 # Example: "OU=Entra,OU=CloudIdP,DC=example,DC=site"
 #ou =
 
-# Entra: the three app registrations from SETUP.md step 2, the sync app's Graph
+# Entra: the three app registrations from docs/setup/entra.md, the sync app's Graph
 # credential, and the group that admits a user to the realm. What each value is,
 # and the four Entra defaults that are wrong for KerBridge: docs/setup/entra.md.
 # `terraform apply` in deploy/terraform/entra/ creates all three and prints

@@ -9,7 +9,7 @@ Nothing here is production code, for testing only.
 | `entra-token/` | signed JWTs + `jwks.json`: a positive delegated token, an RS/PS algorithm sweep, and the negatives (wrong tenant/audience/`azp`/scope, missing `scp` or `oid`, `idtyp=app`, expired, future `nbf`, unknown kid, `alg:none`, `alg:none` under an unknown kid, HS256, HS256 confusion, unknown alg, an alg the key does not publish, malformed tid, iss/tid mismatch, v1 shape, non-JWT garbage). The script also generates a second positive for a different `oid`, which only the live run below uses — see the note there. | `kerbridge-idp/src/entra/auth.rs`, and `deploy/scripts/bench/ci-stack.sh` |
 | `authentik-token/` | signed JWTs + `jwks.json`: one positive access token and the negatives (the neighbouring application's own token, the all-providers issuer mode, an `azp` that disagrees with `aud`, the ID token from the same sign-in, the default `sub_mode`, expired, unknown kid, an alg the key does not publish, `alg:none`, `alg:none` under an unknown kid, HS256, HS256 confusion, unknown alg, the EdDSA an Ed25519 signing key produces, non-JWT garbage). Plus `jwks_empty.json`, the document a provider with no Signing Key publishes. | `kerbridge-idp/src/authentik/auth.rs` |
 | `graph-sync/` | recorded-shape Graph exchanges — delta init/incremental/paging, soft and hard delete, 410 Gone, 429 throttle, transitive members, syncable-rule cases. | `kerbridge-idp/src/entra/wire.rs`, `client.rs` |
-| `authentik-directory/` | recorded-shape Authentik directory pages — four read pages carrying the structural cases as rows, a corpus-local golden desired state, torn-read and bad-value negatives, and the error shapes (three 403 bodies, a 503 and a non-JSON body; no 401, no 429). Derived and trimmed from `../authentik/captured/`, with a `README.md` indexing every file. | the authentik directory read (`advance`); reader lands next |
+| `authentik-directory/` | recorded-shape Authentik directory pages — four read pages carrying the structural cases as rows, a corpus-local golden desired state, torn-read and bad-value negatives, and the error shapes (three 403 bodies, a 503 and a non-JSON body; no 401, no 429). Derived and trimmed from `../authentik/captured/`, with a `README.md` indexing every file. | `kerbridge-idp/src/authentik/{wire,client,mod}.rs` |
 | `planner/` | golden files, each `{admission, desired, current, plan}` — retention, quarantine, admission-group-deleted freeze, ambiguous-identity conflict, role-marker restamp. | `kerbridge-sync/src/planner/mod.rs`, `kerbridge-idp/src/entra/wire.rs` |
 | `tls/` | Two certificates, covering both arms of every branch the client's X.509 reader has: private-CA-issued vs self-signed, subjectAltName vs none, UTCTime vs GeneralizedTime, ASCII vs UTF8String. Nothing presents or trusts these — they are bytes to parse. | `kerbridge-client/src/tls.rs` |
 
@@ -52,12 +52,17 @@ fixtures are synthetic.
 
 ## `authentik/` — live blueprint proof
 
-`make test-authentik` starts the pinned three-container Authentik stack, waits for
-its default blueprints, applies the KerBridge bench blueprint, and completes an
-authorization-code flow. It checks the discovery document, the provider settings,
-and the issued tokens. It tests Authentik fixture data and runs no KerBridge
-container or Rust code. The default run removes the stack and its volume. Use
-`make test-authentik ARGS=--keep` to preserve them.
+`authcode.sh` is the standalone provider proof. It starts this directory's pinned
+three-container Authentik stack, waits for its default blueprints, applies the
+KerBridge bench blueprint, and completes an authorization-code flow. It checks
+the discovery document, the provider settings and the issued tokens, and runs no
+KerBridge container or Rust code.
+
+`make test-authentik` instead runs `deploy/scripts/bench/ci-authentik.sh`: a
+disposable KerBridge stack with live authentik behind its Caddy. It exercises the
+adapter from OIDC sign-in and a full directory read through TGT issuance and an
+SMB file read. The default run removes the stack and its volumes. Use `make
+test-authentik ARGS=--keep` to preserve them.
 
 For manual iteration:
 

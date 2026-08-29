@@ -489,9 +489,10 @@ deletes, and insufficient for writes.
 ### Authentik directory (IdP) read
 
 Authentik has no delta API for this use. The adapter reads all pages of
-`/core/users/` and `/core/groups/` in each cycle. It requests UUID order and
-constructs page URLs from the configured instance URL. It does not follow a
-server-supplied URL with the sync credential.
+`/core/users/` and `/core/groups/` in each cycle. It requests `?ordering=pk`:
+that key is an increasing integer for users and a UUID ordered lexicographically
+for groups. It constructs page URLs from the configured instance URL and does
+not follow a server-supplied URL with the sync credential.
 
 The two collections must form one complete enumeration. The adapter rejects a
 torn read, a repeated or missing row, and a membership edge that names an
@@ -501,9 +502,9 @@ global `view_user` and `view_group` grant is mandatory. The setup blueprint
 maintains that grant.
 
 The adapter applies the same admission closure, extra-group allowlist, held
-narrowing, and planner as Entra. It offers the username as the first login-name
-candidate and the email address as the second candidate. The planner decides
-which candidate is safe in the directory (realm).
+narrowing, and planner as Entra. It offers the username, display name and email
+address as login-name candidates, in that order. The planner decides which
+candidate is safe in the directory (realm).
 
 ### Sync credential lifetime
 

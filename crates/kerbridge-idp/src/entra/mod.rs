@@ -425,7 +425,7 @@ fn issuer_probe(derived: &str, published: &str) -> Probe {
 /// not use, named a key the parser dropped or missed one it gained fails the
 /// build rather than misleading an operator.
 #[cfg(feature = "schema")]
-pub(crate) const ENTRA_SRC: &str = r#"# Entra: the three app registrations from SETUP.md step 2, the sync app's Graph
+pub(crate) const ENTRA_SRC: &str = r#"# Entra: the three app registrations from docs/setup/entra.md, the sync app's Graph
 # credential, and the group that admits a user to the realm. What each value is,
 # and the four Entra defaults that are wrong for KerBridge: docs/setup/entra.md.
 # `terraform apply` in deploy/terraform/entra/ creates all three and prints

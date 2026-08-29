@@ -104,13 +104,13 @@ source-specific configuration, and runs the assertions.
 authentik on the compose network behind this Caddy on `idp.kbci.test`, so the
 broker fetches real signing keys over TLS instead of reading a key document off
 disk; answering `/config` at all is the proof that fetch succeeded. `approve.sh`
-then signs a bench user in through the flow executor with no browser, and the
-client turns the authentik token into a KDC-signed TGT for a directory user
-`seed-demo.sh` hand-provisions with that user's uuid — sync is off, as in
-`test-stack`. A token minted for a second application is refused `401` on its
-issuer. It then checks that sync refuses the authentik source by name, because
-this build carries authentik's token face and not its directory one. Unlike
-`test-stack` it pulls images, so it needs the network.
+Sync reads that live instance and mirrors its blueprint user and admission group
+into the realm. `approve.sh` then signs that same user in through the flow
+executor with no browser, the client turns the authentik token into a KDC-signed
+TGT for the account sync wrote, and that ticket reads a file over SMB. The
+wrong-issuer negative cannot be minted by a real authentik instance and stays in
+the forged token corpus. Unlike `test-stack`, this tier pulls images, so it needs
+the network.
 
 ## `make up`, step by step
 
