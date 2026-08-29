@@ -165,9 +165,17 @@ services:
       AUTHENTIK_UPSTREAM: http://authentik-server:9000
 
   # sync runs here, unlike a token-only build: mirroring the directory is the
-  # tier's subject, so it takes the base service with no override. It starts idle
-  # until its credential file has content; ci-authentik.sh recreates it once
-  # against the admission group's live pk before asserting the mirror by outcome.
+  # tier's subject. It reads authentik over TLS at idp.kbci.test, so like the
+  # broker it needs the bench CA; without it the directory read cannot verify
+  # Caddy's leaf and is ridden out as unreachable (client.rs STALL_LIMIT) rather
+  # than failing, so sync never mirrors. It starts idle until its credential file
+  # has content; ci-authentik.sh recreates it once against the admission group's
+  # live pk before asserting the mirror by outcome.
+  sync:
+    environment:
+      SSL_CERT_FILE: /etc/kerbridge-ci-ca/ca.crt
+    volumes:
+      - ${CI_CA_CRT}:/etc/kerbridge-ci-ca/ca.crt:ro
 
 volumes:
   authentik-db:

@@ -51,9 +51,12 @@ pub struct AuthentikClient {
 
 impl AuthentikClient {
     pub fn new(url: &str, token: String) -> Result<Self> {
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
+        // The crate's shared client: rustls trusting native roots merged with the
+        // webpki set, so `SSL_CERT_FILE` reaches an authentik behind an operator's
+        // own CA -- the same trust the broker's JWKS fetch has. A bare builder here
+        // would trust only whatever reqwest defaults to, and a private-CA authentik
+        // would then read as unreachable, not untrusted.
+        let http = crate::jwks::http_client(Duration::from_secs(30))
             .context("building the authentik HTTP client")?;
         Ok(Self { http, base: url.trim_end_matches('/').to_owned(), token })
     }
