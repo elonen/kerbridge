@@ -1,0 +1,16 @@
+{
+  "note": "ERROR SHAPE, byte-faithful body. The response to a real service account with a real, valid api-intent token and not one permission granted. The read is REFUSED, not emptied: total loss of the grant returns this 403 rather than a well-formed 200 holding zero users, so the total-loss case is loud. Only a PARTIAL grant is quiet, and that case is deliberately not a fixture -- a truncated 200 and an honest smaller 200 are the same bytes.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=10&page=1"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "detail": "You do not have permission to perform this action."
+    }
+  }
+}

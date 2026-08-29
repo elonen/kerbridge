@@ -1,0 +1,318 @@
+{
+  "note": "RECORDED. First page of the full user read. page_size is 10 rather than #9's measured 100 purely to force a boundary. The rows are the cast: a service account, a disabled service account, an ordinary person, and (on page 2) the degenerate display names. authentik's own three accounts are here because they are: /core/users/ has no server-side filter the adapter asks for. Note `groups`: with include_groups=false the `groups_obj` OBJECTS go away but the uuid list stays, so the membership edge is readable from the user side as well as from the group's `users` array.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=10&page=1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:37 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "6720",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "7ba975ab121a4c76be1a53ab88d69e18",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "pagination": {
+        "next": 2,
+        "previous": 0,
+        "count": 13,
+        "current": 1,
+        "total_pages": 2,
+        "start_index": 1,
+        "end_index": 10
+      },
+      "results": [
+        {
+          "pk": 2,
+          "username": "ak-outpost-56ed4113d3bf4242a44e7436d9051147",
+          "name": "Outpost authentik Embedded Outpost Service-Account",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:45:01.288575Z",
+          "is_superuser": false,
+          "groups": [],
+          "groups_obj": null,
+          "roles": [
+            "c8555e8a-f867-4c5c-ae1a-327168b9e787"
+          ],
+          "roles_obj": null,
+          "email": "",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "7691b14ea483523f09944cb3fd78276338e00a6d508463e915cb4e4813dd561e",
+          "path": "goauthentik.io/outposts",
+          "type": "internal_service_account",
+          "uuid": "9947186f-0c38-4d63-aaea-3af91f8b59ed",
+          "password_change_date": "2026-08-27T21:45:01.288743Z",
+          "last_updated": "2026-08-27T21:45:01.291106Z"
+        },
+        {
+          "pk": 4,
+          "username": "akadmin",
+          "name": "authentik Default Admin",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:45:01.580969Z",
+          "is_superuser": true,
+          "groups": [
+            "0af8e7f1-82d8-4265-9f16-844061421ae4"
+          ],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "akadmin@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "46313f0f99bd9161f7d3bd125c1063c45fd4d9cf5c7929c96d9f8ec7a8199555",
+          "path": "users",
+          "type": "internal",
+          "uuid": "b1bd1039-fe26-438f-b0c9-b21508e2844f",
+          "password_change_date": "2026-08-27T21:45:01.592488Z",
+          "last_updated": "2026-08-27T21:45:01.681356Z"
+        },
+        {
+          "pk": 6,
+          "username": "benchuser",
+          "name": "Bench User",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:45:09.527611Z",
+          "is_superuser": false,
+          "groups": [],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "benchuser@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "1fa406c937e5f18f26c9bbb4d57722c2f99039a187e7705f1dbd884fe9935bfe",
+          "path": "users",
+          "type": "internal",
+          "uuid": "a9ff0acc-50af-4745-adbf-36f537c6571d",
+          "password_change_date": "2026-08-27T21:45:10.781402Z",
+          "last_updated": "2026-08-27T21:45:10.862924Z"
+        },
+        {
+          "pk": 44,
+          "username": "dave.filler",
+          "name": "Dave Filler",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:36.937146Z",
+          "is_superuser": false,
+          "groups": [],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "dave.filler@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "c23c487a563534ac60e3eb3d73ee163373175d2f7c9a49ae0caaca2004539b40",
+          "path": "users",
+          "type": "internal",
+          "uuid": "97bc2daf-8099-4b56-af6c-92c65cfdca43",
+          "password_change_date": "2026-08-27T21:55:36.937344Z",
+          "last_updated": "2026-08-27T21:55:36.955736Z"
+        },
+        {
+          "pk": 45,
+          "username": "erin.filler",
+          "name": "Erin Filler",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.003847Z",
+          "is_superuser": false,
+          "groups": [],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "erin.filler@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "cac6eaecdf4e9acf30cc59125e7698d1451d52d17a3ed76d443766e7de4fbcb4",
+          "path": "users",
+          "type": "internal",
+          "uuid": "e82f67d1-8060-40cd-bf35-e4999ad0ee9b",
+          "password_change_date": "2026-08-27T21:55:37.004030Z",
+          "last_updated": "2026-08-27T21:55:37.022822Z"
+        },
+        {
+          "pk": 46,
+          "username": "frank.filler",
+          "name": "Frank Filler",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.072434Z",
+          "is_superuser": false,
+          "groups": [],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "frank.filler@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "08168c3ff7bd27f6c641908810112e0970c245eb7ead003143a1d2bf2152e08e",
+          "path": "users",
+          "type": "internal",
+          "uuid": "6b6becae-cbea-4321-b1db-507c45c29d91",
+          "password_change_date": "2026-08-27T21:55:37.072619Z",
+          "last_updated": "2026-08-27T21:55:37.091409Z"
+        },
+        {
+          "pk": 47,
+          "username": "ada.lovelace",
+          "name": "Ada Lovelace",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.138892Z",
+          "is_superuser": false,
+          "groups": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21"
+          ],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "ada.lovelace@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "147a089700ca89448980fd085be95b370e8272bc18b4a156af13462bb534f224",
+          "path": "users",
+          "type": "internal",
+          "uuid": "19427827-69e8-4d8f-9db4-b90bd5ff364e",
+          "password_change_date": "2026-08-27T21:55:37.139079Z",
+          "last_updated": "2026-08-27T21:55:37.157430Z"
+        },
+        {
+          "pk": 48,
+          "username": "kb-svc-sync",
+          "name": "Kerbridge Sync Collector",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.205220Z",
+          "is_superuser": false,
+          "groups": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21"
+          ],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "42c8fe9fa5437dc0f47d0632fabf00b328df5406663bddf91c43d93a6a92a8cf",
+          "path": "users",
+          "type": "service_account",
+          "uuid": "10931101-8391-40c4-9554-4ea40f3d24d5",
+          "password_change_date": "2026-08-27T21:55:37.205399Z",
+          "last_updated": "2026-08-27T21:55:37.223496Z"
+        },
+        {
+          "pk": 49,
+          "username": "kb-svc-retired",
+          "name": "Retired Collector",
+          "is_active": false,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.272063Z",
+          "is_superuser": false,
+          "groups": [
+            "d02aca4a-5661-40bc-96e3-4afbfe8bd30c"
+          ],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "59b9b16ed049a9d1e3c7bd2aa72f7552392df57022b5b0b8d2e0c2bf64c7b5dc",
+          "path": "users",
+          "type": "service_account",
+          "uuid": "68c9a109-235c-48c3-a721-e98b23869457",
+          "password_change_date": "2026-08-27T21:55:37.272245Z",
+          "last_updated": "2026-08-27T21:55:37.296216Z"
+        },
+        {
+          "pk": 50,
+          "username": "bob.nested",
+          "name": "Bob Nested",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.348341Z",
+          "is_superuser": false,
+          "groups": [
+            "807f5b7b-40f4-4836-9774-b8d3f7a77b0f"
+          ],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "bob.nested@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "00d614db2e3b945d08c7da7a52b957f3471cce5e375819b47204d0356f00f3de",
+          "path": "users",
+          "type": "internal",
+          "uuid": "a6d20261-aee9-4dff-9699-2c4015fd69b0",
+          "password_change_date": "2026-08-27T21:55:37.348528Z",
+          "last_updated": "2026-08-27T21:55:37.366378Z"
+        }
+      ],
+      "autocomplete": {
+        "current_model": "authentik_core.user",
+        "models": {
+          "authentik_core.user": {
+            "username": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "name": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "email": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "path": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "is_active": {
+              "type": "bool",
+              "nullable": true,
+              "options": null
+            },
+            "type": {
+              "type": "str",
+              "nullable": false,
+              "options": [
+                "internal",
+                "external",
+                "service_account",
+                "internal_service_account"
+              ]
+            },
+            "attributes": {
+              "type": "relation",
+              "nullable": false,
+              "options": null,
+              "relation": "authentik_core.user_attributes"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,220 @@
+{
+  "note": "RECORDED. First page of the full group read. Each row carries `pk` (a uuid), `num_pk` (an integer authentik keeps beside it), `name`, `parents`, `users` and `children`. With include_users=false the `*_obj` keys are present and NULL rather than absent -- the adapter must read `users`/`children`, never `users_obj`/`children_obj`.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/groups/?ordering=pk&include_users=false&page_size=8&page=1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:37 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "3121",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "55477f2f75b1451e832ad553dd334376",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "pagination": {
+        "next": 2,
+        "previous": 0,
+        "count": 11,
+        "current": 1,
+        "total_pages": 2,
+        "start_index": 1,
+        "end_index": 8
+      },
+      "results": [
+        {
+          "pk": "004ea54c-fef6-4b96-8f7d-5846f68055c5",
+          "num_pk": 40835,
+          "name": "kb-cyc-b",
+          "is_superuser": false,
+          "parents": [
+            "4dd29757-1821-4ad0-8bff-b48dc2c51714"
+          ],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [
+            "4dd29757-1821-4ad0-8bff-b48dc2c51714"
+          ],
+          "children_obj": null
+        },
+        {
+          "pk": "0af8e7f1-82d8-4265-9f16-844061421ae4",
+          "num_pk": 14584,
+          "name": "authentik Admins",
+          "is_superuser": true,
+          "parents": [],
+          "parents_obj": null,
+          "users": [
+            4
+          ],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [],
+          "children_obj": null
+        },
+        {
+          "pk": "3159df66-71ca-4457-bd32-1ace66b2621c",
+          "num_pk": 65598,
+          "name": "kb-filler-1",
+          "is_superuser": false,
+          "parents": [],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [],
+          "children_obj": null
+        },
+        {
+          "pk": "4dd29757-1821-4ad0-8bff-b48dc2c51714",
+          "num_pk": 10344,
+          "name": "kb-cyc-a",
+          "is_superuser": false,
+          "parents": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21",
+            "004ea54c-fef6-4b96-8f7d-5846f68055c5"
+          ],
+          "parents_obj": null,
+          "users": [
+            51
+          ],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [
+            "004ea54c-fef6-4b96-8f7d-5846f68055c5"
+          ],
+          "children_obj": null
+        },
+        {
+          "pk": "5fe9eabf-dbda-42c1-82e3-e52e5558ec10",
+          "num_pk": 12749,
+          "name": "kb-mid",
+          "is_superuser": false,
+          "parents": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21"
+          ],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [
+            "807f5b7b-40f4-4836-9774-b8d3f7a77b0f",
+            "d02aca4a-5661-40bc-96e3-4afbfe8bd30c"
+          ],
+          "children_obj": null
+        },
+        {
+          "pk": "67fc6eec-8f42-4da6-9e08-c231f2e71dc2",
+          "num_pk": 13822,
+          "name": "authentik Read-only",
+          "is_superuser": false,
+          "parents": [],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "attributes": {
+            "notes": "A group with an auto-generated role that allows read-only permissions on all objects.\n"
+          },
+          "roles": [
+            "925df448-f9c7-4df2-aa80-5732fa54a6eb"
+          ],
+          "roles_obj": [
+            {
+              "pk": "925df448-f9c7-4df2-aa80-5732fa54a6eb",
+              "name": "authentik Read-only"
+            }
+          ],
+          "inherited_roles_obj": null,
+          "children": [],
+          "children_obj": null
+        },
+        {
+          "pk": "807f5b7b-40f4-4836-9774-b8d3f7a77b0f",
+          "num_pk": 17080,
+          "name": "kb-inner",
+          "is_superuser": false,
+          "parents": [
+            "5fe9eabf-dbda-42c1-82e3-e52e5558ec10"
+          ],
+          "parents_obj": null,
+          "users": [
+            50
+          ],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [],
+          "children_obj": null
+        },
+        {
+          "pk": "83c1e618-bbbb-426c-8a90-632df2c64ad7",
+          "num_pk": 17513,
+          "name": "kb-filler-2",
+          "is_superuser": false,
+          "parents": [],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [],
+          "children_obj": null
+        }
+      ],
+      "autocomplete": {
+        "current_model": "authentik_core.group",
+        "models": {
+          "authentik_core.group": {
+            "name": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "is_superuser": {
+              "type": "bool",
+              "nullable": true,
+              "options": null
+            },
+            "attributes": {
+              "type": "relation",
+              "nullable": false,
+              "options": null,
+              "relation": "authentik_core.group_attributes"
+            }
+          }
+        }
+      }
+    }
+  }
+}

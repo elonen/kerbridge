@@ -1,0 +1,154 @@
+{
+  "note": "RECORDED. The TERMINATING page: pagination.next is the integer 0 -- not null, not a URL, not an absent key. This is the whole reason the page exists as a fixture, and it is the role groups_delta_init_page2 plays at entra/client.rs:488. `count` equals page 1's; the torn recording below is the same read with a lower one.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=10&page=2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:37 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "2386",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "c2b6800de2764eafaaf8797f90361459",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 1,
+        "count": 13,
+        "current": 2,
+        "total_pages": 2,
+        "start_index": 11,
+        "end_index": 13
+      },
+      "results": [
+        {
+          "pk": 51,
+          "username": "carol.cycle",
+          "name": "Carol Cycle",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.412734Z",
+          "is_superuser": false,
+          "groups": [
+            "4dd29757-1821-4ad0-8bff-b48dc2c51714"
+          ],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "carol.cycle@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "9e629bf79aa60fe16298306bf0117594e91baf0ea8d1ef812c4ac6f50e4786d3",
+          "path": "users",
+          "type": "internal",
+          "uuid": "ca306869-7bc2-4ddf-bdae-a9a4fed1c6c6",
+          "password_change_date": "2026-08-27T21:55:37.412908Z",
+          "last_updated": "2026-08-27T21:55:37.431683Z"
+        },
+        {
+          "pk": 52,
+          "username": "nomad",
+          "name": "",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.480496Z",
+          "is_superuser": false,
+          "groups": [],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "b6b2c8a171bef225a3294e6bd450e4ea5e9636c4d3cc6646541d819820e1703b",
+          "path": "users",
+          "type": "internal",
+          "uuid": "e4233883-25a1-4b48-907f-b6c16b2222c7",
+          "password_change_date": "2026-08-27T21:55:37.480663Z",
+          "last_updated": "2026-08-27T21:55:37.499057Z"
+        },
+        {
+          "pk": 53,
+          "username": "...",
+          "name": "...",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.547507Z",
+          "is_superuser": false,
+          "groups": [],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "2ed777e0dd71f14f8b1f7b7e692b47222015a263e28d6109dbcfb982cfd3398b",
+          "path": "users",
+          "type": "internal",
+          "uuid": "082c0217-f362-4b8d-a043-159119acfc00",
+          "password_change_date": "2026-08-27T21:55:37.547662Z",
+          "last_updated": "2026-08-27T21:55:37.566697Z"
+        }
+      ],
+      "autocomplete": {
+        "current_model": "authentik_core.user",
+        "models": {
+          "authentik_core.user": {
+            "username": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "name": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "email": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "path": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "is_active": {
+              "type": "bool",
+              "nullable": true,
+              "options": null
+            },
+            "type": {
+              "type": "str",
+              "nullable": false,
+              "options": [
+                "internal",
+                "external",
+                "service_account",
+                "internal_service_account"
+              ]
+            },
+            "attributes": {
+              "type": "relation",
+              "nullable": false,
+              "options": null,
+              "relation": "authentik_core.user_attributes"
+            }
+          }
+        }
+      }
+    }
+  }
+}

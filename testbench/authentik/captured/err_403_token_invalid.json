@@ -1,0 +1,28 @@
+{
+  "note": "RECORDED with a syntactically fine bearer token that names no Token row. Same status, same content type, different `detail`. This is the one that must map to SourceError::CredentialRejected so it does not count against the source (sync/mod.rs:96-100): the credential is dead, the server is healthy, and the operator's problem is a rotation, not an outage.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?page_size=1"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:39 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "34",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "c0caecb1cb57473b80c30d1b2dd9187e",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "detail": "Token invalid/expired"
+    }
+  }
+}

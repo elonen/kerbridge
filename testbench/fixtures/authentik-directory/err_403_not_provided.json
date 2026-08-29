@@ -1,0 +1,16 @@
+{
+  "note": "ERROR SHAPE, byte-faithful body. The response to a read with no Authorization header at all. It is 403, not 401: authentik has no 401 anywhere, so the status alone collapses this with the two 403s below and the detail string is the whole discriminator. This one means the request never presented a credential.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?page_size=1"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "detail": "Authentication credentials were not provided."
+    }
+  }
+}

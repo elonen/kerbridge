@@ -1,0 +1,28 @@
+{
+  "note": "RECORDED with no Authorization header at all. 403, not 401 -- authentik has no 401 anywhere in its schema (#22), and the schema for /core/users/ documents exactly two failures, 400 and 403. A classifier keyed on the status collapses this with the two below; the `detail` string is the entire discriminator.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?page_size=1"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:39 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "58",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "2719454bd73f4a60af9a1ecda5d81e3f",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "detail": "Authentication credentials were not provided."
+    }
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "note": "RECORDED against a credential granted authentik_core.view_user on exactly two user objects and nothing globally. 200. pagination.count is 2 -- the size of the FILTERED set, not of the directory (13). The envelope is internally perfect: count matches the row count, total_pages is 1, next is 0. Byte for byte this is indistinguishable from an honest read of a two-person directory, which settles #38 s5: a count cross-check is STRUCTURALLY BLIND to a partial grant and the corpus must not carry a case pretending otherwise.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:39 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "1933",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "4f7aae55d8b04b769919c05970cefd92",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 0,
+        "count": 2,
+        "current": 1,
+        "total_pages": 1,
+        "start_index": 1,
+        "end_index": 2
+      },
+      "results": [
+        {
+          "pk": 47,
+          "username": "ada.lovelace",
+          "name": "Ada Lovelace",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.138892Z",
+          "is_superuser": false,
+          "groups": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21"
+          ],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "ada.lovelace@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "147a089700ca89448980fd085be95b370e8272bc18b4a156af13462bb534f224",
+          "path": "users",
+          "type": "internal",
+          "uuid": "19427827-69e8-4d8f-9db4-b90bd5ff364e",
+          "password_change_date": "2026-08-27T21:55:37.139079Z",
+          "last_updated": "2026-08-27T21:55:37.157430Z"
+        },
+        {
+          "pk": 50,
+          "username": "bob.nested",
+          "name": "Bob Nested",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.348341Z",
+          "is_superuser": false,
+          "groups": [
+            "807f5b7b-40f4-4836-9774-b8d3f7a77b0f"
+          ],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "bob.nested@bench.invalid",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "00d614db2e3b945d08c7da7a52b957f3471cce5e375819b47204d0356f00f3de",
+          "path": "users",
+          "type": "internal",
+          "uuid": "a6d20261-aee9-4dff-9699-2c4015fd69b0",
+          "password_change_date": "2026-08-27T21:55:37.348528Z",
+          "last_updated": "2026-08-27T21:55:37.366378Z"
+        }
+      ],
+      "autocomplete": {
+        "current_model": "authentik_core.user",
+        "models": {
+          "authentik_core.user": {
+            "username": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "name": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "email": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "path": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "is_active": {
+              "type": "bool",
+              "nullable": true,
+              "options": null
+            },
+            "type": {
+              "type": "str",
+              "nullable": false,
+              "options": [
+                "internal",
+                "external",
+                "service_account",
+                "internal_service_account"
+              ]
+            },
+            "attributes": {
+              "type": "relation",
+              "nullable": false,
+              "options": null,
+              "relation": "authentik_core.user_attributes"
+            }
+          }
+        }
+      }
+    }
+  }
+}

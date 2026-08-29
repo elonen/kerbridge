@@ -1,0 +1,146 @@
+{
+  "note": "RECORDED, AND THIS IS THE ASYMMETRY. Page 2 of the group read after 1 group(s) were created between the two requests, one of which (609080ac-04fc-4018-a6f4-c03052020d8c) sorts BEFORE page 1's last row (83c1e618-bbbb-426c-8a90-632df2c64ad7). A group's pk IS its uuid -- random, not append-only -- so ?ordering=pk on /core/groups/ reorders on insert, and row(s) ['83c1e618-bbbb-426c-8a90-632df2c64ad7'] that the reader already holds come back on page 2. A count comparison does not catch this: `count` went UP, so the torn-read check that catches a delete passes here while the membership set the reader assembled is wrong.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/groups/?ordering=pk&include_users=false&page_size=8&page=2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:39 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "1924",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "c3bccb7dcac9473c8303767c22e6c619",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 1,
+        "count": 12,
+        "current": 2,
+        "total_pages": 2,
+        "start_index": 9,
+        "end_index": 12
+      },
+      "results": [
+        {
+          "pk": "83c1e618-bbbb-426c-8a90-632df2c64ad7",
+          "num_pk": 17513,
+          "name": "kb-filler-2",
+          "is_superuser": false,
+          "parents": [],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [],
+          "children_obj": null
+        },
+        {
+          "pk": "9665b31a-b1e6-42e6-9204-45e14bb0eb21",
+          "num_pk": 19991,
+          "name": "kb-admission",
+          "is_superuser": false,
+          "parents": [],
+          "parents_obj": null,
+          "users": [
+            48,
+            47
+          ],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [
+            "5fe9eabf-dbda-42c1-82e3-e52e5558ec10",
+            "d02aca4a-5661-40bc-96e3-4afbfe8bd30c",
+            "4dd29757-1821-4ad0-8bff-b48dc2c51714"
+          ],
+          "children_obj": null
+        },
+        {
+          "pk": "ac5759dd-302a-42d7-9b77-0897ce9ece6e",
+          "num_pk": 22908,
+          "name": "authentik Agent-Users",
+          "is_superuser": false,
+          "parents": [],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "attributes": {
+            "notes": "A group with an auto-generated role that allows its members to create agent users.\n"
+          },
+          "roles": [
+            "7a8abdc3-6be4-413d-b2f2-37c853944910"
+          ],
+          "roles_obj": [
+            {
+              "pk": "7a8abdc3-6be4-413d-b2f2-37c853944910",
+              "name": "authentik Agent-Users"
+            }
+          ],
+          "inherited_roles_obj": null,
+          "children": [],
+          "children_obj": null
+        },
+        {
+          "pk": "d02aca4a-5661-40bc-96e3-4afbfe8bd30c",
+          "num_pk": 27670,
+          "name": "kb-two-parents",
+          "is_superuser": false,
+          "parents": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21",
+            "5fe9eabf-dbda-42c1-82e3-e52e5558ec10"
+          ],
+          "parents_obj": null,
+          "users": [
+            49
+          ],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [],
+          "children_obj": null
+        }
+      ],
+      "autocomplete": {
+        "current_model": "authentik_core.group",
+        "models": {
+          "authentik_core.group": {
+            "name": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "is_superuser": {
+              "type": "bool",
+              "nullable": true,
+              "options": null
+            },
+            "attributes": {
+              "type": "relation",
+              "nullable": false,
+              "options": null,
+              "relation": "authentik_core.group_attributes"
+            }
+          }
+        }
+      }
+    }
+  }
+}

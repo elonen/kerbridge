@@ -1,0 +1,16 @@
+{
+  "note": "ERROR SHAPE, HAND-AUTHORED -- this could not be recorded on the bench and is not a recording. On 2026.8.0 nothing answers on the server port until the process is up, so restarting the container yields a refused connection, never a 503; the {\"error\": \"authentik starting\"} body belongs to a deployment with a reverse proxy in front of authentik. A 5xx is reachability, not a verdict on the credential or the data: warn and retry, do not count it against the source and do not touch the population.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=10&page=1"
+  },
+  "response": {
+    "status": 503,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "error": "authentik starting"
+    }
+  }
+}

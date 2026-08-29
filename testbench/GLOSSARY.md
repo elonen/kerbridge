@@ -26,7 +26,7 @@ thing wrong with them.
 
 One directory under the fixtures root that its reader loads as a set and that
 is regenerated whole or not at all.
-<!-- refs: path `testbench/fixtures/`; corpora `entra-token`, `authentik-token`, `graph-sync`, `planner`, `tls` -->
+<!-- refs: path `testbench/fixtures/`; corpora `entra-token`, `authentik-token`, `graph-sync`, `authentik-directory`, `planner`, `tls` -->
 <!-- avoid: test corpora, fixture set, golden files -->
 
 ### evidence
@@ -47,8 +47,8 @@ expired on purpose.
 ### generator
 
 A script, the only sanctioned way to change the [corpus](#corpus) it owns.
-One per generated corpus; the planner corpus has none, its cases being
-hand-written golden files.
+One per generated corpus; the planner and authentik-directory corpora have
+none, their cases being hand-written or hand-derived golden files.
 <!-- refs: `make_fixtures.py` / `make_fixtures.sh`, one per generated corpus: `entra-token`, `authentik-token`, `graph-sync`, `tls`; the two token generators share `tokenforge.py` -->
 <!-- avoid: script -->
 
