@@ -37,20 +37,26 @@ summary:
 
    Each required option arrives as a **line to complete**: a commented
    `#key =` under a `# REQUIRED.` note, with an example above it. Remove the
-   `#` and write your own value. A copied set does not load until every one of
-   them is done, and `make check-config` lists the ones that are left — all of
-   them at once, rather than one per run.
+   `#` and write your own value. The set does not load until each required line
+   in the files that it loads is complete. `make check-config` lists the ones
+   that are left — all of them at once, rather than one per run.
 
-3. In `configs/main.toml`, complete `sources` with the source files you keep:
-   `["entra"]` for the one this set ships, `[]` for a host that serves no
-   sign-ins. A name listed here needs an `idp_<name>.toml` beside it.
+3. In `configs/main.toml`, complete `sources` with the source names from step 1:
+   `["entra"]`, `["authentik"]`, or both. Use `[]` for a host that serves no
+   sign-ins. Each listed name needs an `idp_<source>.toml` beside it.
 4. In `configs/realm.toml`, complete `realm` with the same value as `AD_REALM`,
    and `ldap_url` with `ldaps://<AD_DC_HOSTNAME>.<AD_DNS_DOMAIN>:636`. Leave
    `base_dn` commented out — KerBridge derives it from `realm`.
-5. In `configs/idp_entra.toml`, paste the `[provider_config]` block from step 2.
-   Terraform's `print-provider-config.sh` prints it. On the manual path, copy
-   the values yourself. For each value and what it does, see
-   [`entra.md`](entra.md#the-providerconfig-values).
+5. Complete each source file that `main.toml` lists:
+   - **Entra:** paste the `[provider_config]` block from step 2 into
+     `configs/idp_entra.toml`. Terraform's `print-provider-config.sh` prints it;
+     the manual path gives the same values.
+   - **authentik:** in `configs/idp_authentik.toml`, set the instance URL,
+     `application_slug = "kerbridge"`, `client_id = "kerbridge"`, and the
+     admission group's pk from step 2. The API token goes in the credential file
+     later, not in this file.
+
+   An unlisted source file is ignored and does not need to be completed.
 6. Set `TLS_STRATEGY` in `.env`, and supply its material. The next section
    tells you how.
 
@@ -125,9 +131,9 @@ again after a failure continues where it stopped.
 > again.
 
 > **CAUTION: Do not run `make seed`.** It is the development bench fixture: a
-> false user, groups and a share ACL. It puts objects in
-> `OU=Entra,OU=CloudIdP` that sync does not own. In production these objects
-> arrive from Entra through sync.
+> false user, groups and a share ACL. It writes objects into the configured
+> source's IdP-specific OU that sync does not own. In production, sync creates
+> those objects from the cloud IdP.
 
 `kbmanage` is built with `make kbmanage` from the repository root. `make up`
 writes its configuration to `deploy/configs/kbmanage.toml`, and it links
@@ -177,10 +183,10 @@ a host number against a number that the container never sees.
    secret permissions.
 2. It generates the host-side secrets into `deploy/secrets/generated/`.
 3. It provisions the domain in Samba AD.
-4. It creates `OU=CloudIdP` with `OU=Entra` inside it, `OU=Resources`, and the
-   service accounts: `svc-kerbridge-broker`, which is the read-only LDAP
-   identity of the broker and needs no delegation, and
-   `svc-kerbridge-sync-entra` and `svc-kerbridge-manage` with theirs.
+4. It creates `OU=CloudIdP`, one IdP-specific OU for each listed source, and
+   `OU=Resources`. It also creates `svc-kerbridge-broker`,
+   `svc-kerbridge-sync-<source>` for each source, and
+   `svc-kerbridge-manage`, with their delegations.
 5. It starts the rest of the stack.
 6. It waits for the stack to settle.
 

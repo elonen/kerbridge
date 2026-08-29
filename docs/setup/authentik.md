@@ -45,24 +45,41 @@ Self-signed Certificate`, and the blueprint names it. If your instance has more
 than one signing certificate and you want a specific one, put its name on the
 `signing_key` line. Otherwise leave the file alone.
 
-The `client_id` and the application **slug** are fixed constants in the file,
-both `kerbridge`. Unlike Entra, where these are GUIDs the platform generates,
-authentik's are strings you write — so KerBridge pins them rather than reading
-them back, and the matching `[provider_config]` values are already correct in
-`configs/idp_authentik.toml`.
+The blueprint fixes the application **slug** and client ID to `kerbridge`.
+Unlike Entra, where the platform generates GUIDs, authentik accepts strings you
+write. When you complete `idp_authentik.toml`, set both required lines to
+`kerbridge`; they are constants, not read-backs.
 
-> **Why a Signing Key is mandatory, not advisory.** Without one, an authentik
+### The Signing Key is mandatory
+
+> **This is not advisory.** Without one, an authentik
 > provider signs `HS256` with its client secret and publishes an empty JWKS.
 > The broker accepts asymmetric algorithms only and refuses every such token
-> with an opaque 401 — see the note on why token signing must be asymmetric in
-> [entra.md](entra.md).
-> The blueprint attaches the key so this cannot happen; do not remove it.
+> with an opaque 401. The blueprint attaches the key so this cannot happen; do
+> not remove it.
+
+<details>
+<summary>Why token signing must be asymmetric</summary>
+
+The broker verifies a token against the IdP's published public key. Its
+algorithm list is compiled in: the RSA families `RS*` and `PS*` today, and never
+`HS*` or `none`. A key that publishes an `alg` is held to that algorithm.
+
+A verifier that trusted the token's own `alg` could use the published public key
+as an HMAC secret and accept a forged identity. Asymmetric signing also means
+that a compromised broker holds no key that can mint an identity. This is the
+same reason that KDC authority lives in `issuerd` and not in the broker.
+
+</details>
 
 ## The two read-backs
 
-Two values are yours to fetch after the blueprint runs. Put both into this
-source's `[provider_config]` in `configs/idp_authentik.toml`; that file's
-comments carry the full rule for each.
+Two values are yours to fetch after the blueprint runs. Put both into the
+source's `idp_authentik.toml` in the config set; that file's comments carry the
+full rule for each:
+
+- Docker Compose: `deploy/configs/idp_authentik.toml`.
+- Debian: `/etc/kerbridge/idp_authentik.toml`.
 
 ### 1. The admission group's pk
 
@@ -138,8 +155,7 @@ re-application does:
 
 ## Where the values go
 
-The rest of this source's setup is the config file, not authentik. See
-`configs/idp_authentik.toml` (from `idp_authentik.toml.example`): it lists every
-`[provider_config]` value, marks the ones you must supply, and explains the
-derived URLs. The blueprint fills the authentik side; that file is the KerBridge
-side.
+The rest of this source's setup is the `idp_authentik.toml` named above, not
+authentik. It lists every `[provider_config]` value, marks the ones you must
+supply, and explains the derived URLs. The blueprint fills the authentik side;
+that file is the KerBridge side.

@@ -22,27 +22,36 @@ the `PATH`, from the `kerbridge-manage` package.
 Sync runs from the start, and it stays idle until its credential exists. `sync
 idle` is the normal state until you do this.
 
-### 1. Write the credential
+### 1. Write each source's credential
 
-Write the client secret from
-[step 2](../../SETUP.md#2-set-up-your-cloud-identity-providers) into
-`<secrets-dir>/idp/entra/credential`. The file must be mode `0640`, and it must
-be group-readable by the account that sync runs as:
+The credential is provider-specific:
+
+| Provider | Sync credential |
+|---|---|
+| Entra | The sync app client-secret **Value**. |
+| authentik | The dedicated service account's API token, with Intent `API`. |
+
+Repeat this for every source. Use the source name from step 1 and the credential
+from that provider's step-2 page.
+
+**Docker Compose**, from `deploy/`:
 
 ```sh
-# Docker Compose, from deploy/
-printf '%s' '<the secret Value>' > secrets/idp/entra/credential
-chown root:${BROKER_GID:-10002} secrets/idp/entra/credential   # Linux only
-chmod 0640 secrets/idp/entra/credential
-make ready                       # judges the mode, and says so if it is wrong
+SOURCE=authentik                   # or entra; the source name from step 1
+printf '%s' '<the sync credential>' > "secrets/idp/$SOURCE/credential"
+chown root:${BROKER_GID:-10002} "secrets/idp/$SOURCE/credential"   # Linux only
+chmod 0640 "secrets/idp/$SOURCE/credential"
+make ready                         # judges the mode, and says so if it is wrong
 ```
 
+**Debian:**
+
 ```sh
-# Debian
-printf '%s' '<the secret Value>' | sudo tee /etc/kerbridge.secrets/idp/entra/credential >/dev/null
-sudo chown root:_kerbridge /etc/kerbridge.secrets/idp/entra/credential
-sudo chmod 0640 /etc/kerbridge.secrets/idp/entra/credential
+sudo kbsetup secrets
 ```
+
+`kbsetup secrets` discovers each configured source, asks the provider-specific
+question, and writes the correct path and mode.
 
 This enables sync. It needs no restart. Sync finds the file on its next cycle,
 so it takes effect within one `interval_seconds`, which is 300 by default.
@@ -50,12 +59,11 @@ so it takes effect within one `interval_seconds`, which is 300 by default.
 > **CAUTION: Do not write the file `0600 root:root`.** That denies sync its own
 > secret. Sync runs unprivileged, and it reaches the file through its group.
 
-> **CAUTION: Store this credential as a secret, not as a read-only key.** It is
-> equivalent to realm access. Sync creates identities and manages the admission
-> group, so the holder can admit themselves to the realm and receive tickets.
-> The directory (realm) rights are confined to `OU=Entra,OU=CloudIdP`: the credential
-> cannot change `OU=Resources`, so it cannot authorize itself against a share
-> without your resource groups.
+> **CAUTION: Store each sync credential as a secret.** It is read-only in the
+> cloud IdP, but it can read that provider's whole directory (IdP), including
+> users that KerBridge does not synchronize. Sync's separate directory (realm)
+> account can create admitted identities, but its rights are confined to that
+> source's IdP-specific OU. It cannot change `OU=Resources`.
 
 <details>
 <summary>Check the gid first, in a Docker Compose deployment</summary>
@@ -65,8 +73,8 @@ and the group is the numeric `BROKER_GID`.
 
 **Before you trust that gid, make sure that it is unused.**
 `getent group ${BROKER_GID:-10002}` must return nothing. If a host group
-already holds the gid, the members of that group can read your Entra client
-secret. Select an unused gid in `.env`.
+already holds the gid, the members of that group can read a source's sync
+credential. Select an unused gid in `.env`.
 
 Docker Desktop remaps ownership instead, so on macOS the `chown` fails and
 `chmod 600` is enough. That bench also cannot reproduce the Linux failure.

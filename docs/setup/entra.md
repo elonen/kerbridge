@@ -109,25 +109,5 @@ Entra, but it writes to the directory (realm): it creates the identities in
 `OU=Entra,OU=CloudIdP` and it manages the admission group. See
 [Enable synchronization (`broker-host.md`)](broker-host.md#enable-synchronization).
 
-<details>
-<summary>Why token signing must be asymmetric</summary>
-
-The broker verifies a token's signature against the IdP's **published public
-key**, and its list of accepted algorithms is compiled in: the RSA families
-`RS*` and `PS*` today, and never any `HS*` or `none`. A key that the provider
-publishes with an `alg` of its own is held to that one algorithm.
-
-Entra always signs asymmetrically, so this concerns a different cloud IdP only.
-Some providers offer *symmetric* signing as an ordinary option, keyed by a
-shared secret. Configure a provider that way, and every login is refused with
-an opaque 401. The broker's log says `disallowed alg "HS256"`, and nothing else
-does. To repair it, give the provider an asymmetric signing key.
-
-There are two reasons that this is not a setting. A verifier that trusted the
-token's own `alg` would let anyone take the published public key, use those
-bytes as an HMAC secret, and forge a token that asserts any identity. And with
-an asymmetric algorithm the broker holds public key material only, so it cannot
-mint an identity even if it is fully compromised. That is the same reason that
-KDC authority lives in `issuerd` and not in the broker.
-
-</details>
+Entra always signs asymmetrically, so there is no signing-key choice to make on
+this provider.

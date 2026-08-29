@@ -120,7 +120,7 @@ unpack it.
 | `kerbridge-config` | `kbconfig`, and the deployment's shared state: it owns `/etc/kerbridge` and `/etc/kerbridge.secrets`, it creates the `_kerbridge` group, and it asks the install-time questions. | every host |
 | `kerbridge-issuerd` | `issuerd` and `kbsetup`. Pulls in Samba. | the domain controller |
 | `kerbridge-broker` | `kerbridge-broker`, the only component that a workstation talks to. | the domain controller |
-| `kerbridge-sync` | `kerbridge-sync`, the directory mirror. | the domain controller |
+| `kerbridge-sync` | `kerbridge-sync`, the IdP-to-realm mirror. | the domain controller |
 | `kerbridge-manage` | `kbmanage`. Creates no account and needs no daemon. | the DC, or an administrator's own machine |
 | `kerbridge` | Metapackage: the packages above. Ships no files. | the domain controller |
 
@@ -134,7 +134,7 @@ beside it —
 > **CAUTION: A purge is not a decommission.** Purge removes the config set. It
 > does not remove `<secrets-dir>`, an audit log under `/var/log/kerbridge/`, or
 > any file under `/etc/samba` or `/var/lib/samba`. So a purged host still runs
-> the domain controller, and it still holds the Entra client secret and the
+> the domain controller, and it still holds the cloud IdP sync credential and the
 > realm Administrator password on disk. To decommission a host, erase
 > `<secrets-dir>` as well.
 
@@ -154,16 +154,22 @@ you already have.
 |---|---|
 | Kerberos realm for this deployment | Upper case, for example `EXAMPLE.SITE`. Further values are derived from it. |
 | LDAPS URL of the domain controller | `ldaps://` only. Proposed as `ldaps://kerbridge.<realm lowercased>:636`. The DC's short name is this URL's first label. |
-| Cloud identity provider for this deployment | `entra`, or `none` for a host that runs no sync and serves no sign-ins. It decides which `idp_<name>.toml` is written, and nothing else. |
+| Cloud identity provider for this deployment | `entra`, `authentik`, or `none` for a host that runs no sync and serves no sign-ins. It decides which `idp_<source>.toml` is written, and nothing else. |
 
-Three questions, and no fourth. The identifiers that name your Entra tenant and
-its applications are **not** asked for here: each is a line to complete in
-`/etc/kerbridge/idp_entra.toml`, and the postinst ends by running
-`kbconfig check`, which lists every one of them at once. Complete them from
-[step 2](../../SETUP.md#2-set-up-your-cloud-identity-providers), then run
-`kbconfig check` again. Until they are done no daemon starts — which is the
-point: an install that filled them in with the documented example would leave
-you a set nobody completed that looked finished.
+Three questions, and no fourth. Provider-specific values are **not** asked
+through debconf. Complete `/etc/kerbridge/idp_<source>.toml` from that provider's
+step-2 page. For every provider, complete `group_suffix` with the step-1
+decision. Then complete the provider-specific values:
+
+- **Entra:** the tenant and application identifiers, and the admission group's
+  Object ID.
+- **authentik:** the instance URL, fixed application slug and client ID, and the
+  admission group's pk.
+
+The postinst ends by running `kbconfig check`, which lists every missing value at
+once. Run it again after you complete the file. Until then no daemon starts. An
+install must not fill these lines with the documented examples and make a set
+that nobody completed look finished.
 
 Nothing secret passes through debconf. That is structural rather than careful:
 every secret in the config set is a *path*, never a value, and these answers
@@ -172,18 +178,20 @@ are a realm, a URL and the name of an adapter.
 <details>
 <summary>If you want to skip the questions</summary>
 
-Three outcomes of debhelper questions are all valid:
+Four outcomes of debhelper questions are valid:
 
 - **Realm left empty** — nothing is written, and the postinst says so. Unattended installs
   could need this.
 - **Realm set, provider `none`** — a realm-only set, `sources = []`, and it checks
   out as it stands. This could be an administrator machine that has `kbmanage`
   and no daemons.
-- **Realm set, provider `entra`** — the set, in `/etc/kerbridge`, with the tenant's
-  own identifiers left for you to complete. Usual case.
+- **Realm set, provider `entra`** — the set in `/etc/kerbridge`, with the tenant
+  and application identifiers left for you to complete.
+- **Realm set, provider `authentik`** — the same set, with the instance and
+  application values left for you to complete.
 
 An unattended install with a preseeded realm and no provider answer takes the
-default, `entra`, and so ends on that third outcome: a set that fails
+default, `entra`, and so ends on the Entra outcome: a set that fails
 `kbconfig check` and starts no daemon. Preseed `kerbridge-config/provider` as
 `none` if that is not what you want. A deployment that wants the whole set
 written unattended uses `kbconfig init --set`, which can express two sources
@@ -194,6 +202,7 @@ carries `ConditionPathExists=/etc/kerbridge/main.toml`, so `systemctl status`
 shows them inactive with the unmet condition named, and nothing appears in
 `systemctl --failed`. Write the set with
 `kbconfig init /etc/kerbridge --source entra` or
+`kbconfig init /etc/kerbridge --source authentik`, or run
 `dpkg-reconfigure kerbridge-config`, complete the lines `kbconfig check` names,
 then start them:
 
@@ -366,10 +375,13 @@ identifiers and a group's object id, and this command collects the rest.
 It reaches no argument list, no environment variable and no shell history
 either.
 
-For Entra the one credential is the sync app registration's client secret.
-`kbsetup secrets` refuses a value that is GUID-shaped and says why: that is the
-*Secret ID*, which stays readable in the portal after the *Value* beside it has
-been masked, and it is the one usually copied by mistake.
+The prompt is provider-specific:
+
+- **Entra:** enter the sync app registration's client-secret **Value**.
+  `kbsetup secrets` refuses a GUID-shaped value because that is the *Secret ID*,
+  which remains visible after the Value is masked.
+- **authentik:** enter the dedicated service account's API token, created with
+  Intent `API` as its setup page describes.
 
 <details>
 <summary>Writing the files yourself, from a configuration-management run</summary>
@@ -379,8 +391,9 @@ credential from anywhere a passer-by could see it, and prints the file, the
 owner and the mode for each one instead:
 
 ```sh
+SOURCE=authentik                   # or entra; the source name from step 1
 sudo install -o root -g _kerbridge -m 0640 /dev/null \
-  /etc/kerbridge.secrets/idp/entra/credential
+  "/etc/kerbridge.secrets/idp/$SOURCE/credential"
 ```
 
 Then write the bare value into it, with no trailing newline. Sync finds it on
@@ -416,7 +429,7 @@ a bearer token. They are secrets.
 ```
 kerbridge-issuerd.service    root, on the DC: holds KDC authority, reads sam.ldb
 kerbridge-broker.service     _kerbridge-broker, the client-facing API
-kerbridge-sync.service       _kerbridge-sync, the directory mirror
+kerbridge-sync.service       _kerbridge-sync, the IdP-to-realm mirror
 ```
 
 dpkg enables and starts them. Each runs `kbconfig check` at `ExecStartPre`, and

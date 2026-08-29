@@ -76,9 +76,9 @@ The source of the installer is
 
 1. **Run NAS Access.** With no configuration, it opens the flyout on *Setup
    needed*.
-2. **Sign in.** The browser opens. Complete the sign-in there. On an
-   Entra-joined machine, the agent signs in through the Windows broker, with no
-   browser and no user action.
+2. **Sign in.** With an Entra source on an Entra-joined machine, the agent can
+   use Windows sign-in, with no browser or user action. Otherwise, the browser
+   opens; complete the sign-in there. authentik always uses browser sign-in.
 3. **Register the realm with Windows.** If Windows does not know the realm, the
    tray offers *Set up now*. This is an elevated one-shot operation. It shows
    the commands, runs them, and asks for a restart when Windows needs one:

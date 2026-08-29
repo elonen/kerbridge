@@ -19,7 +19,7 @@ a domain member of the KerBridge realm.
 <summary>The <code>nas1</code> container is a fixture, not a product</summary>
 
 `nas1` in [`deploy/`](../../deploy/) is a test fixture. It is minimal by
-design, so that one `make up` can show the full path: Entra sign-in → injected
+design, so that one `make up` can show the full path: cloud IdP sign-in → injected
 TGT → passwordless SMB. Do not run a production file server this way.
 
 **Stop the fixture before you join your own file server.** `make up NAS=1`
@@ -46,8 +46,8 @@ its ACLs.
 
 | Layer | Owner | Lives in |
 |---|---|---|
-| Cloud users and their group membership | Entra | Your tenant |
-| Their on-prem shadow objects | `kerbridge-sync` | `OU=Entra,OU=CloudIdP` |
+| Cloud users and their group membership | The cloud IdP | The directory (IdP) |
+| Their managed realm objects | `kerbridge-sync` | The source's IdP-specific OU |
 | Resource groups | You | Anywhere outside `OU=CloudIdP`; `OU=Resources` by default |
 | Share definitions and filesystem ACLs | You | The file server |
 
@@ -199,8 +199,8 @@ gshadow:        files
 
 Rules for these two lines:
 
-- **Keep `files` first.** Local system accounts then always resolve locally. A
-  directory entry with the same name cannot hide them, and they continue to
+- **Keep `files` first.** Local system accounts then always resolve locally. An
+  entry in the directory (realm) with the same name cannot hide them, and they continue to
   resolve if winbind is down or the DC is unreachable.
 - **Put `winbind` last**, after `systemd` if it is there. Keep `systemd`: if
   you remove it, resolution breaks for the dynamic users of services with
@@ -281,8 +281,8 @@ flowchart LR
     tgt["TGT from broker"]
   end
   subgraph authz["Resource authorization (yours)"]
-    proj["Entra group proj-x"]
-    synced["synced group in OU=Entra,OU=CloudIdP"]
+    proj["cloud IdP group proj-x"]
+    synced["synced group in the source's IdP-specific OU"]
     res["nas-share-rw<br/>domain-local, OU=Resources"]
     acl["POSIX ACL on /srv/share"]
   end
@@ -302,8 +302,8 @@ kbmanage group member add nas-share-rw proj-x  # proj-x must already be synced
 kbmanage group list
 ```
 
-`proj-x` is a group that exists in Entra and that sync wrote into
-`OU=Entra,OU=CloudIdP`. Do not create it by hand.
+`proj-x` is a group in the cloud IdP that sync wrote into the source's
+IdP-specific OU. Do not create it by hand.
 
 On the file server:
 
@@ -334,7 +334,7 @@ samba-tool group addmembers nas-share-rw proj-x
 
 ### Why the domain-local hop
 
-You can point `valid users` at the Entra group and skip the extra object. But
+You can point `valid users` at the synced group and skip the extra object. But
 then you lose usable revocation:
 
 - The KDC evaluates **domain-local groups at TGS issuance**.
@@ -389,9 +389,8 @@ When you **grant** access:
 - If you added the user to the **domain-local** group, purge the service
   tickets and reconnect. On Windows, run `klist purge` and
   `net use \\nas1 /delete`.
-- If you added the user to a **global** group in Entra, the user needs a **new
-  TGT**. Sign out, then sign in again through the agent. A reconnect is not
-  enough.
+- If you added the user to a **cloud IdP group**, the user needs a **new TGT**.
+  Sign out, then sign in again through the agent. A reconnect is not enough.
 
 When you **revoke** access, do one of these:
 
@@ -405,7 +404,7 @@ Neither action reaches a session that is already open.
 flowchart TD
   chg["Membership changed"] --> which{"Which group?"}
   which -->|"domain-local"| dl["Purge service tickets, reconnect"]
-  which -->|"global, in Entra"| gl["New TGT: sign out and back in"]
+  which -->|"synced cloud IdP group"| gl["New TGT: sign out and back in"]
   dl --> open{"Session still open?"}
   gl --> open
   open -->|"yes"| masked["Masked until disconnect,<br/>smbd restart or smbcontrol kill"]
@@ -414,9 +413,9 @@ flowchart TD
 
 ## 9. Managing this afterwards
 
-The recurring work — who has access — happens **in Entra**, where the group
+The recurring work — who has access — happens **in the cloud IdP**, where group
 membership is stored. When a person joins or leaves a project, nothing changes
-on the file server or in the directory.
+on the file server or in the directory (realm).
 
 The on-prem work is per-share, and you do it one time: create a resource group,
 nest a synced group into it, and set an ACL.
@@ -429,7 +428,7 @@ When a person reaches the server but a folder denies access, run
 - It will not write to `OU=CloudIdP`. Those OUs belong to `kerbridge-sync`, and
   a second writer that races the reconciliation loop is exactly the problem
   that this project avoids.
-- It *can* delete there, to repair a directory that is in a bad state. It
+- It *can* delete there, to repair a directory (realm) that is in a bad state. It
   states clearly what that costs: it deletes the SID, and every filesystem ACE
   that names the SID then points to nothing. It is not a cleanup tool. Retired
   objects are intended to accumulate.

@@ -18,8 +18,8 @@ how the containers are assembled and run, and the traps in each part.
 
 ```mermaid
 flowchart LR
-  client["Windows client"]
-  msgraph["Microsoft Graph"]
+  client["Workstation client"]
+  idp["Cloud IdP"]
 
   subgraph realmc["realm network namespace"]
     realm["realm: Samba AD DC"]
@@ -41,7 +41,7 @@ flowchart LR
   broker -->|"636 ldaps"| realm
   broker -->|"issuer.sock"| issuerd
   sync -->|"636 ldaps"| realm
-  sync -->|"443 https"| msgraph
+  sync -->|"443 https"| idp
   nas1 -->|"joined member"| realm
 ```
 
@@ -52,9 +52,9 @@ this repository, and every base image is pinned by digest.
 |---|---|---|
 | `realm` | The domain: Samba AD DC, KDC and Samba DNS. | 88 tcp+udp (KDC, all interfaces), 389 and 445 (a member joins through these), 636 LDAPS and 53 DNS (not published by default) |
 | `issuer` | The custom `issuerd`. It is the only component that makes TGTs. It runs from the `realm` image, and it shares that container's volumes and network namespace, because it needs local access to the AD databases. A Debian deployment runs the same two programs as two systemd units. | none |
-| `broker` | It validates the Entra token, finds the identity under `OU=Entra,OU=CloudIdP,<base DN>` through LDAPS, and asks `issuerd` for the ticket through a unix socket. It holds no KDC authority. It runs unprivileged, with a read-only rootfs, and it executes nothing. | 443, on behalf of `caddy` |
+| `broker` | It validates the source's identity proof, finds the identity under that source's IdP-specific OU through LDAPS, and asks `issuerd` for the ticket through a unix socket. It holds no KDC authority. It runs unprivileged, with a read-only rootfs, and it executes nothing. | 443, on behalf of `caddy` |
 | `caddy` | The TLS terminator in front of the broker, and the only component that a client connects to. It shares the broker's network namespace, so that their loopback is the one that host networking gives them in production. | — (uses the broker's) |
-| `sync` | It reads the users and groups of each configured source from MS Graph, one source after another, over its own LDAP connection. It writes them to the directory (realm) over LDAPS as `svc-kerbridge-sync-entra`. A source stays idle until `secrets/idp/<name>/credential` has content. | none |
+| `sync` | It reads users and groups from each configured cloud IdP, one source at a time. It writes them to the source's IdP-specific OU over LDAPS as `svc-kerbridge-sync-<source>`. A source stays idle until `secrets/idp/<name>/credential` has content. | none |
 | `nas1` | **Optional.** A joined Samba member, so that the full path operates on one machine. It is a fixture, not a product — [`nas1` is not part of this stack](#nas1-is-not-part-of-this-stack). | 445 |
 
 `realm` and `broker` run with `cap_drop: ALL` and `no-new-privileges`. `realm`
@@ -168,13 +168,13 @@ bakes the realm identity into a durable database.
   It is `kbsetup directory`, the same binary a Debian deployment runs from
   `/usr/sbin`, in a throwaway container that holds `secrets/generated/` and
   nothing else. It creates:
-  - `OU=CloudIdP` and `OU=Entra` inside it (which `kerbridge-sync` writes into
-    but never creates) and
-    `OU=Resources` (deliberately outside it, for the operator's own groups)
-  - `svc-kerbridge-broker`, `svc-kerbridge-sync-entra` and `svc-kerbridge-manage`, with freshly generated
-    passwords
-  - the delegations: a confined `OU=Entra,OU=CloudIdP` write for `svc-kerbridge-sync-entra`; `OU=Resources`
-    write plus `OU=CloudIdP` delete-child and nothing else for `svc-kerbridge-manage`
+  - `OU=CloudIdP`, one IdP-specific OU for each listed source, and
+    `OU=Resources` outside them
+  - `svc-kerbridge-broker`, one `svc-kerbridge-sync-<source>` per listed source,
+    and `svc-kerbridge-manage`, with freshly generated passwords
+  - the delegations: each sync account can write only its source's IdP-specific
+    OU; `svc-kerbridge-manage` can write `OU=Resources` and delete children under
+    `OU=CloudIdP`, and nothing else
 - **`scripts/bench/seed-demo.sh` is bench only.** It hand-provisions the
   admission group, a demo user with its external identity, and the
   resource-group chain, so the broker's end-to-end path can be proven without
@@ -248,8 +248,8 @@ to flip, and no restart — the service re-checks the file on a poll.
 Why? `secrets/idp` is a directory mount, so an absent or empty credential
 file inside it is not a refused bind mount — sync skips that source for the
 cycle with a warning, and every other source still mirrors. Only emptiness is
-forgiven: a credential that is present but wrong, such as the portal's *Secret
-ID* GUID, still fails configuration loudly.
+forgiven: a credential that is present but wrong fails loudly. For Entra, the
+common example is the portal's *Secret ID* GUID pasted instead of its *Value*.
 
 <details>
 <summary>Why not a `sync` compose profile</summary>

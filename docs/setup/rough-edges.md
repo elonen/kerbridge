@@ -24,15 +24,19 @@ machine — see
 [Host networking and DNS (`DESIGN.md`)](../../docs/design/api-and-network.md#host-networking-and-dns).
 `KERBRIDGE_SUBNET` and `REALM_IPV4` stay in `.env` for the same reason.
 
-## Sync authenticates with a client secret
+## Entra sync authenticates with a client secret
 
-A certificate credential is the intended default, and it is not built.
+This section applies to Entra sources only. A certificate credential is the
+intended default, and it is not built.
 
 **What to do:** set `sync_credential_expires` in
 `configs/idp_<source>.toml`'s `[provider_config]`, so that sync warns you
 before the secret expires. Update the value each time that you rotate the
 credential. If you do not, sync reports months of remaining time on a dead
 credential.
+
+authentik reports its API token's expiry directly, so an authentik source has no
+`sync_credential_expires` setting.
 
 ## A rename in Entra signs that user out one time
 
@@ -54,7 +58,7 @@ against all of the above. Use it when the derived name is legal but wrong.
 
 Windows shows the login name as the file owner and in the *Security* tab. If
 the files of a person who is now called Jane Doe show `EXAMPLE\jane.smith`,
-then the directory fails at its job.
+then the directory (realm) is stale.
 
 First surprise: if you change `sam_source` in `configs/idp_<source>.toml` while
 renames are on, one cycle renames *each* user of that source whose name derives
@@ -153,7 +157,10 @@ keychain-access-group entitlement, which needs a real signing identity.
 The repair is a Developer ID signature and notarization. Like the MSI, that is
 a release-time act by the publisher.
 
-## On a machine with no PRT, one dialog decided if renewal would ever work
+## Entra Windows sign-in: a machine with no PRT needs browser sign-in
+
+This section applies to Entra Windows sign-in only. authentik always uses
+browser sign-in.
 
 Windows asks *"Sign in to all apps and websites on this device?"*. The answer
 *"No, this app only"* keeps the account out of the Windows account manager,
@@ -207,7 +214,8 @@ The feature is off by default.
 on, and pilot it on one machine.
 
 **The edge that remains:** the broker refuses a *revoke* while the feature is
-off. So a device that is given up in that window keeps its dead directory row
+off. So a device that is given up in that window keeps its stale grant row in
+the directory (realm)
 and one `device_grant_max_per_user` slot, until `kbmanage device revoke` clears
 them.
 
@@ -282,7 +290,7 @@ gets a new one instead of adopting it; a transport outage is reported as an
 outage, and the tray recovers when it re-injects from the grant, with no
 browser; a sign-out drops the tickets and does not change the grant; and *Give
 up* destroys the TPM key **and** revokes at the broker, so afterwards the grant
-is gone from the directory, not only flagged.
+is gone from the directory (realm), not only flagged.
 
 The two display faults have one shared cause: the tray shows a
 signed-in/signed-out binary for a machine whose state is at least four
