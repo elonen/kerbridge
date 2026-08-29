@@ -5,6 +5,8 @@
 #
 # A standalone proof, kept for manual iteration; the `make test-authentik` tier
 # is deploy/scripts/bench/ci-authentik.sh, which stands its own authentik up.
+# The sign-in itself -- the flow-executor loop -- is approve.sh, shared with that
+# tier; this drives PKCE, the authorize request and the code exchange around it.
 #
 #   ./authcode.sh                 # cold stack, proof, tear down with volume
 #   ./authcode.sh --keep          # run the proof and leave the stack intact
@@ -12,14 +14,14 @@
 #   ./authcode.sh flow            # sign in against an already-provisioned stack
 #   ./authcode.sh down            # tear down, volume included
 #
-# MEASURED against ghcr.io/goauthentik/server:2026.8.0 (kerbridge #17). Read the
-# comment on each step before changing it: the long ones are all there because
-# the obvious version of that step is what actually failed, and every one of
-# those failures reported something other than its cause.
+# MEASURED against ghcr.io/goauthentik/server:2026.8.0. Read the
+# comment on each step before changing it -- here and in approve.sh -- because
+# the obvious version of that step is what actually failed, reporting something
+# other than its cause.
 #
-# Dependencies: curl, python3. Deliberately no jq -- python3 is already a
-# testbench dependency (testbench/mock-idp/idp.py) and does PKCE too, so this
-# stays a two-tool script.
+# Dependencies: curl, python3 (and approve.sh's curl and perl). Deliberately no
+# jq -- python3 is already a testbench dependency (testbench/mock-idp/idp.py) and
+# does PKCE too, so this stays a two-tool script.
 
 set -euo pipefail
 
@@ -76,7 +78,6 @@ trap cleanup EXIT
 
 urlenc() { python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read(),safe=""),end="")'; }
 jget()   { python3 -c 'import sys,json;d=json.load(open(sys.argv[1]));print(d.get(sys.argv[2],""),end="")' "$1" "$2"; }
-header() { tr -d '\r' < "$1" | grep -i "^$2:" | tail -1 | cut -d' ' -f2-; }
 
 # ---------------------------------------------------------------------------
 # 0. containers
@@ -191,7 +192,7 @@ PY
 }
 
 # ---------------------------------------------------------------------------
-# 1. the authorization request
+# PKCE, sign in through approve.sh, and exchange the code
 # ---------------------------------------------------------------------------
 
 flow() {
@@ -205,166 +206,35 @@ print(base64.urlsafe_b64encode(hashlib.sha256(sys.argv[1].encode()).digest()).rs
   STATE="state-$(python3 -c 'import secrets;print(secrets.token_hex(8),end="")')"
   NONCE="nonce-$(python3 -c 'import secrets;print(secrets.token_hex(8),end="")')"
 
-  say "GET /application/o/authorize/"
+  # The executor loop lives in approve.sh -- the same `$BROWSER` the CI tier
+  # (deploy/scripts/bench/ci-authentik.sh) drives, so this manual proof and the
+  # automated sign-in exercise one implementation. approve.sh takes the whole
+  # authorization URL, drives identification and password, and prints the code
+  # it read off the terminal redirect. Read approve.sh's own comments for the
+  # `query` encoding and the two curl flags that decide whether the flow runs.
+  say "sign in through approve.sh"
   rm -f "$JAR"
-  curl -s -o /dev/null -D "$WORK/h.authorize" -c "$JAR" \
-    -G "$BASE/application/o/authorize/" \
-    --data-urlencode "response_type=code" \
-    --data-urlencode "client_id=$CLIENT_ID" \
-    --data-urlencode "redirect_uri=$REDIRECT_URI" \
-    --data-urlencode "scope=$SCOPE" \
-    --data-urlencode "state=$STATE" \
-    --data-urlencode "nonce=$NONCE" \
-    --data-urlencode "code_challenge=$CHALLENGE" \
-    --data-urlencode "code_challenge_method=S256"
+  # CLIENT_ID, STATE, NONCE and the base64url CHALLENGE are already url-safe;
+  # the redirect and the space-separated scope are the two that need encoding.
+  local auth_url="$BASE/application/o/authorize/?response_type=code&client_id=$CLIENT_ID"
+  auth_url="$auth_url&redirect_uri=$(printf '%s' "$REDIRECT_URI" | urlenc)"
+  auth_url="$auth_url&scope=$(printf '%s' "$SCOPE" | urlenc)"
+  auth_url="$auth_url&state=$STATE&nonce=$NONCE"
+  auth_url="$auth_url&code_challenge=$CHALLENGE&code_challenge_method=S256"
 
-  local loc; loc="$(header "$WORK/h.authorize" location)"
-  [ -n "$loc" ] || die "authorize did not redirect at all"
-  case "$loc" in
-    */if/flow/*) : ;;
-    # A 302 straight back to the redirect_uri carrying error= means the request
-    # never reached a flow. `invalid_request` with "The request is otherwise
-    # malformed" is what an empty provider `grant_types` looks like from here.
-    *error=*) die "authorize refused the request: $loc" ;;
-    *) die "unexpected redirect: $loc" ;;
-  esac
-
-  # THE `query` ENCODING, which is the thing #17 exists to pin down.
-  #
-  # At 2026.8.0 the authorize view redirects to
-  #     /if/flow/<flow-slug>/?<the original OAuth2 params, verbatim>&next=<encoded re-entry URL>
-  # -- there is no `query` parameter in that Location at all. `query` is what
-  # the *browser* flow interface then sends to the executor: it takes its own
-  # window.location.search and passes the whole thing as one opaque value.
-  #
-  # So: take everything after the FIRST `?` of the Location, byte for byte, and
-  # url-encode it whole as a single parameter value. Do not reassemble it, do
-  # not re-encode the parts, do not drop `next` -- `next` is the only thing
-  # that gets you back to /application/o/authorize/ at the end of the flow
-  # (executor.py reads it out of the session at :407).
-  FLOW_SLUG="${loc#*/if/flow/}"; FLOW_SLUG="${FLOW_SLUG%%/*}"
-  RAW_QUERY="${loc#*\?}"
-  QUERY="$(printf '%s' "$RAW_QUERY" | urlenc)"
-  echo "flow slug: $FLOW_SLUG" >&2
-
-  # -------------------------------------------------------------------------
-  # 2. the executor loop
-  # -------------------------------------------------------------------------
-  #
-  # Branch on `component`. Never assume a sequence: which stages are in the
-  # flow is instance state, not a protocol.
-  #
-  # Cookie jar is mandatory -- the plan lives in the HTTP session, and without
-  # it every call restarts the flow.
-  #
-  # TWO CURL FLAGS DECIDE WHETHER THIS WORKS, and both failures look like an
-  # authentik bug rather than a curl mistake.
-  #
-  # `-L`, because every successful stage answers **302 back to the executor's
-  # own URL** with an empty body (`stage_ok()` -> `redirect_with_qs`, a
-  # post/redirect/get). Without -L you read zero bytes and conclude the flow
-  # died.
-  #
-  # And NO `-X POST`. `-d` already selects POST; `-X POST` additionally pins the
-  # method across redirect follows, which defeats curl's 302 POST-to-GET
-  # downgrade -- so the follow-up re-POSTs the *previous* stage's body into the
-  # *next* stage. The result is a 200 challenge carrying a completely plausible
-  # `response_errors` for a field you never meant to submit
-  # ("password: This field is required", then "non_field_errors: Empty
-  # response"), and the loop walks into the authenticator-validate stage and
-  # sticks there forever, because that stage skips on GET and only on GET
-  # (`authenticator_validate/stage.py:281-283`). Measured: with `-X POST` the
-  # flow never terminates; without it, it terminates in three calls.
-
-  say "driving $FLOW_SLUG"
-  local body="$WORK/challenge.json" component payload seq=""
-  curl -sL -o "$body" -b "$JAR" -c "$JAR" -H 'Accept: application/json' \
-    "$BASE/api/v3/flows/executor/$FLOW_SLUG/?query=$QUERY"
-
-  local i
-  for i in $(seq 1 12); do
-    component="$(jget "$body" component)"
-    [ -n "$component" ] || die "empty challenge body at step $i"
-    seq="$seq $component"
-    echo "  [$i] $component" >&2
-
-    case "$component" in
-      xak-flow-redirect) break ;;
-      ak-stage-access-denied)
-        die "access denied: $(jget "$body" error_message)" ;;
-
-      ak-stage-identification)
-        payload="{\"component\":\"$component\",\"uid_field\":\"$USERNAME\"}" ;;
-      ak-stage-password)
-        # A separate stage: the identification challenge reports
-        # password_fields: false, so the password never rides along with the
-        # username.
-        payload="{\"component\":\"$component\",\"password\":\"$PASSWORD\"}" ;;
-      ak-stage-authenticator-validate)
-        # The stage research warned about. It IS bound into the shipped
-        # default-authentication-flow at order 30 -- but with a device-less user
-        # it NEVER SURFACES AS A CHALLENGE: its get() sees no device and the
-        # shipped not_configured_action of `skip` calls stage_ok() before any
-        # challenge is rendered, so it is consumed inside the redirect chain.
-        # Kept as a branch because a user with an enrolled device would stop
-        # here for real, and because the branch is what makes the failure
-        # legible instead of an infinite loop.
-        payload="{\"component\":\"$component\"}" ;;
-      ak-stage-consent)
-        # Not reached here -- the provider's authorization flow is
-        # default-provider-authorization-implicit-consent. Handled so that
-        # switching to the explicit-consent flow does not need a code change.
-        payload="{\"component\":\"$component\",\"token\":\"$(jget "$body" token)\"}" ;;
-      ak-stage-user-login)
-        # Also never seen. The User Login stage IS required -- it is bound at
-        # order 100 of the default flow and it is what turns the plan into an
-        # authenticated session, without which re-entering /application/o/authorize/
-        # would just start the flow again -- but it is a non-interactive stage
-        # and is likewise consumed inside the redirect chain.
-        payload="{\"component\":\"$component\"}" ;;
-      *)
-        cat "$body" >&2; die "unhandled stage component: $component" ;;
-    esac
-
-    curl -sL -o "$body" -b "$JAR" -c "$JAR" \
-      -H 'Accept: application/json' -H 'Content-Type: application/json' \
-      "$BASE/api/v3/flows/executor/$FLOW_SLUG/?query=$QUERY" \
-      -d "$payload"
-  done
-  [ "$component" = xak-flow-redirect ] || die "flow never terminated (last: $component)"
-  echo "component sequence:$seq" >&2
-
-  # -------------------------------------------------------------------------
-  # 3. the terminal redirect is NOT the code
-  # -------------------------------------------------------------------------
-  #
-  # `to` is the RELATIVE /application/o/authorize/?<original params> -- the
-  # `next` value carried through the flow, not redirect_uri?code=. The code
-  # costs one more request: re-enter the authorize view with the now-
-  # authenticated session cookie, and it 302s to the callback.
-
-  local to; to="$(jget "$body" to)"
-  echo "xak-flow-redirect.to = $to" >&2
-  case "$to" in
-    "$REDIRECT_URI"*) : ;;                       # a future version might do this
-    /*) to="$BASE$to" ;;
-    *) die "unexpected redirect target: $to" ;;
-  esac
-  curl -s -o /dev/null -D "$WORK/h.callback" -b "$JAR" -c "$JAR" "$to"
-
-  local cb; cb="$(header "$WORK/h.callback" location)"
-  case "$cb" in
-    "$REDIRECT_URI"*code=*) : ;;
-    *) die "no authorization code came back: $cb" ;;
-  esac
-  CODE="$(printf '%s' "$cb" | sed -E 's/.*[?&]code=([^&]*).*/\1/')"
-  local got_state; got_state="$(printf '%s' "$cb" | sed -E 's/.*[?&]state=([^&]*).*/\1/')"
+  # No listener on REDIRECT_URI here, so approve.sh's loopback delivery is the
+  # one call that misses; its `code=`/`state=` lines are read off stdout instead.
+  local approved
+  approved="$(KB_APPROVE_LOG=/dev/stderr KB_APPROVE_USER="$USERNAME" \
+    KB_APPROVE_PASSWORD="$PASSWORD" "$HERE/approve.sh" "$auth_url")" ||
+    die "approve.sh could not complete the sign-in"
+  CODE="$(printf '%s\n' "$approved" | sed -n 's/^code=//p')"
+  local got_state; got_state="$(printf '%s\n' "$approved" | sed -n 's/^state=//p')"
+  [ -n "$CODE" ] || die "approve.sh returned no code"
   [ "$got_state" = "$STATE" ] || die "state mismatch: $got_state != $STATE"
-  echo "code: ${CODE:0:8}...  state echoed back intact" >&2
+  echo "signed in; state echoed back intact" >&2
 
-  # -------------------------------------------------------------------------
-  # 4. exchange
-  # -------------------------------------------------------------------------
+  # Exchange the code for tokens.
   say "POST /application/o/token/"
   # Public client: client_id in the body, no secret, code_verifier instead.
   local code; code=$(curl -s -o "$WORK/token.json" -w '%{http_code}' \
@@ -378,7 +248,7 @@ print(base64.urlsafe_b64encode(hashlib.sha256(sys.argv[1].encode()).digest()).rs
 }
 
 # ---------------------------------------------------------------------------
-# 5. verify what came back
+# verify what came back
 # ---------------------------------------------------------------------------
 
 verify() {
