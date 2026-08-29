@@ -18,6 +18,27 @@ use crate::sync::{
     CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, Subject, build_desired,
 };
 
+/// Narrow one complete enumeration only when every configured root that lacks
+/// the admission root's planner freeze is visible.
+fn complete_snapshot(
+    read: crate::sync::Enumeration,
+    admission: Subject,
+    grant: Option<Subject>,
+    roots: Vec<Subject>,
+) -> Result<SourceSnapshot, String> {
+    let missing: Vec<&str> =
+        roots.iter().filter(|root| !read.groups.contains_key(*root)).map(Subject::as_str).collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "configured authentik group root(s) absent from the read: {}; the credential may have \
+             returned a coherent object-filtered subset, so no snapshot was published",
+            missing.join(", ")
+        ));
+    }
+    let (desired, refused) = build_desired(read, &admission, &roots);
+    Ok(SourceSnapshot { desired, admission, grant, refused })
+}
+
 /// One authentik instance, read over its REST API.
 ///
 /// Directory (realm) details such as the bind identity and OU do not cross the
@@ -68,8 +89,18 @@ impl AuthentikSource {
         kerbridge_core::secret::read_optional(&self.credential_file)
     }
 
-    /// The enumeration, narrowed to the population the realm should hold.
-    fn snapshot(&self, read: crate::sync::Enumeration) -> SourceSnapshot {
+    /// The enumeration, narrowed to the population the realm should hold, once
+    /// every configured non-admission root is visible.
+    ///
+    /// authentik applies object permissions before pagination and its count. A
+    /// credential can therefore return a self-consistent `200` that hides a
+    /// complete, disconnected subgraph. Dangling-id checks catch a permissions
+    /// cut through a visible membership edge, but not a configured extra or
+    /// device-grant root hidden together with everything it reaches. Publishing
+    /// that subset would retire the missing objects. The admission root already
+    /// has the planner's no-operations freeze; these roots need the equivalent
+    /// invariant here, before a snapshot exists.
+    fn snapshot(&self, read: crate::sync::Enumeration) -> Result<SourceSnapshot, String> {
         // The device-grant group joins the closure roots the way an allowlist
         // entry does: someone held only by it gets a directory (realm) object and no
         // admission, so the two groups are additive, never alternatives.
@@ -77,8 +108,7 @@ impl AuthentikSource {
         let grant = self.grant_group_id.clone().map(Subject::new);
         roots.extend(grant.clone());
         let admission = Subject::new(self.admission_group_id.clone());
-        let (desired, refused) = build_desired(read, &admission, &roots);
-        SourceSnapshot { desired, admission, grant, refused }
+        complete_snapshot(read, admission, grant, roots)
     }
 }
 
@@ -135,7 +165,7 @@ impl DirectorySource for AuthentikSource {
         };
 
         let read = assemble(&users, &groups).map_err(SourceError::NotWhole)?;
-        Ok(Progress::Complete(self.snapshot(read)))
+        self.snapshot(read).map(Progress::Complete).map_err(SourceError::NotWhole)
     }
 
     /// authentik reports an API token's own expiry to the bearer through the
@@ -155,5 +185,80 @@ impl DirectorySource for AuthentikSource {
     /// of what its problems are keyed by.
     fn credential_subject(&self) -> String {
         self.source.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::sync::{DesiredGroup, DesiredUser, Enumeration, Membership};
+
+    const ADMISSION: &str = "9665b31a-b1e6-42e6-9204-45e14bb0eb21";
+    const EXTRA: &str = "0af8e7f1-82d8-4265-9f16-844061421ae4";
+    const USER: &str = "19427827-69e8-4d8f-9db4-b90bd5ff364e";
+
+    /// A coherent visible subgraph: one non-empty admission group and its user.
+    /// The configured EXTRA root and everything reachable only from it have been
+    /// hidden together, so no visible membership id dangles.
+    fn coherent_filtered_read() -> Enumeration {
+        let admission = Subject::new(ADMISSION);
+        let user = Subject::new(USER);
+        Enumeration {
+            users: BTreeMap::from([(
+                user.clone(),
+                DesiredUser {
+                    display_name: "Ada Lovelace".to_owned(),
+                    name_candidates: vec![],
+                    enabled: true,
+                },
+            )]),
+            groups: BTreeMap::from([(
+                admission.clone(),
+                DesiredGroup { display_name: "kb-admission".to_owned() },
+            )]),
+            membership: BTreeMap::from([(admission, vec![Membership::User(user)])]),
+            refused: BTreeMap::new(),
+        }
+    }
+
+    fn snapshot(
+        read: Enumeration,
+        grant: Option<&str>,
+        allowlist: &[&str],
+    ) -> Result<SourceSnapshot, String> {
+        let mut roots: Vec<Subject> = allowlist.iter().copied().map(Subject::new).collect();
+        let grant = grant.map(Subject::new);
+        roots.extend(grant.clone());
+        complete_snapshot(read, Subject::new(ADMISSION), grant, roots)
+    }
+
+    #[test]
+    fn a_coherent_hidden_extra_root_yields_no_snapshot() {
+        let why = snapshot(coherent_filtered_read(), None, &[EXTRA])
+            .err()
+            .expect("a hidden configured root is not a snapshot");
+        assert!(why.contains(EXTRA), "{why}");
+    }
+
+    #[test]
+    fn a_coherent_hidden_device_grant_root_yields_no_snapshot() {
+        let why = snapshot(coherent_filtered_read(), Some(EXTRA), &[])
+            .err()
+            .expect("a hidden configured root is not a snapshot");
+        assert!(why.contains(EXTRA), "{why}");
+    }
+
+    #[test]
+    fn a_visible_configured_root_preserves_the_snapshot() {
+        let mut read = coherent_filtered_read();
+        read.groups.insert(
+            Subject::new(EXTRA),
+            DesiredGroup { display_name: "authentik Admins".to_owned() },
+        );
+        read.membership.insert(Subject::new(EXTRA), vec![]);
+        let snapshot = snapshot(read, Some(EXTRA), &[EXTRA]).expect("every root is visible");
+        assert!(snapshot.desired.groups.contains_key(&Subject::new(EXTRA)));
     }
 }
