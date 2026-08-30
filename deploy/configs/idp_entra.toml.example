@@ -47,13 +47,15 @@
 #   -entra, _goog, ...  appended to every synchronized group's login name, so
 #                       `payroll` becomes `payroll-entra`. Up to 20 characters,
 #                       none of them whitespace or anything AD or a DN rejects.
-#   none                no suffix. The right answer while this is your only
-#                       cloud IdP and you accept renaming its groups if you ever
-#                       add a second.
+#   none                no suffix.
 #
-# Choose it before a second source exists. Chosen afterwards it renames groups
-# that are already in use, and a share ACL refers to the old name.
-# REQUIRED. KerBridge does not start until this line is completed.
+# Unset derives `-` and this source's name, which is the answer that cannot
+# collide. State `none` to drop the suffix -- a shorter group name while this is
+# your only cloud IdP, at the price of renaming its groups if you ever add a
+# second.
+#
+# Either way, choose before a second source exists. Chosen afterwards it renames
+# groups that are already in use, and a share ACL refers to the old name.
 # Example: "-entra"
 #group_suffix =
 

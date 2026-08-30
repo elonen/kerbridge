@@ -602,10 +602,12 @@ pub struct SourceFile {
     #[cfg_attr(feature = "schema", schemars(example = "{provider}"))]
     pub provider: String,
     /// What this source's group login names end with; the literal `none` means
-    /// no suffix. Not validated here -- the rule is `kerbridge-sync`'s, next to
-    /// the planner that would hit the collision.
+    /// no suffix. Unset derives `-<name>`, which is the answer that cannot
+    /// collide with another source. Not validated here -- the rule is
+    /// `kerbridge-sync`'s, next to the planner that would hit the collision.
+    #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(example = "-{name}"))]
-    pub group_suffix: String,
+    group_suffix: Option<String>,
     #[cfg_attr(
         feature = "schema",
         schemars(example = "CN=svc-kerbridge-sync-{name},CN=Users,DC=example,DC=site")
@@ -641,6 +643,13 @@ impl SourceFile {
     /// The override is for a directory whose existing layout collides.
     pub fn ou(&self, idp_parent_ou: &str) -> String {
         self.ou.clone().unwrap_or_else(|| format!("OU={},{idp_parent_ou}", title_case(&self.name)))
+    }
+
+    /// The derived answer is `-<name>`, never `none`: a suffix costs nothing
+    /// while there is one source and is the only thing that keeps two apart,
+    /// and it cannot be adopted later without renaming groups already in use.
+    pub fn group_suffix(&self) -> String {
+        self.group_suffix.clone().unwrap_or_else(|| format!("-{}", self.name))
     }
 }
 

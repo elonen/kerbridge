@@ -188,10 +188,13 @@ pub enum IdpSettings {
 }
 
 impl IdpSettings {
-    pub fn parse(provider: Provider, table: &toml::Table) -> Result<Self> {
+    /// `name` is the source name. An adapter may derive a default from it --
+    /// the secrets directory is keyed by it, the same way the OU and the bind
+    /// account are -- so a file that states only what is site-specific parses.
+    pub fn parse(provider: Provider, name: &str, table: &toml::Table) -> Result<Self> {
         match provider {
             Provider::Entra => Ok(Self::Entra(entra::Settings::parse(table)?)),
-            Provider::Authentik => Ok(Self::Authentik(authentik::Settings::parse(table)?)),
+            Provider::Authentik => Ok(Self::Authentik(authentik::Settings::parse(name, table)?)),
         }
     }
 
@@ -398,7 +401,8 @@ mod tests {
 
     /// The block this provider's own template carries, parsed.
     fn template_settings(provider: Provider, block: toml::Table) -> IdpSettings {
-        IdpSettings::parse(provider, &block).expect("the block the envelope carried")
+        IdpSettings::parse(provider, provider.name(), &block)
+            .expect("the block the envelope carried")
     }
 
     /// One provider's whole source file with its lines to complete filled in

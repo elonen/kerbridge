@@ -47,13 +47,15 @@
 #   -entra, _goog, ...  appended to every synchronized group's login name, so
 #                       `payroll` becomes `payroll-entra`. Up to 20 characters,
 #                       none of them whitespace or anything AD or a DN rejects.
-#   none                no suffix. The right answer while this is your only
-#                       cloud IdP and you accept renaming its groups if you ever
-#                       add a second.
+#   none                no suffix.
 #
-# Choose it before a second source exists. Chosen afterwards it renames groups
-# that are already in use, and a share ACL refers to the old name.
-# REQUIRED. KerBridge does not start until this line is completed.
+# Unset derives `-` and this source's name, which is the answer that cannot
+# collide. State `none` to drop the suffix -- a shorter group name while this is
+# your only cloud IdP, at the price of renaming its groups if you ever add a
+# second.
+#
+# Either way, choose before a second source exists. Chosen afterwards it renames
+# groups that are already in use, and a share ACL refers to the old name.
 # Example: "-authentik"
 #group_suffix =
 
@@ -97,23 +99,21 @@
 # reserved (authorize, token, device, userinfo, introspect, revoke).
 #
 # State the instance as scheme and host with no path. Everything below is
-# derived from these two.
+# derived from these two. docs/setup/authentik-blueprint.yaml names the
+# Application `kerbridge`, so only a hand-built one restates the slug.
 # REQUIRED. KerBridge does not start until this line is completed.
 # Example: "https://authentik.example.site"
 #url =
-# REQUIRED. KerBridge does not start until this line is completed.
-# Example: "kerbridge"
-#application_slug =
+#application_slug = "kerbridge"
 
 # The Provider's Client ID, from its OAuth2/OpenID Provider page. The agent
 # signs in with it -- a public client on authorization code plus PKCE, with no
 # secret -- and every access token this source accepts must name it in `azp`.
 #
 # Unlike Entra's, this is a string you may write yourself rather than a
-# generated identifier; whatever it says there is what goes here.
-# REQUIRED. KerBridge does not start until this line is completed.
-# Example: "kerbridge"
-#client_id =
+# generated identifier; whatever it says there is what goes here. The blueprint
+# writes `kerbridge`.
+#client_id = "kerbridge"
 
 # The one `aud` this source accepts. Unset means client_id, which is what
 # authentik issues.
@@ -171,7 +171,10 @@
 # expiry to the bearer that holds it, so KerBridge measures the headroom rather
 # than asking you to assert it -- but only if you left "Expiring" on when you
 # created the token.
-# REQUIRED. KerBridge does not start until this line is completed.
+#
+# Unset derives /etc/kerbridge.secrets/idp/<name>/credential, keyed by this
+# source's name the way its OU and its bind account are. State a path only for a
+# host that keeps it somewhere else.
 # Example: "/etc/kerbridge.secrets/idp/authentik/credential"
 #sync_credential_file =
 

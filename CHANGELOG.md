@@ -41,6 +41,14 @@ names the tag, and it stops if that section is absent or empty.
   cleared per source. A deployment with two identity providers no longer
   has the second one's key fetch announce a recovery for the first one's
   outage while that outage is still running.
+- `group_suffix` now defaults to `-` and the source name. State it only to
+  choose `none` or another suffix.
+- An authentik source no longer states `application_slug`, `client_id` or
+  `sync_credential_file` unless it differs from what the setup blueprint
+  creates. Only `url` and `admission_group_id` are left to complete.
+- `kbconfig check` now begins its output with `Config OK` or `Config ERROR`.
+- The example Caddyfile for the Debian packages now shows how to serve a
+  certificate you supply yourself, instead of one Caddy obtains over ACME.
 
 ## 0.9.3
 

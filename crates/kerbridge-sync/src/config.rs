@@ -116,13 +116,13 @@ impl SourceConfig {
         let named = format!("idp_{}.toml", file.name);
         let provider =
             Provider::from_name(&file.provider).with_context(|| format!("{named}: provider"))?;
-        let settings = IdpSettings::parse(provider, &file.provider_config)
+        let settings = IdpSettings::parse(provider, &file.name, &file.provider_config)
             .with_context(|| format!("in {named}"))?;
         Ok(Self {
             source: Source::new(file.name.clone()).with_context(|| format!("{named}: name"))?,
             provider,
             idp_ou: file.ou(parent_ou),
-            group_suffix: group_suffix(&file.group_suffix, &named)?,
+            group_suffix: group_suffix(&file.group_suffix(), &named)?,
             bind_dn: file.bind_dn.clone(),
             bind_password: kerbridge_core::secret::read(&file.bind_password_file)
                 .with_context(|| format!("{named}: bind_password_file"))?,

@@ -153,8 +153,10 @@ pub struct Settings {
 struct Raw {
     #[cfg_attr(feature = "schema", schemars(example = &"https://authentik.example.site"))]
     url: String,
+    #[serde(default = "default_blueprint_name")]
     #[cfg_attr(feature = "schema", schemars(example = &"kerbridge"))]
     application_slug: String,
+    #[serde(default = "default_blueprint_name")]
     #[cfg_attr(feature = "schema", schemars(example = &"kerbridge"))]
     client_id: String,
     #[cfg_attr(feature = "schema", schemars(example = &"kerbridge"))]
@@ -176,8 +178,9 @@ struct Raw {
         schemars(example = &"https://authentik.example.site/application/o/kerbridge/jwks/")
     )]
     jwks_url: Option<String>,
+    #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(example = &"/etc/kerbridge.secrets/idp/authentik/credential"))]
-    sync_credential_file: PathBuf,
+    sync_credential_file: Option<PathBuf>,
     #[cfg_attr(feature = "schema", schemars(example = &"0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"))]
     admission_group_id: String,
     #[cfg_attr(feature = "schema", schemars(example = &"1b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e"))]
@@ -200,9 +203,21 @@ fn default_display_name() -> String {
     PRODUCT_NAME.to_owned()
 }
 
+/// The Application slug and the Client ID that `docs/setup/authentik-blueprint.yaml`
+/// creates. Both are strings the operator chooses, and the shipped blueprint
+/// chooses this one for each, so only a hand-built provider states them.
+fn default_blueprint_name() -> String {
+    "kerbridge".to_owned()
+}
+
+/// Where `kbsetup` and the Compose deployment both put this source's credential.
+fn sync_credential_file(name: &str) -> PathBuf {
+    PathBuf::from(format!("/etc/kerbridge.secrets/idp/{name}/credential"))
+}
+
 impl Settings {
     /// The `[provider_config]` table `kerbridge-core` captured verbatim.
-    pub fn parse(table: &toml::Table) -> Result<Self> {
+    pub fn parse(name: &str, table: &toml::Table) -> Result<Self> {
         let raw: Raw = toml::Value::Table(table.clone())
             .try_into()
             .context("[provider_config], for an authentik source")?;
@@ -223,7 +238,9 @@ impl Settings {
             application_slug: raw.application_slug,
             client_id: raw.client_id,
             display_name: raw.display_name,
-            sync_credential_file: raw.sync_credential_file,
+            sync_credential_file: raw
+                .sync_credential_file
+                .unwrap_or_else(|| sync_credential_file(name)),
             admission_group_id,
             device_grant_group_id,
             extra_group_ids: raw.extra_group_ids,
@@ -663,7 +680,8 @@ pub(crate) const AUTHENTIK_SRC: &str = r#"# authentik: one OAuth2 provider and o
 # reserved (authorize, token, device, userinfo, introspect, revoke).
 #
 # State the instance as scheme and host with no path. Everything below is
-# derived from these two.
+# derived from these two. docs/setup/authentik-blueprint.yaml names the
+# Application `kerbridge`, so only a hand-built one restates the slug.
 {{url}}
 {{application_slug}}
 
@@ -672,7 +690,8 @@ pub(crate) const AUTHENTIK_SRC: &str = r#"# authentik: one OAuth2 provider and o
 # secret -- and every access token this source accepts must name it in `azp`.
 #
 # Unlike Entra's, this is a string you may write yourself rather than a
-# generated identifier; whatever it says there is what goes here.
+# generated identifier; whatever it says there is what goes here. The blueprint
+# writes `kerbridge`.
 {{client_id}}
 
 # The one `aud` this source accepts. Unset means client_id, which is what
@@ -727,6 +746,10 @@ pub(crate) const AUTHENTIK_SRC: &str = r#"# authentik: one OAuth2 provider and o
 # expiry to the bearer that holds it, so KerBridge measures the headroom rather
 # than asking you to assert it -- but only if you left "Expiring" on when you
 # created the token.
+#
+# Unset derives /etc/kerbridge.secrets/idp/<name>/credential, keyed by this
+# source's name the way its OU and its bind account are. State a path only for a
+# host that keeps it somewhere else.
 {{sync_credential_file}}
 
 # The group whose members may hold Kerberos tickets, by the group's pk (a uuid).
@@ -847,8 +870,9 @@ pub mod tests {
         let rendered = kerbridge_core::config::decisions::completed(&rendered, &schema)
             .expect("the template completes");
         let shown = block(&rendered);
-        let stated = Settings::parse(&shown).expect("the template parses");
-        let defaults = Settings::parse(&required()).expect("the minimal document parses");
+        let stated = Settings::parse("authentik", &shown).expect("the template parses");
+        let defaults =
+            Settings::parse("authentik", &required()).expect("the minimal document parses");
         assert_eq!(stated, defaults);
         // Assert derived values separately from template consistency.
         assert_eq!(defaults.display_name, PRODUCT_NAME);
@@ -871,7 +895,7 @@ pub mod tests {
     /// authentik serves it at `<authority>/.well-known/openid-configuration`.
     #[test]
     fn the_issuer_keeps_its_trailing_slash_and_the_authority_does_not() {
-        let settings = Settings::parse(&required()).unwrap();
+        let settings = Settings::parse("authentik", &required()).unwrap();
         assert_eq!(settings.issuer, "https://authentik.example.site/application/o/kerbridge/");
         assert_eq!(settings.authority, "https://authentik.example.site/application/o/kerbridge");
         assert_eq!(
@@ -888,7 +912,7 @@ pub mod tests {
         // in the exact issuer value.
         let mut trailing = required();
         trailing.insert("url".into(), format!("{URL}/").into());
-        assert_eq!(Settings::parse(&trailing).unwrap().issuer, settings.issuer);
+        assert_eq!(Settings::parse("authentik", &trailing).unwrap().issuer, settings.issuer);
     }
 
     /// The six protocol endpoints are instance-global -- they carry no slug, and
@@ -896,7 +920,7 @@ pub mod tests {
     /// one, and the agent reads them out of the discovery document instead.
     #[test]
     fn only_the_per_application_urls_carry_the_slug() {
-        let answered = paths(&Settings::parse(&required()).unwrap());
+        let answered = paths(&Settings::parse("authentik", &required()).unwrap());
         // No endpoint is derived as a URL of this file's. Only the derived URL
         // keys are in scope: `device_grant_group_id` names the device-grant
         // group, not the device-authorization endpoint, and shares only the word.
@@ -919,7 +943,7 @@ pub mod tests {
     fn an_unknown_key_in_the_block_is_an_error() {
         let mut typo = required();
         typo.insert("aplication_slug".into(), "kerbridge".into());
-        let err = Settings::parse(&typo).unwrap_err();
+        let err = Settings::parse("authentik", &typo).unwrap_err();
         assert!(format!("{err:#}").contains("unknown field"), "{err:#}");
     }
 
@@ -937,25 +961,42 @@ pub mod tests {
         for absent in ["scope", "sync_credential_expires"] {
             let mut stated = required();
             stated.insert(absent.into(), "whatever".into());
-            let err = format!("{:#}", Settings::parse(&stated).unwrap_err());
+            let err = format!("{:#}", Settings::parse("authentik", &stated).unwrap_err());
             assert!(err.contains("unknown field"), "{absent}: {err}");
         }
     }
 
-    /// The required keys, each of them the whole deployment: a source with any
-    /// one of them missing serves nobody, and serde reports one per file. The
-    /// admission group joins the token-face four for the directory (IdP) face -- with
+    /// The required keys are the ones only the operator has: this instance's
+    /// address, and which group admits. Neither has a defensible default -- with
     /// no admission group sync mirrors nobody.
     #[test]
     fn the_block_requires_the_values_only_the_operator_has() {
-        for key in
-            ["url", "application_slug", "client_id", "sync_credential_file", "admission_group_id"]
-        {
+        for key in ["url", "admission_group_id"] {
             let mut absent = required();
             absent.remove(key);
-            let err = format!("{:#}", Settings::parse(&absent).unwrap_err());
+            let err = format!("{:#}", Settings::parse("authentik", &absent).unwrap_err());
             assert!(err.contains(key), "{key}: {err}");
         }
+    }
+
+    /// The rest of the block has a default, and the default is what the shipped
+    /// blueprint creates or where `kbsetup` writes. A hand-built provider states
+    /// its own; a blueprint-built one states nothing and gets these.
+    #[test]
+    fn the_blueprint_answers_the_rest_of_the_block() {
+        let mut bare = required();
+        for key in ["application_slug", "client_id", "sync_credential_file"] {
+            bare.remove(key);
+        }
+        let settings = Settings::parse("authentik", &bare).expect("the blueprint's own values");
+        assert_eq!(settings.application_slug, SLUG);
+        assert_eq!(settings.client_id, CLIENT_ID);
+        // Keyed by the source name, which is what the secrets directory is keyed
+        // by too -- so a second authentik source needs no path of its own.
+        assert_eq!(
+            Settings::parse("staff", &bare).unwrap().sync_credential_file,
+            std::path::Path::new("/etc/kerbridge.secrets/idp/staff/credential")
+        );
     }
 
     /// The sync credential rides to this host in a bearer header and the signing
@@ -967,17 +1008,17 @@ pub mod tests {
         for key in ["url", "issuer", "authority", "jwks_url"] {
             let mut plain = required();
             plain.insert(key.into(), "http://authentik.example.site".into());
-            let err = format!("{:#}", Settings::parse(&plain).unwrap_err());
+            let err = format!("{:#}", Settings::parse("authentik", &plain).unwrap_err());
             assert!(err.contains(key) && err.contains("https"), "{key}: {err}");
         }
         // A prefix test would accept this and fail at the request instead.
         let mut torso = required();
         torso.insert("jwks_url".into(), "https://".into());
-        assert!(Settings::parse(&torso).is_err());
+        assert!(Settings::parse("authentik", &torso).is_err());
         // And it would refuse this, which is a good https URL.
         let mut shouted = required();
         shouted.insert("jwks_url".into(), "HTTPS://authentik.example.site/jwks/".into());
-        assert!(Settings::parse(&shouted).is_ok());
+        assert!(Settings::parse("authentik", &shouted).is_ok());
     }
 
     /// The admission group is bound by pk, a uuid, and the likely mistake is the
@@ -987,7 +1028,7 @@ pub mod tests {
     fn a_group_id_that_is_not_a_uuid_is_refused_by_name() {
         let mut named = required();
         named.insert("admission_group_id".into(), "kb-admission".into());
-        let err = format!("{:#}", Settings::parse(&named).unwrap_err());
+        let err = format!("{:#}", Settings::parse("authentik", &named).unwrap_err());
         assert!(err.contains("admission_group_id") && err.contains("uuid"), "{err}");
     }
 
@@ -996,10 +1037,10 @@ pub mod tests {
     /// move the other.
     #[test]
     fn the_audience_defaults_to_the_client_id_and_is_still_a_key() {
-        assert_eq!(Settings::parse(&required()).unwrap().audience, CLIENT_ID);
+        assert_eq!(Settings::parse("authentik", &required()).unwrap().audience, CLIENT_ID);
         let mut stated = required();
         stated.insert("audience".into(), "some-other-application".into());
-        let settings = Settings::parse(&stated).unwrap();
+        let settings = Settings::parse("authentik", &stated).unwrap();
         assert_eq!(settings.audience, "some-other-application");
         assert_eq!(settings.client_id, CLIENT_ID);
     }
@@ -1207,7 +1248,7 @@ pub mod tests {
     /// is a deployment mid-bootstrap, not a wrong one. No network is touched.
     #[test]
     fn no_credential_yet_warns_on_the_authenticated_legs() {
-        let settings = Settings::parse(&required()).unwrap();
+        let settings = Settings::parse("authentik", &required()).unwrap();
         let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
         let probes = runtime.block_on(authenticated_probes(
             &settings,

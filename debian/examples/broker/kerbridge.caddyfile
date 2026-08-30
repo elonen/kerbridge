@@ -9,6 +9,11 @@
 # stack test exercises end to end.
 #
 # Copy to /etc/caddy/Caddyfile, or import it from one, and replace the address.
+#
+# As written, Caddy obtains and renews the certificate itself over ACME, which
+# needs port 80 reachable from the internet. To supply the certificate yourself
+# instead -- from your own CA, from a wildcard, or from a renewal flow that runs
+# somewhere else -- see the block at the end of this file.
 
 kerbridge.example.site {
 	# Only the documented routes are proxied. Anything else never reaches the
@@ -58,3 +63,28 @@ kerbridge.example.site {
 # `write` is deliberately absent: the response comes from the broker, and any
 # write deadline short enough to matter against an attacker would cut off a
 # legitimate slow issuance instead.
+
+# A certificate you supply yourself, instead of ACME.
+#
+# Caddy's automatic HTTPS is the default above and needs inbound port 80 for the
+# challenge. Where that port is closed, or the certificate comes from your own
+# CA or a wildcard, name the files instead. Two changes, both required: the site
+# address gains an explicit scheme and port, and `auto_https off` stops Caddy
+# from trying to obtain one anyway.
+#
+# The Docker Compose deployment calls this the `external` TLS strategy and makes
+# it the default there, because it keeps issuance credentials -- and, under
+# DNS-01, the authority to alter DNS -- off this host entirely.
+#
+#	{
+#		auto_https off
+#	}
+#
+#	https://kerbridge.example.site:443 {
+#		tls /etc/caddy/tls/broker.crt /etc/caddy/tls/broker.key
+#		... the same handle blocks as above ...
+#	}
+#
+# Caddy reads the files at startup and does not watch them, so a renewal needs a
+# `caddy reload` -- not a restart, which drops connections. The key must be
+# readable by the user Caddy runs as, and by nobody else.

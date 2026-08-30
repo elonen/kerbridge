@@ -104,6 +104,30 @@ fn run() -> Result<u8> {
 /// until the adapter is built -- which at startup is after the process has
 /// committed to running.
 fn check(dir: &Path, online: bool) -> Result<()> {
+    // Collected rather than printed as it goes, because the verdict is only
+    // known at the end and has to lead. A failure still prints what was
+    // gathered before it: those lines are the diagnosis.
+    let mut report = Report::default();
+    let verdict = gather(dir, online, &mut report);
+    println!("{}", if verdict.is_ok() { "Config OK" } else { "Config ERROR" });
+    for line in report.lines {
+        println!("{line}");
+    }
+    for warning in report.warnings {
+        eprintln!("warning: {warning}");
+    }
+    verdict
+}
+
+/// What a run has to say, held until the verdict is known.
+#[derive(Default)]
+struct Report {
+    lines: Vec<String>,
+    /// Stays on stderr, where it was before the verdict line existed.
+    warnings: Vec<String>,
+}
+
+fn gather(dir: &Path, online: bool, report: &mut Report) -> Result<()> {
     every_line_to_complete_is_completed(dir)?;
     let config = Config::load(dir)?;
     one_identity_stated_once(dir)?;
@@ -114,7 +138,7 @@ fn check(dir: &Path, online: bool) -> Result<()> {
         let file = format!("idp_{}.toml", source.name);
         let provider =
             Provider::from_name(&source.provider).with_context(|| format!("{file}: provider"))?;
-        let settings = IdpSettings::parse(provider, &source.provider_config)
+        let settings = IdpSettings::parse(provider, &source.name, &source.provider_config)
             .with_context(|| format!("in {file}"))?;
         sources.push((source, settings));
     }
@@ -122,31 +146,40 @@ fn check(dir: &Path, online: bool) -> Result<()> {
     // The template set less the one optional file, plus it when the set has it.
     let files =
         TEMPLATE_SOURCES.len() - 1 + usize::from(config.kbmanage.is_some()) + config.sources.len();
-    println!("config: {files} files under {} parse and cross-check", dir.display());
-    println!(
+    report
+        .lines
+        .push(format!("config: {files} files under {} parse and cross-check", dir.display()));
+    report.lines.push(format!(
         "realm: {} at {} over {}",
         config.realm.realm,
         config.realm.base_dn(),
         config.realm.ldap_url
-    );
-    println!(
+    ));
+    report.lines.push(format!(
         "broker: {}, issuer socket {}",
         config.broker.listen,
         config.broker.issuer_socket.display()
-    );
-    println!("sync: every {}s", config.sync.interval_seconds);
+    ));
+    report.lines.push(format!("sync: every {}s", config.sync.interval_seconds));
     if config.sources.is_empty() {
-        println!("sources: none listed -- a realm mid-bootstrap, not a broken one");
+        report
+            .lines
+            .push("sources: none listed -- a realm mid-bootstrap, not a broken one".to_owned());
     }
     for (source, _) in &sources {
-        println!("source {}: {}, owns {}", source.name, source.provider, source.ou(&parent_ou));
+        report.lines.push(format!(
+            "source {}: {}, owns {}",
+            source.name,
+            source.provider,
+            source.ou(&parent_ou)
+        ));
     }
     for warning in &config.warnings {
-        eprintln!("warning: {warning}");
+        report.warnings.push(warning.clone());
     }
 
     if online {
-        probe(&sources)?;
+        probe(&sources, report)?;
     }
     Ok(())
 }
@@ -300,7 +333,10 @@ fn one_identity_stated_once(dir: &Path) -> Result<()> {
 /// A warning does not fail: it means nothing answered, which says nothing about
 /// whether the file is right, and an operator who cannot reach the IdP from the
 /// broker host still has to be able to finish validating the file.
-fn probe(sources: &[(&kerbridge_core::config::SourceFile, IdpSettings)]) -> Result<()> {
+fn probe(
+    sources: &[(&kerbridge_core::config::SourceFile, IdpSettings)],
+    report: &mut Report,
+) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -315,7 +351,7 @@ fn probe(sources: &[(&kerbridge_core::config::SourceFile, IdpSettings)]) -> Resu
         let credential = match kerbridge_core::secret::read_optional(file) {
             Ok(credential) => credential,
             Err(e) => {
-                println!("{} FAIL sync credential file -- {e:#}", source.name);
+                report.lines.push(format!("{} FAIL sync credential file -- {e:#}", source.name));
                 failures += 1;
                 continue;
             }
@@ -328,7 +364,9 @@ fn probe(sources: &[(&kerbridge_core::config::SourceFile, IdpSettings)]) -> Resu
                 Verdict::Warn => "warn",
                 Verdict::Fail => "FAIL",
             };
-            println!("{} {mark} {} -- {}", source.name, probe.check, probe.detail);
+            report
+                .lines
+                .push(format!("{} {mark} {} -- {}", source.name, probe.check, probe.detail));
             failures += usize::from(probe.verdict == Verdict::Fail);
         }
     }
@@ -1173,13 +1211,20 @@ mod tests {
             "bind_password_file",
             "idp_entra.toml",
             "provider_config.tenant_id",
+            // The source files are judged even though `main.toml` lists nothing
+            // yet: its `sources` line is itself one of the lines to complete.
+            "idp_authentik.toml",
+            "provider_config.url",
             "provider_config.admission_group_id",
         ] {
             assert!(err.contains(named), "{named} is not in the report:\n{err}");
         }
-        // The source file is judged even though `main.toml` lists nothing yet:
-        // its `sources` line is itself one of the lines to complete.
-        assert!(err.contains("group_suffix"), "{err}");
+        // A key the template gives a default is not a line to complete.
+        for defaulted in
+            ["group_suffix", "provider_config.application_slug", "provider_config.client_id"]
+        {
+            assert!(!err.contains(defaulted), "{defaulted} has a default:\n{err}");
+        }
     }
 
     /// A set straight out of the templates has decided only what it had to: the
@@ -1431,8 +1476,9 @@ mod tests {
 
         let config = Config::load(dir).expect("the set loads once the option has moved");
         for source in &config.sources {
-            let settings = IdpSettings::parse(Provider::Entra, &source.provider_config)
-                .expect("the block parses");
+            let settings =
+                IdpSettings::parse(Provider::Entra, &source.name, &source.provider_config)
+                    .expect("the block parses");
             assert_eq!(
                 settings.paths()["sam_source"],
                 "upn",
@@ -1721,7 +1767,7 @@ mod tests {
             entra["admission_group_id"].as_str(),
             Some("77778888-bbbb-9999-cccc-0000dddd1111")
         );
-        assert_eq!(config.sources[0].group_suffix, "42");
+        assert_eq!(config.sources[0].group_suffix(), "42");
 
         // The prose and the commented defaults are still the template's: this is
         // a line rewrite, and an operator opening the file has to find the file

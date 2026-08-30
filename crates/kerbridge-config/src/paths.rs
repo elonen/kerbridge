@@ -89,7 +89,7 @@ pub fn flatten(config: &Config) -> Result<BTreeMap<String, String>> {
 /// `kbconfig check` is where an unparseable block is reported properly.
 fn settings(source: &SourceFile) -> Option<IdpSettings> {
     let provider = Provider::from_name(&source.provider).ok()?;
-    IdpSettings::parse(provider, &source.provider_config).ok()
+    IdpSettings::parse(provider, &source.name, &source.provider_config).ok()
 }
 
 #[cfg(test)]

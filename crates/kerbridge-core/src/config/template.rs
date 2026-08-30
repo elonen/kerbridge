@@ -373,12 +373,15 @@ const SOURCE_ENVELOPE_SRC: &str = r#"# One cloud IdP, as this realm stores it.
 #   -entra, _goog, ...  appended to every synchronized group's login name, so
 #                       `payroll` becomes `payroll-entra`. Up to 20 characters,
 #                       none of them whitespace or anything AD or a DN rejects.
-#   none                no suffix. The right answer while this is your only
-#                       cloud IdP and you accept renaming its groups if you ever
-#                       add a second.
+#   none                no suffix.
 #
-# Choose it before a second source exists. Chosen afterwards it renames groups
-# that are already in use, and a share ACL refers to the old name.
+# Unset derives `-` and this source's name, which is the answer that cannot
+# collide. State `none` to drop the suffix -- a shorter group name while this is
+# your only cloud IdP, at the price of renaming its groups if you ever add a
+# second.
+#
+# Either way, choose before a second source exists. Chosen afterwards it renames
+# groups that are already in use, and a share ACL refers to the old name.
 {{group_suffix}}
 
 # This source's own directory (realm) account, and the file holding its password. One
@@ -1013,17 +1016,25 @@ mod tests {
             "#,
             &defaulted::<Kbmanage>(),
         );
-        same::<SourceFile>(
-            &completed_envelope(),
+        // `group_suffix` is the one default derived from a sibling key rather
+        // than from a constant, so the two documents are equal after resolution
+        // and not before: the struct holds `None` where the shown line holds the
+        // value that `None` resolves to.
+        let mut shown: SourceFile =
+            toml::from_str(&uncomment(&completed_envelope(), &defaulted::<SourceFile>()))
+                .expect("template parses");
+        let defaults: SourceFile = toml::from_str(
             r#"
             name = "entra"
             provider = "entra"
-            group_suffix = "-entra"
             bind_dn = "CN=svc-kerbridge-sync-entra,CN=Users,DC=example,DC=site"
             bind_password_file = "/etc/kerbridge.secrets/generated/idp/entra/bind_password"
             "#,
-            &defaulted::<SourceFile>(),
-        );
+        )
+        .expect("minimal document parses");
+        assert_eq!(shown.group_suffix(), defaults.group_suffix());
+        shown.group_suffix = None;
+        assert_eq!(shown, defaults);
     }
 
     /// The committed copies are what a reader evaluating the project sees on
