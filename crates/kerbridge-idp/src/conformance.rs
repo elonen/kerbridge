@@ -60,6 +60,64 @@ pub(crate) async fn run(idp: &dyn IdentityProvider, forged: &Forged<'_>, now: i6
     refused(idp, forged.tampered, now, "signature does not verify", "an edited payload").await;
 }
 
+/// A negative fixture proves nothing about the defect its name claims unless
+/// that defect is the only one it carries. A fixture that is *also* expired is
+/// refused whatever else is wrong with it, so it would satisfy its own
+/// expectation while saying nothing -- and check order hides the second defect
+/// rather than reporting it. The corpus, not the verifier, is what has to be
+/// held to one defect per file.
+///
+/// `dimensions` names the header members and claims that may differ from the
+/// positive. The two namespaces share one set of names, which no corpus makes
+/// ambiguous: none of them carries a claim called `alg`, `kid` or `x5t`.
+/// `nonce` is the one claim excluded, because the forge writes a fresh value
+/// into every token it issues and no fixture differs by intent.
+pub(crate) fn differs_only_where_named(
+    positive: &str,
+    nonce: &str,
+    name: &str,
+    token: &str,
+    dimensions: &[&str],
+) {
+    let (want_header, want_claims) = decode(positive, "the positive fixture");
+    let (header, claims) = decode(token, name);
+    let mut changed = moved(&header, &want_header, nonce);
+    changed.append(&mut moved(&claims, &want_claims, nonce));
+    let named: std::collections::BTreeSet<String> =
+        dimensions.iter().map(|d| (*d).to_owned()).collect();
+    assert_eq!(
+        changed, named,
+        "{name} differs from the positive in {changed:?}, and its name claims {named:?}"
+    );
+}
+
+/// The members whose value moved, in either direction: a member the fixture
+/// dropped is as much a difference as one it edited.
+fn moved(
+    doc: &serde_json::Map<String, serde_json::Value>,
+    from: &serde_json::Map<String, serde_json::Value>,
+    nonce: &str,
+) -> std::collections::BTreeSet<String> {
+    doc.keys()
+        .chain(from.keys())
+        .filter(|k| k.as_str() != nonce && doc.get(*k) != from.get(*k))
+        .cloned()
+        .collect()
+}
+
+type Parts =
+    (serde_json::Map<String, serde_json::Value>, serde_json::Map<String, serde_json::Value>);
+
+fn decode(token: &str, what: &str) -> Parts {
+    let member = |part: Option<&str>| -> serde_json::Map<String, serde_json::Value> {
+        let raw = crate::b64url(part.unwrap_or_else(|| panic!("{what} is not a three-part JWT")))
+            .unwrap_or_else(|e| panic!("{what} is not base64url: {e}"));
+        serde_json::from_slice(&raw).unwrap_or_else(|e| panic!("{what} is not JSON: {e}"))
+    };
+    let mut parts = token.split('.');
+    (member(parts.next()), member(parts.next()))
+}
+
 async fn refused(idp: &dyn IdentityProvider, token: &str, now: i64, expected: &str, what: &str) {
     match idp.identify(token, now).await {
         Ok(id) => panic!("{what} was accepted, yielding {id:?}"),

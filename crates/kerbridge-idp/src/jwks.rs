@@ -459,14 +459,19 @@ pub fn parse(body: &str) -> Result<HashMap<String, RsaKey>> {
         let (Some(kid), Some(n), Some(e)) = (entry.kid, entry.n, entry.e) else {
             continue;
         };
-        out.insert(
-            kid,
-            RsaKey {
-                modulus: crate::b64url(&n).context("JWKS modulus is not base64url")?,
-                exponent: crate::b64url(&e).context("JWKS exponent is not base64url")?,
-                alg: entry.alg,
-            },
-        );
+        let key = RsaKey {
+            modulus: crate::b64url(&n).context("JWKS modulus is not base64url")?,
+            exponent: crate::b64url(&e).context("JWKS exponent is not base64url")?,
+            alg: entry.alg,
+        };
+        // Two usable entries under one kid make the token's own `kid` ambiguous,
+        // and a map would resolve it by document order. Which key verified a
+        // token must never depend on that, so the document is refused whole
+        // rather than one of the pair being picked. Entries dropped above do not
+        // collide: they were never selectable.
+        if out.insert(kid.clone(), key).is_some() {
+            bail!("JWKS document publishes two usable keys under kid {kid:?}");
+        }
     }
     if out.is_empty() {
         bail!("JWKS document contains no signing key this build can verify with");
@@ -646,6 +651,33 @@ mod tests {
         ]}"#;
         let keys = parse(doc).unwrap();
         assert_eq!(keys.keys().collect::<Vec<_>>(), vec!["keeper"]);
+    }
+
+    /// A duplicate kid is refused, and only a duplicate the verifier could
+    /// select: an entry this build drops was never a candidate, so a kid it
+    /// shares with a usable key is not ambiguous.
+    #[test]
+    fn refuses_two_usable_keys_under_one_kid() {
+        let doc = |second: &str| {
+            format!(
+                r#"{{"keys":[
+                    {{"kty":"RSA","kid":"shared","alg":"RS256","n":"AQAB","e":"AQAB"}},
+                    {second}
+                ]}}"#
+            )
+        };
+        let dup = r#"{"kty":"RSA","kid":"shared","alg":"RS256","n":"AQAB","e":"AQAB"}"#;
+        let Err(why) = parse(&doc(dup)) else { panic!("a duplicate kid was accepted") };
+        assert!(why.to_string().contains("two usable keys under kid \"shared\""), "{why}");
+
+        for harmless in [
+            r#"{"kty":"RSA","kid":"shared","use":"enc","n":"AQAB","e":"AQAB"}"#,
+            r#"{"kty":"EC","kid":"shared","alg":"ES256","x":"AQAB","y":"AQAB"}"#,
+            r#"{"kty":"RSA","kid":"shared","alg":"RS1","n":"AQAB","e":"AQAB"}"#,
+        ] {
+            let keys = parse(&doc(harmless)).unwrap_or_else(|e| panic!("{harmless}: {e}"));
+            assert_eq!(keys.len(), 1);
+        }
     }
 
     /// The allowlist is asymmetric-only and that is the rule, not its current

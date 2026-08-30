@@ -331,47 +331,54 @@ mod tests {
         parts.join(".")
     }
 
-    /// Every negative in the corpus, each with the rejection it must produce.
-    /// Named individually rather than globbed so that a fixture appearing
-    /// without a matching expectation fails the suite instead of being skipped.
+    /// Every negative in the corpus, each with the rejection it must produce and
+    /// the dimensions it may differ from the positive in. Named individually
+    /// rather than globbed so that a fixture appearing without a matching
+    /// expectation fails the suite instead of being skipped.
+    ///
+    /// `None` is for a fixture that is not a JWT at all, which is what its own
+    /// expectation already says.
     #[tokio::test]
     async fn rejects_every_negative_fixture() {
-        let cases = [
-            ("neg_alg_none.jwt", "disallowed alg"),
-            ("neg_alg_none_unknown_kid.jwt", "disallowed alg"),
+        let cases: [(&str, &str, Option<&[&str]>); 15] = [
+            ("neg_alg_none.jwt", "disallowed alg", Some(&["alg"])),
+            ("neg_alg_none_unknown_kid.jwt", "disallowed alg", Some(&["alg", "kid"])),
             // The provider a deployment gets by leaving the Signing Key unset:
             // `jwt_key` falls back to the client secret and HS256, and the JWKS
             // published beside it is the empty document below.
-            ("neg_alg_hs256.jwt", "disallowed alg"),
-            ("neg_alg_confusion.jwt", "disallowed alg"),
-            ("neg_alg_unknown.jwt", "disallowed alg"),
+            ("neg_alg_hs256.jwt", "disallowed alg", Some(&["alg"])),
+            // The `sub` moves with the algorithm on purpose: the attack is worth
+            // nothing unless the forged token asserts somebody else.
+            ("neg_alg_confusion.jwt", "disallowed alg", Some(&["alg", "sub"])),
+            ("neg_alg_unknown.jwt", "disallowed alg", Some(&["alg"])),
             // The other end of the same setting: an Ed25519 Signing Key, whose
             // JWK the corpus publishes. Correctly signed by a key the document
             // carries, and refused for the algorithm before any key is looked
             // up -- which is the ordering the whole defense rests on.
-            ("neg_alg_eddsa.jwt", "disallowed alg"),
-            ("neg_unknown_kid.jwt", "unknown kid"),
+            ("neg_alg_eddsa.jwt", "disallowed alg", Some(&["alg", "kid"])),
+            ("neg_unknown_kid.jwt", "unknown kid", Some(&["kid"])),
             // Correctly signed with the right key material: only the key's
             // published `alg` refuses it.
-            ("neg_alg_not_published_for_key.jwt", "is not published for alg"),
-            ("neg_garbage.jwt", "not a three-part JWT"),
-            ("neg_expired.jwt", "token has expired"),
+            ("neg_alg_not_published_for_key.jwt", "is not published for alg", Some(&["alg"])),
+            ("neg_garbage.jwt", "not a three-part JWT", None),
+            // authentik writes no `nbf`, so the window is `iat` and `exp` alone.
+            ("neg_expired.jwt", "token has expired", Some(&["exp", "iat"])),
             // The neighbouring application's own honest token. It differs in
             // `iss`, `aud` and `azp`, and what is wrong with it here is that it
             // was minted for somebody else.
-            ("neg_wrong_audience.jwt", "aud is not this application"),
+            ("neg_wrong_audience.jwt", "aud is not this application", Some(&["aud", "azp", "iss"])),
             // The "same identifier for all providers" issuer mode: the audience
             // is still this application's, and only the issuer says otherwise.
-            ("neg_wrong_issuer.jwt", "iss is not the configured issuer"),
+            ("neg_wrong_issuer.jwt", "iss is not the configured issuer", Some(&["iss"])),
             // The claim a scope mapping cannot forge, disagreeing with the one
             // it can.
-            ("neg_azp_mismatch.jwt", "azp is not this source's client"),
+            ("neg_azp_mismatch.jwt", "azp is not this source's client", Some(&["azp"])),
             // The ID token from the same sign-in: no `azp`, because authentik
             // writes it in `to_access_token()` only.
-            ("neg_id_token.jwt", "an ID token is not an access token"),
+            ("neg_id_token.jwt", "an ID token is not an access token", Some(&["azp", "scope"])),
             // `sub_mode` left at its default, whose whole symptom otherwise is
             // that nobody in the realm can sign in.
-            ("neg_sub_hashed.jwt", "sub_mode"),
+            ("neg_sub_hashed.jwt", "sub_mode", Some(&["sub"])),
         ];
         let mut present: Vec<String> = std::fs::read_dir(fixture_dir())
             .unwrap()
@@ -381,17 +388,27 @@ mod tests {
             })
             .collect();
         present.sort();
-        let mut covered: Vec<String> = cases.iter().map(|(n, _)| (*n).to_owned()).collect();
+        let mut covered: Vec<String> = cases.iter().map(|(n, _, _)| (*n).to_owned()).collect();
         covered.sort();
         assert_eq!(present, covered, "every negative fixture must have an expectation");
 
-        for (name, expected) in cases {
+        let positive = token("positive.jwt");
+        for (name, expected, dimensions) in cases {
             match check(name, VALID_AT).await {
                 Ok(id) => panic!("{name} was accepted, yielding {id:?}"),
                 Err(Reject(why)) => assert!(
                     why.contains(expected),
                     "{name}: expected a rejection mentioning {expected:?}, got {why:?}"
                 ),
+            }
+            if let Some(dimensions) = dimensions {
+                conformance::differs_only_where_named(
+                    &positive,
+                    "uid",
+                    name,
+                    &token(name),
+                    dimensions,
+                );
             }
         }
     }
@@ -410,8 +427,10 @@ mod tests {
         assert!(check("positive.jwt", FIXTURE_IAT).await.is_ok());
         assert!(check("positive.jwt", FIXTURE_IAT - 10_000).await.is_ok());
         assert!(check("positive.jwt", VALID_AT + 10_000).await.is_err());
-        // Inside the 300 s skew allowance.
+        // The boundary is inside the window: expiry is `now > exp + leeway`,
+        // so a clock exactly `leeway` out is accepted.
         assert!(check("positive.jwt", FIXTURE_EXP + 299).await.is_ok());
+        assert!(check("positive.jwt", FIXTURE_EXP + 300).await.is_ok());
         assert!(check("positive.jwt", FIXTURE_EXP + 301).await.is_err());
     }
 

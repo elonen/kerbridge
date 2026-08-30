@@ -341,39 +341,80 @@ mod tests {
         parts.join(".")
     }
 
-    /// Every negative in the corpus, each with the rejection it must produce.
-    /// Named individually rather than globbed so that a fixture appearing
-    /// without a matching expectation fails the suite instead of being skipped.
+    /// Every negative in the corpus, each with the rejection it must produce and
+    /// the dimensions it may differ from the positive in. Named individually
+    /// rather than globbed so that a fixture appearing without a matching
+    /// expectation fails the suite instead of being skipped.
+    ///
+    /// `None` is for a fixture that is not a JWT at all, which is what its own
+    /// expectation already says.
     #[tokio::test]
     async fn rejects_every_negative_fixture() {
-        let cases = [
-            ("neg_alg_none.jwt", "disallowed alg"),
-            ("neg_alg_none_unknown_kid.jwt", "disallowed alg"),
-            ("neg_alg_hs256.jwt", "disallowed alg"),
-            ("neg_alg_confusion.jwt", "disallowed alg"),
-            ("neg_alg_unknown.jwt", "disallowed alg"),
-            ("neg_unknown_kid.jwt", "unknown kid"),
+        let cases: [(&str, &str, Option<&[&str]>); 20] = [
+            ("neg_alg_none.jwt", "disallowed alg", Some(&["alg"])),
+            ("neg_alg_none_unknown_kid.jwt", "disallowed alg", Some(&["alg", "kid"])),
+            ("neg_alg_hs256.jwt", "disallowed alg", Some(&["alg"])),
+            // The `oid` moves with the algorithm on purpose: the attack is worth
+            // nothing unless the forged token asserts somebody else.
+            ("neg_alg_confusion.jwt", "disallowed alg", Some(&["alg", "oid"])),
+            ("neg_alg_unknown.jwt", "disallowed alg", Some(&["alg"])),
+            ("neg_unknown_kid.jwt", "unknown kid", Some(&["kid"])),
             // Correctly signed with the right key material: only the key's
             // published `alg` refuses it.
-            ("neg_alg_not_published_for_key.jwt", "is not published for alg"),
-            ("neg_garbage.jwt", "not a three-part JWT"),
-            ("neg_expired.jwt", "token has expired"),
-            ("neg_future_nbf.jwt", "token is not valid yet"),
-            ("neg_wrong_audience.jwt", "aud is not this broker"),
-            ("neg_wrong_tenant.jwt", "tid is not the configured tenant"),
+            ("neg_alg_not_published_for_key.jwt", "is not published for alg", Some(&["alg"])),
+            ("neg_garbage.jwt", "not a three-part JWT", None),
+            // The whole window moves together. A token issued in the past or in
+            // the future carries a coherent `iat`/`nbf`/`exp`, and one with only
+            // `exp` moved would be a shape Entra never mints.
+            ("neg_expired.jwt", "token has expired", Some(&["exp", "iat", "nbf"])),
+            ("neg_future_nbf.jwt", "token is not valid yet", Some(&["exp", "iat", "nbf"])),
+            ("neg_wrong_audience.jwt", "aud is not this broker", Some(&["aud"])),
+            // The issuer embeds the tenant, so the two claims cannot disagree
+            // here -- that case is `neg_iss_tid_mismatch` below.
+            ("neg_wrong_tenant.jwt", "tid is not the configured tenant", Some(&["iss", "tid"])),
             // A v1 token addresses the API by its App ID URI rather than the
             // client GUID, so it fails on audience before version is reached.
             // That is the deployment symptom of `requestedAccessTokenVersion`
-            // left at its null default.
-            ("neg_v1_token.jwt", "aud is not this broker"),
+            // left at its null default. A whole different token shape, so the
+            // list below is long by nature.
+            (
+                "neg_v1_token.jwt",
+                "aud is not this broker",
+                Some(&[
+                    "appid",
+                    "appidacr",
+                    "aud",
+                    "azp",
+                    "azpacr",
+                    "iss",
+                    "preferred_username",
+                    "unique_name",
+                    "ver",
+                    "x5t",
+                ]),
+            ),
             // Correct issuer, foreign tid: the tenant claims disagree.
-            ("neg_iss_tid_mismatch.jwt", "tid is not the configured tenant"),
-            ("neg_malformed_tid.jwt", "tid is not a GUID"),
-            ("neg_app_only.jwt", "app-only token"),
-            ("neg_missing_scope.jwt", "no scp"),
-            ("neg_wrong_scope_value.jwt", "required delegated scope missing"),
-            ("neg_wrong_azp.jwt", "azp is not the authorized public client"),
-            ("neg_missing_oid.jwt", "no oid"),
+            ("neg_iss_tid_mismatch.jwt", "tid is not the configured tenant", Some(&["tid"])),
+            ("neg_malformed_tid.jwt", "tid is not a GUID", Some(&["tid"])),
+            // Also a whole shape: client credentials mint no delegated claims.
+            (
+                "neg_app_only.jwt",
+                "app-only token",
+                Some(&[
+                    "azpacr",
+                    "idtyp",
+                    "name",
+                    "oid",
+                    "preferred_username",
+                    "roles",
+                    "scp",
+                    "sub",
+                ]),
+            ),
+            ("neg_missing_scope.jwt", "no scp", Some(&["scp"])),
+            ("neg_wrong_scope_value.jwt", "required delegated scope missing", Some(&["scp"])),
+            ("neg_wrong_azp.jwt", "azp is not the authorized public client", Some(&["azp"])),
+            ("neg_missing_oid.jwt", "no oid", Some(&["oid"])),
         ];
         let mut present: Vec<String> = std::fs::read_dir(fixture_dir())
             .unwrap()
@@ -383,17 +424,27 @@ mod tests {
             })
             .collect();
         present.sort();
-        let mut covered: Vec<String> = cases.iter().map(|(n, _)| (*n).to_owned()).collect();
+        let mut covered: Vec<String> = cases.iter().map(|(n, _, _)| (*n).to_owned()).collect();
         covered.sort();
         assert_eq!(present, covered, "every negative fixture must have an expectation");
 
-        for (name, expected) in cases {
+        let positive = token("positive_delegated.jwt");
+        for (name, expected, dimensions) in cases {
             match check(name, VALID_AT).await {
                 Ok(id) => panic!("{name} was accepted, yielding {id:?}"),
                 Err(Reject(why)) => assert!(
                     why.contains(expected),
                     "{name}: expected a rejection mentioning {expected:?}, got {why:?}"
                 ),
+            }
+            if let Some(dimensions) = dimensions {
+                conformance::differs_only_where_named(
+                    &positive,
+                    "uti",
+                    name,
+                    &token(name),
+                    dimensions,
+                );
             }
         }
     }
@@ -406,9 +457,25 @@ mod tests {
         let future = VALID_AT + 10_000;
         assert!(check("positive_delegated.jwt", past).await.is_err());
         assert!(check("positive_delegated.jwt", future).await.is_err());
-        // Inside the 300 s skew allowance on either side.
-        assert!(check("positive_delegated.jwt", FIXTURE_EXP + 299).await.is_ok());
-        assert!(check("positive_delegated.jwt", FIXTURE_NBF - 299).await.is_ok());
+
+        // The boundary is inside the window: expiry is `now > exp + leeway` and
+        // validity `now + leeway < nbf`, so a clock exactly `leeway` out is
+        // accepted. Refusing there would cost the allowance its last second on
+        // a deployment whose clocks are as far apart as the allowance admits.
+        for inside in [FIXTURE_EXP + 299, FIXTURE_EXP + 300, FIXTURE_NBF - 299, FIXTURE_NBF - 300] {
+            assert!(check("positive_delegated.jwt", inside).await.is_ok(), "at {inside}");
+        }
+        for (outside, why) in [
+            (FIXTURE_EXP + 301, "token has expired"),
+            (FIXTURE_NBF - 301, "token is not valid yet"),
+        ] {
+            // Named rather than merely refused: only one of the two checks
+            // may be what refuses each side.
+            match check("positive_delegated.jwt", outside).await {
+                Ok(id) => panic!("accepted at {outside}, yielding {id:?}"),
+                Err(Reject(got)) => assert!(got.contains(why), "at {outside}: {got:?}"),
+            }
+        }
     }
 
     /// The discovery document names Entra's scope syntax, which nothing outside

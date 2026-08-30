@@ -30,6 +30,9 @@ names the tag, and it stops if that section is absent or empty.
   ticket issuance, and read-only user and group synchronization.
 - Added `make test-authentik`, which tests authentik sign-in and sync through
   a Kerberos-authenticated SMB file read.
+- A signing-key document that publishes two usable keys under one `kid` is
+  now refused whole. Which key verified a token must not depend on the order
+  the document lists the keys in.
 - The two IdP signing-key conditions, `idp-trust-failure` and
   `idp-keys-unavailable`, now carry the source name and are opened and
   cleared per source. A deployment with two identity providers no longer
