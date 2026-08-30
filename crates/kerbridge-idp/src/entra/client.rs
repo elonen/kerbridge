@@ -192,6 +192,16 @@ impl GraphClient {
     pub fn new(tenant: String, client_id: String, secret: String) -> Result<Self> {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if same_origin(attempt.previous(), attempt.url()) {
+                    // Delegate every other decision, including the ten-hop
+                    // bound, to reqwest's normal policy. A redirect that stays
+                    // on the origin is one Microsoft is entitled to make.
+                    reqwest::redirect::Policy::default().redirect(attempt)
+                } else {
+                    attempt.error("refusing a redirect off the origin the request started on")
+                }
+            }))
             .build()
             .context("building the Graph HTTP client")?;
         Ok(Self { http, tenant, client_id, secret })
@@ -296,6 +306,21 @@ fn assert_graph_url(raw: &str) -> Result<()> {
         && url.port().is_none()
         && (url.path() == GRAPH_PATH || url.path().starts_with(&format!("{GRAPH_PATH}/")));
     if ok { Ok(()) } else { Err(refuse()) }
+}
+
+/// Neither endpoint this client speaks to needs a redirect that leaves its own
+/// origin, and [`assert_graph_url`] cannot see one: it runs before `send`, and
+/// the hops `send` takes internally are never re-checked.
+///
+/// `reqwest` strips `Authorization` when the host or the effective port changes,
+/// so a redirect to another host costs no token. The scheme is not part of that
+/// comparison: `https://graph.microsoft.com` -> `http://graph.microsoft.com:443`
+/// keeps host and effective port, so the token would travel in clear. And only
+/// *headers* are stripped -- a 307 off the token endpoint re-posts the body,
+/// which is the client secret. `Url::origin` compares scheme, host and effective
+/// port together, which is the one rule both cases need.
+fn same_origin(previous: &[Url], next: &Url) -> bool {
+    previous.last().is_some_and(|url| url.origin() == next.origin())
 }
 
 /// A Graph URL with its cursor values elided, for anything that reaches a log.
@@ -482,6 +507,62 @@ mod tests {
         // Host case is not significant, and rejecting these would break a
         // perfectly good nextLink.
         assert!(assert_graph_url("https://GRAPH.MICROSOFT.COM/v1.0/users").is_ok());
+    }
+
+    /// The pairs that decide whether a redirect keeps the credential. Measured
+    /// against reqwest 0.12: a host or effective-port change strips
+    /// `Authorization`, and nothing else does.
+    #[test]
+    fn a_redirect_may_not_leave_the_origin_it_started_on() {
+        let url = |s: &str| Url::parse(s).unwrap();
+        let follows = |from: &str, to: &str| same_origin(&[url(from)], &url(to));
+
+        assert!(follows(GRAPH, "https://graph.microsoft.com/beta/users/delta"));
+        // The downgrade reqwest does not strip for: same host, and 443 either way.
+        assert!(!follows(GRAPH, "http://graph.microsoft.com:443/v1.0/users"));
+        assert!(!follows(GRAPH, "http://graph.microsoft.com/v1.0/users"));
+        assert!(!follows(GRAPH, "https://graph.microsoft.com:8443/v1.0/users"));
+        assert!(!follows(GRAPH, "https://evil.test/v1.0/users"));
+        // The token POST: a 307 elsewhere would re-post the client secret.
+        assert!(!follows("https://login.microsoftonline.com/t/oauth2/v2.0/token", GRAPH));
+        assert!(!same_origin(&[], &url(GRAPH)));
+    }
+
+    /// The policy is on the client the rest of this file uses, not only in the
+    /// predicate. Loopback, because `assert_graph_url` keeps every URL this
+    /// client *chooses* off a test server -- only a redirect gets it there.
+    #[tokio::test]
+    async fn the_built_client_refuses_a_redirect_off_the_origin() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let app = axum::Router::new()
+            .route(
+                "/off",
+                axum::routing::get(move || async move {
+                    // Same address, same port, different host spelling.
+                    redirect(&format!("http://localhost:{port}/hop"))
+                }),
+            )
+            .route("/on", axum::routing::get(move || async move { redirect("/hop") }))
+            .route("/hop", axum::routing::get(|| async { "{}" }));
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let client = GraphClient::new("t".into(), "c".into(), "s".into()).unwrap().http;
+        let err = client
+            .get(format!("http://127.0.0.1:{port}/off"))
+            .send()
+            .await
+            .expect_err("a redirect off the origin was followed");
+        assert!(err.is_redirect(), "{err}");
+
+        let ok = client.get(format!("http://127.0.0.1:{port}/on")).send().await.unwrap();
+        assert_eq!(ok.status(), 200);
+    }
+
+    fn redirect(to: &str) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        (axum::http::StatusCode::FOUND, [(axum::http::header::LOCATION, to.to_owned())])
+            .into_response()
     }
 
     #[test]
