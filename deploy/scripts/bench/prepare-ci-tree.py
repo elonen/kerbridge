@@ -50,7 +50,8 @@ def remove_tree(target: Path) -> None:
 
 
 def prepare(source_arg: str, target_arg: str) -> Path:
-    source = Path(source_arg).resolve(strict=True)
+    source_lexical = Path(os.path.abspath(source_arg))
+    source = source_lexical.resolve(strict=True)
     if not source.is_dir():
         fail(f"source is not a directory: {source}")
 
@@ -68,7 +69,19 @@ def prepare(source_arg: str, target_arg: str) -> Path:
         fail(f"refusing an ancestor of the source checkout: {target}")
 
     managed_root = source / ".local-tmp"
-    if is_within(lexical_target, managed_root) and managed_root.is_symlink():
+    # Judge membership under both spellings of the checkout. The target stays
+    # lexical so a symlinked `.local-tmp` is still visible as traversal through
+    # the managed root, while `source` is resolved. The two diverge whenever an
+    # ancestor of the checkout is a symlink -- /var on macOS -- and comparing
+    # across them answers "not in the managed root" for every such checkout,
+    # retiring this guard silently. Bounded: a third alias for the target that
+    # derives from neither spelling is not recognized here, and falls through to
+    # the marker check below.
+    managed_lexical = source_lexical / ".local-tmp"
+    within_managed_root = is_within(lexical_target, managed_root) or is_within(
+        lexical_target, managed_lexical
+    )
+    if within_managed_root and managed_root.is_symlink():
         fail(f"managed root must not be a symlink: {managed_root}")
     in_managed_root = is_within(target, managed_root)
     if target == managed_root:

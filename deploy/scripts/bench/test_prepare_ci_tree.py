@@ -21,7 +21,10 @@ SPEC.loader.exec_module(MODULE)
 class PrepareCiTreeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        # Resolved: on macOS the temp dir sits under /var, itself a symlink to
+        # private/var, so the unresolved spelling would make every case here
+        # compare a lexical path against a canonical one.
+        self.root = Path(self.temp.name).resolve()
         self.source = self.root / "checkout"
         self.source.mkdir()
 
@@ -143,6 +146,25 @@ class PrepareCiTreeTests(unittest.TestCase):
 
         with self.assertRaises(SystemExit):
             MODULE.prepare(str(self.source), str(managed / "tree"))
+        self.assertEqual(list(external.iterdir()), [])
+
+
+    def test_managed_root_symlink_is_refused_through_a_symlinked_checkout_path(self) -> None:
+        """The guard must survive a checkout reached through a symlink.
+
+        macOS reaches this by /var alone; Linux never spells a path this way by
+        accident, so the alias is built explicitly and both platforms cover the
+        divergence between the lexical and the resolved checkout.
+        """
+        external = self.root / "empty-external"
+        external.mkdir()
+        managed = self.source / ".local-tmp"
+        managed.symlink_to(external, target_is_directory=True)
+        alias = self.root / "checkout-alias"
+        alias.symlink_to(self.source, target_is_directory=True)
+
+        with self.assertRaises(SystemExit):
+            MODULE.prepare(str(alias), str(alias / ".local-tmp" / "tree"))
         self.assertEqual(list(external.iterdir()), [])
 
 
