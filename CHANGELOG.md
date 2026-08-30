@@ -49,6 +49,10 @@ names the tag, and it stops if that section is absent or empty.
 - `kbconfig check` now begins its output with `Config OK` or `Config ERROR`.
 - The example Caddyfile for the Debian packages now shows how to serve a
   certificate you supply yourself, instead of one Caddy obtains over ACME.
+- `kerbridge-broker` now installs the landing page that answers `/`, and the
+  Caddy and nginx examples serve it. A person who types the broker address
+  into a browser got a bare 404, which reads as a broken service. The Docker
+  Compose deployment already answered this address.
 
 ## 0.9.3
 

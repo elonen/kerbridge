@@ -34,9 +34,18 @@ kerbridge.example.site {
 		reverse_proxy 127.0.0.1:8080
 	}
 
-	# Everything else. A person who types this address into a browser gets a
-	# 404 by default; point `root` at a page of your own if you would rather
-	# they got an explanation.
+	# One static page, for the person who types this address into a browser --
+	# an address they saw in a dialog, or in an agent that is not working. A
+	# 404 there reads as "the service is broken". kerbridge-broker ships the
+	# page; it names no realm, no version and no component, and Caddy serves it
+	# without reaching the broker or any identity.
+	@root path /
+	handle @root {
+		root * /usr/share/kerbridge/site
+		file_server
+	}
+
+	# Everything else, including anything deeper than the routes above.
 	handle {
 		respond 404
 	}

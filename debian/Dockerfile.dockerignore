@@ -1,8 +1,10 @@
 # The build context for debian/Dockerfile, and only for it: BuildKit prefers a
 # `<dockerfile>.dockerignore` over the repository root's when one exists.
 #
-# It differs from the root's in one way: `debian/` is in, because this is the
-# image that packages it.
+# It differs from the root's in two ways: `debian/` is in, because this is the
+# image that packages it, and only one path under `deploy/` is -- the landing
+# page, which `debian/rules` installs into kerbridge-broker. Both deployments
+# ship that one file, so neither holds a copy.
 #
 # `.git/` is deliberately *not* in. The version comes from KB_VERSION, derived
 # on the host by `debian/make-changelog --print-version` and passed as a build
@@ -17,6 +19,7 @@
 !Cargo.lock
 !crates/
 !debian/
+!deploy/caddy/site/
 
 # Build output, on both sides of the handover: cargo's, and the tree
 # debian/stage-prebuilt fills inside the image.
