@@ -1,23 +1,25 @@
 <img src="docs/kerbridge-logo.svg" alt="KerBridge" width="128">
 
-# KerBridge – passwordless Samba for Entra ID users
+# KerBridge – passwordless Samba for cloud IdP users
 
 Self-hosted. Works with Samba and with other Kerberos-authenticated services. Doesn't use NTLM.<br>
 Experimental.
 
 ## What?
 
-You get passwordless access to a local file server with your [cloud identity](GLOSSARY.md#cloud-identity).
+You get passwordless access to a local file server with your [cloud identity](GLOSSARY.md#cloud-identity):
 
-You manage the users in a **[cloud IdP](GLOSSARY.md#cloud-idp)** (MS Entra ID). They authenticate, without
-password, to your **on-prem Kerberos services** — a Samba file server, an
-SPNEGO HTTP app, and so on. A local Samba AD DC syncs the users **from** cloud:
-the sync process is read-only and one-way. Your IdP directory is not modified.
+- User signs into the IdP by OIDC, and KerBridge exchanges the auth token for an on-premises Kerberos ticket (TGT) from a local Samba AD KerBridge manages.
+- Users then access your **on-prem Kerberos services** (a Samba file server, an SPNEGO HTTP app, and so on) without a password.
+- You continue managing users in a **[cloud IdP](GLOSSARY.md#cloud-idp)**. KerBridge syncs users and groups from cloud IdP to the local Samba AD DC. The sync process is read-only and one-way; your IdP directory is not modified.
+- Your **services join** the Samba AD, but **users don't**. Users also never get a password to the AD.
+
+Currently supported identity providers: **MS Entra ID** and **authentik**.
 
 ### [Sign-in](GLOSSARY.md#sign-in)
 
-On an Entra-joined workstation, an [agent](GLOSSARY.md#agent) (systray app) uses the user's Entra session, without
-prompts. On non-joined workstations, it opens the browser for an OIDC sign-in.
+On an Entra-joined workstation, an [agent](GLOSSARY.md#agent) (systray app) uses the user's *Entra ID* session, without
+prompts. On non-joined Windows workstations, Mac, or if using *authentik*, it opens the browser for an **OIDC sign-in**.
 
 [**Device grants**](docs/setup/device-grants.md) are optional and off by default: with a TPM-held key, a machine can
 continue to get Kerberos [tickets](GLOSSARY.md#ticket) with no sign-in — for example, an unattended build server.
@@ -46,9 +48,9 @@ continue to get Kerberos [tickets](GLOSSARY.md#ticket) with no sign-in — for e
 
 <p><img src="docs/systray-windows.png" alt="Systray app on Windows" width="360">&nbsp;<img src="docs/systray-macos.png" alt="Systray app on MacOS" width="210"></p>
 
-### On Entra:
+### On cloud IdP:
 
-You register these [Entra apps](GLOSSARY.md#entra-app):
+In Entra, you register separate [Entra apps](GLOSSARY.md#entra-app) for these:
 
 - `kerbridge-broker`: supplies authentication for the KerBridge [broker](GLOSSARY.md#broker) server component
 - `kerbridge-client`: supplies authentication for the systray [agent](GLOSSARY.md#agent) on workstation
@@ -56,13 +58,16 @@ You register these [Entra apps](GLOSSARY.md#entra-app):
 
 Only `kerbridge-sync` holds an app credential.
 
+When using authentik as IdP, the principle is the same, but you only add one Provider + Application for OIDC,
+and one read-only service account for directory sync.
+
 
 <details>
 <summary>All components, in one diagram</summary>
 
 ```mermaid
 flowchart TB
-  entra["Entra ID / Graph"]
+  entra["Cloud IdP"]
   wh["NAS Access systray\n(kerbridge-agent)"]
   subgraph linux["KerBridge server"]
     caddy["Caddy"]
@@ -139,17 +144,18 @@ Some highlights from the repository:
 | [`deploy/`](deploy/) | Docker Compose project that runs them |
 | [`client/`](client/) | Workstation clients: the core library, its CLI, and agent crates per platform |
 
-<details><summary>Run the unit and integration tests</summary>
+<details><summary>Verification: Run the unit and integration tests</summary>
 
 ```sh
-make test         # tests, clippy, shellcheck, doc links -- seconds, no Docker
-make test-win     # the Windows client: cross-build + clippy
-make test-build   # every shipping artifact still builds
-make test-stack   # a realm from nothing -> a ticket -> a file read over SMB
+make test           # tests, clippy, shellcheck, doc links -- seconds, no Docker
+make test-win       # the Windows client: cross-build + clippy
+make test-build     # every shipping artifact still builds
+make test-stack     # a realm from nothing -> a ticket -> a file read over SMB
+make test-authentik # spin up local authentik and test integration with it
 make test-all
 ```
 
-`make test-stack` is the interesting one. It provisions a Samba AD
+`make test-stack` is end-to-end: it provisions a Samba AD
 [realm](GLOSSARY.md#realm) into an empty Docker volume and bootstraps the
 [realm directory](GLOSSARY.md#realm-directory). It issues an OIDC token against a throwaway
 key, and exchanges the token at the [broker](GLOSSARY.md#broker) for a real
@@ -167,7 +173,7 @@ strategies, and what the Windows client does with a ticket after it holds one.
 
 KerBridge works for me. The UX is fairly polished, and most of the design uses
 well-known standards. But the solution is experimental and non-standard. A
-seasoned sysadmin/programmer developed it, but with heavy [LLM assistance](SECURITY.md#software-design-and-llm-written-code) in
+seasoned sysadmin/programmer developed it, but using [agentic coding](SECURITY.md#software-design-and-llm-written-code) in
 all phases from research to hardening. There are no warranties or guarantees of any
 kind. This is Open Source Software: use it at your own risk, do security audits, and post
 reports and fixes if you find that something is broken.
