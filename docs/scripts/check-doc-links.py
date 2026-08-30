@@ -1,61 +1,19 @@
 #!/usr/bin/env python3
-"""Every relative markdown link, and every doc path cited from source, resolves.
+"""Check relative Markdown links and doc paths cited from source.
 
-The docs are a route, not a pile: `SETUP.md` is eight steps and an optional
-uninstall, and each step's depth lives in `docs/setup/`, reached by
-`SETUP.md#<step-heading>` from both directions.
-CLAUDE.md states the invariant that keeps that working -- *never rename a
-`SETUP.md` step heading* -- and until now nothing enforced it. A rename breaks
-eighteen links silently, and the reader who finds out is an operator halfway
-through a deployment.
+Relative inline links must name an existing file. Markdown fragments must match
+a GitHub-style heading or explicit HTML anchor. Reference-style links are
+unsupported because the repository does not use them.
 
-So this walks every `.md` file, resolves every link that is not http(s) or
-mailto, and checks the file exists and the `#fragment` names a heading in it.
-Anchors are slugged the way GitHub does it (lowercase, drop punctuation, spaces
-to hyphens, duplicates suffixed `-1`, `-2`), because that is the renderer the
-links are written for.
+Backticked `.md` paths in source and configuration files resolve from the
+repository root or, for a unique bare filename, by name. Parent-relative paths
+are invalid because source comments have no common base directory. Only file
+existence is checked. Markdown files are excluded because their paths are
+relative to the file.
 
-Reference-style links (`[text][label]` with `[label]: target` below) are not
-followed: nothing here uses them, and supporting a form the repo does not use
-would be untested code.
-
-## Doc paths cited from source
-
-Comments carry the other half of the route. A measurement's evidence, a design
-decision, a research spike -- the anchor is the whole value of the comment, and a
-pointer at a file that is not there is worse than no pointer, because it reads as
-if someone checked. These are cited as a backticked path, so they are found by
-looking for backticks rather than by parsing comment syntax: one rule covers
-Rust, shell, Python, YAML, Makefiles and Dockerfiles, and a path in a string
-literal is worth checking on the same terms as one in a comment.
-
-**A cited path is resolved from the repository root**, or by bare filename for
-the shorthand a few spikes are named by. A `../`-relative one is refused: a
-comment has no base directory a reader can agree on, since the same
-`../DESIGN.md` (doc-links: ignore -- it is the counter-example) sits two
-directories from one source file and three from another, and every such pointer
-in this tree resolved nowhere at all. Only existence is checked;
-the trailing `:787-792` a research citation carries is stripped, and the `§` and
-`@ "heading"` forms are left alone, because a heading reference that has drifted
-is a judgment call rather than a break.
-
-Markdown prose is deliberately excluded from this half. A `.md` file *does* have
-a base directory, so its backticked `../docs/...` paths are correct as written
-and only its links are ours to check.
-
-## The bypass
-
-`doc-links: ignore` anywhere on the line exempts every reference on it, in either
-half. It is for the reference that is right and unresolvable -- a file this repo
-does not carry, a path assembled at runtime -- and for the emergency where a
-correct pointer is the only thing standing between a fix and a green build.
-
-It is deliberately per line and never per file or per directory: a bypass has to
-sit where the reader of the pointer will see it. The count of exempted references
-is printed alongside the checked ones, so a growing number of them is visible
-rather than quietly becoming the norm.
-
-Exit 0 and print a count, or list every break and exit 1.
+`doc-links: ignore` exempts all references on its line. Use it only for correct
+references that cannot resolve in the repository. The result reports the
+exemption count.
 """
 
 import os
@@ -65,36 +23,25 @@ import urllib.parse
 
 from _tree import walk
 
-# Where a doc path may be cited from. By extension, plus the two that are named
-# rather than suffixed.
 SOURCE_EXT = {".rs", ".sh", ".py", ".yaml", ".yml", ".toml"}
 SOURCE_NAMES = {"Makefile", "Dockerfile"}
 
-# `[text](target)` where target has no whitespace. The negative lookbehind drops
-# image embeds -- `![alt](x.png)` points at a file, not a document, and the ones
-# here live outside the tree this walks.
+# Inline links with whitespace-free targets. Image embeds can point outside the tree.
 LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)\)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
-# A compatibility fragment can outlive the heading that originally generated it.
-# GitHub accepts an empty HTML anchor for that purpose, so treat it like a heading
-# anchor when checking links and the load-bearing SETUP.md fragments below.
+# GitHub accepts empty HTML anchors for compatibility fragments that outlive headings.
 HTML_ANCHOR = re.compile(r'<a\s+(?:id|name)="([^"]+)"\s*></a>')
 # A fenced block's contents are not headings: a shell transcript full of `# comment`
 # lines would otherwise register every one of them as an anchor.
 FENCE = re.compile(r"^\s*(```|~~~)")
 
-# A backticked path ending `.md`, carrying the optional `:787` or `:787-792` a
-# research citation ends with. Anything with whitespace in it is prose that
-# happens to mention a file, not a path.
+# Backticked paths can end in a research line range (`:787` or `:787-792`).
+# Whitespace marks prose, not a path.
 DOC_REF = re.compile(r"`([^`\s]*\.md)(?::\d+(?:-\d+)?)?`")
 
-# The per-line opt-out. Spelled with the script's own name so a reader who meets
-# one knows what to run to see what it is silencing.
 IGNORE = re.compile(r"doc-links:\s*ignore")
 
-# Released instructions, scripts and error messages link to SETUP.md steps. A
-# provider-neutral rename kept the old step-2 fragment explicitly; require both
-# names so a cleanup cannot silently break either generation of links.
+# Released instructions can use either step-2 fragment; require both anchors.
 REQUIRED_SETUP_ANCHORS = {
     "2-register-three-applications-in-entra",
     "2-set-up-your-cloud-identity-providers",
@@ -111,12 +58,10 @@ def exempt(lines: list[str], idx: int) -> bool:
 
 
 def slug(heading: str) -> str:
-    """GitHub's heading -> anchor transform, for the subset that appears here."""
-    # Inline code and emphasis are markup, not text: `docs/setup/` in a heading
-    # anchors as docssetup, and the links in the tree are written that way.
+    """Convert the supported subset of GitHub headings to anchors."""
+    # GitHub omits inline-code and emphasis markers from anchors.
     text = re.sub(r"[`*_]", "", heading)
-    # Strip a trailing link target, keeping its text -- headings here do not have
-    # them, but a heading that gained one should not silently change anchor.
+    # GitHub anchors keep link text and omit its target.
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = re.sub(r"[^\w\s-]", "", text, flags=re.UNICODE)
     return text.strip().lower().replace(" ", "-")
@@ -157,8 +102,7 @@ def cited_paths(
     checked = skipped = 0
     for m in DOC_REF.finditer(body):
         ref = m.group(1)
-        # A placeholder standing for a set of files, or the bare extension being
-        # named as an extension. Neither is a path to anything.
+        # Wildcards, placeholders, and a bare `.md` extension are not paths.
         if any(c in ref for c in "*<>?") or os.path.basename(ref) == ".md":
             continue
         idx = line_of(body, m.start())
@@ -188,9 +132,7 @@ def main(root: str) -> int:
     files.sort()
     sources.sort()
 
-    # Bare filename -> its path, for the shorthand a few research spikes are
-    # cited by. A name carried by two files is not a pointer, so it is dropped
-    # rather than resolved to whichever was walked first.
+    # Resolve unique bare filenames; duplicate names are ambiguous.
     seen_names: dict[str, int] = {}
     for path in files:
         seen_names[os.path.basename(path)] = seen_names.get(os.path.basename(path), 0) + 1
@@ -223,13 +165,12 @@ def main(root: str) -> int:
                     os.path.join(os.path.dirname(path), urllib.parse.unquote(target_part))
                 )
             else:
-                target = path  # a bare `#anchor` is same-file
+                target = path
 
             if not os.path.exists(target):
                 broken.append(f"{rel}: {link} -- no such file")
                 continue
-            # Only markdown has anchors we can verify. A fragment into anything
-            # else is not ours to judge.
+            # Only Markdown fragments have anchors this checker can verify.
             if frag and target.endswith(".md"):
                 if target not in cache:
                     cache[target] = anchors(target)
@@ -258,7 +199,7 @@ def main(root: str) -> int:
             print(f"  {b}", file=sys.stderr)
         return 1
 
-    # Named rather than merely counted: a bypass is meant to be conspicuous.
+    # Name the bypass so exemption growth is visible.
     note = f", {skipped} exempted by `doc-links: ignore`" if skipped else ""
     print(f"docs: {checked} relative links across {len(files)} files, all resolve")
     print(f"source: {cited} doc paths cited across {len(sources)} files, all resolve{note}")
@@ -266,6 +207,5 @@ def main(root: str) -> int:
 
 
 if __name__ == "__main__":
-    # Default to the repository root, two levels up from docs/scripts/.
     here = os.path.dirname(os.path.abspath(__file__))
     sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(here))))

@@ -337,6 +337,10 @@ test-fast:
 	python3 docs/scripts/check-research.py
 	python3 docs/scripts/check-doc-links.py
 	python3 docs/scripts/check-signing-key.py
+	@# The reverse proxies allow a route list and 404 the rest, so a route the
+	@# broker gained and a proxy did not is a 404 nothing reaching the broker
+	@# directly can see.
+	python3 docs/scripts/check-broker-routes.py
 	@# Render every help-site language in memory to detect invalid templates,
 	@# renamed fields, and missing translation keys before publication.
 	$(MAKE) -C website check

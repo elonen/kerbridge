@@ -53,6 +53,9 @@ names the tag, and it stops if that section is absent or empty.
   Caddy and nginx examples serve it. A person who types the broker address
   into a browser got a bare 404, which reads as a broken service. The Docker
   Compose deployment already answered this address.
+- `make test` now holds every reverse proxy in front of the broker to the
+  broker's own route list. A route the broker gains and a proxy does not is a
+  404 at the edge that no test reaching the broker directly can see.
 
 ## 0.9.3
 
