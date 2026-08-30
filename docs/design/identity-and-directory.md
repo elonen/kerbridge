@@ -508,6 +508,17 @@ complete but silently filtered collection for an object-scoped permission. A
 global `view_user` and `view_group` grant is mandatory. The setup blueprint
 maintains that grant.
 
+The adapter cannot verify the grant, so it checks the outcome instead. The
+dangling-id check catches a permissions cut that runs through a visible
+membership edge. It cannot catch a closure root the configuration names — an
+allowlist entry, or the device-grant group — hidden together with everything it
+reaches: what comes back is a smaller directory (IdP) that is self-consistent and
+has no dangling edge. Publishing it would retire every object behind the hidden
+root. So a named closure root that is absent from the read yields **no
+snapshot**, and the failure names the roots it did not see. The admission group needs no rule
+of its own here: the planner already freezes a cycle whose read describes no users
+while Samba holds synchronized ones.
+
 The adapter applies the same admission closure, extra-group allowlist, held
 narrowing, and planner as Entra. It offers the username, display name and email
 address as login-name candidates, in that order. The planner decides which

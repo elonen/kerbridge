@@ -50,6 +50,37 @@ inject a fixed clock — each corpus's window is pinned in the adapter that read
 it — which is the right shape for a verifier test anyway. All identifiers in the
 fixtures are synthetic.
 
+### Where each corpus comes from, and what a green test therefore proves
+
+A fixture is worth what its origin is worth, and the origins are not the same.
+
+- **Synthesized** — `entra-token/`, `authentik-token/`, `tls/`. `tokenforge.py`
+  and `make_fixtures.sh` sign every one of these with a key they own. A green
+  test says the reader accepts and refuses the shapes *this repository chose to
+  write*. It says nothing about what the IdP issues. The claim shapes are held
+  to the providers' documentation by hand. `make test-authentik` is the one
+  thing that puts a provider-issued token through the same verifier, and it does
+  so for authentik only.
+- **Documentation-derived** — `graph-sync/`. Written from Microsoft's published
+  Graph shapes; no tenant produced a byte of it. `make test` cannot detect a
+  shape that is wrong, because it reads the same corpus and so agrees with
+  itself. [`entra-tenant/conformance.py`](entra-tenant/conformance.py) is the
+  only thing that compares it with a live tenant, and it is run by hand.
+- **Recorded** — `authentik/captured/`, taken from a live
+  `ghcr.io/goauthentik/server:2026.8.0` by `authentik/capture_directory.py`. The
+  server, not this repository, decided what these bytes are.
+- **Derived from a recording** — `authentik-directory/`, trimmed and pinned from
+  those recordings. The trim is stated, and `check_derivation.py` holds the
+  corpus to it on every `make test`, together with a provenance table naming the
+  recording each file came from.
+- **Hand-written golden** — `planner/`. Each file states an intended decision.
+  It is a specification the planner is held to, not evidence of anything outside
+  this repository.
+
+So one provider's wire shapes reached the tests from that provider, and it is
+authentik. Nothing in `graph-sync/` did; `conformance.py` closes that by hand,
+and [`entra-tenant/README.md`](entra-tenant/README.md) is the procedure.
+
 ## `authentik/` — live blueprint proof
 
 `authcode.sh` is the standalone provider proof. It starts this directory's pinned
