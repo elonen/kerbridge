@@ -87,7 +87,17 @@ KB_VERSION ?= $(shell debian/make-changelog --print-version)
 # Use buildx because the default Docker builder cannot export a cache. CI selects
 # a docker-container builder with docker/setup-buildx-action.
 DOCKER_CACHE ?=
+# Simply expanded, so the derivation runs once rather than once per reference.
+debian-docker: KB_VERSION := $(KB_VERSION)
 debian-docker:
+	@# A variable set from a shell command keeps no exit status, so a checkout
+	@# with no tags -- `git clone --depth 1` -- leaves KB_VERSION empty and the
+	@# build starts anyway. debian/Dockerfile refuses an empty one, but only
+	@# past the compile stages.
+	@[ -n "$(KB_VERSION)" ] || { \
+		echo "no version: see the message above, or pass KB_VERSION=<version>" >&2; \
+		exit 1; \
+	}
 	@# Remove old packages because versioned filenames accumulate and make
 	@# `apt-get install ./*.deb` select multiple versions.
 	rm -rf $(DIST)/debian

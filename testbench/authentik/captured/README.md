@@ -18,7 +18,32 @@ Re-record with the stack up:
     cd testbench/authentik && ./authcode.sh up && python3 capture_directory.py
 
 The script wipes and re-seeds every object it owns, so a second run reproduces
-the *shapes* below and none of the identifiers.
+the **measurements** below, not the pages. What holds across a re-record:
+
+- Every answer this file states: the key each stream sorts by, the `ordering`
+  values the server honours and the ones it drops, `pagination.count` computed
+  after object filtering, and the `detail` string on each of the three 403s.
+- The user pages, row for row by username. A user's `pk` is an integer and the
+  cast is created in a fixed order, so page 1 always ends inside the cast and
+  page 2 always carries the degenerate names — 13 users over 10 + 3. The
+  torn-read step needs an expendable row on page 1, and asserts it, so a run
+  where this stops holding stops.
+- The group count and its split: 11 groups over 8 + 3.
+
+What does not:
+
+- Every uuid, every integer `pk`, every timestamp, and the `date` and
+  `x-authentik-id` response headers. `ak-outpost-<hex>` in `users_page1.json` is
+  a uuid in a username; its position is fixed, its name is not.
+- **Which group is on which group page.** `?ordering=pk` sorts groups by a
+  server-generated uuid, so the split is a fresh draw: the recorded page 1
+  opening `kb-cyc-b`, `authentik Admins`, `kb-filler-1` means nothing beyond
+  that draw.
+- `groups_insert_mid_read_page2.json` at all. The run creates probe groups until
+  one draws a uuid sorting before page 1's last row, so how many probes it takes
+  and which row comes back doubled differ every time. After 24 that all land
+  past the boundary it writes no file and says so, rather than authoring the
+  one it could not produce.
 
 ## What is here
 

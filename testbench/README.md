@@ -72,6 +72,15 @@ testbench/authentik/authcode.sh flow
 testbench/authentik/authcode.sh down
 ```
 
+Both stacks hold their passwords and API tokens as constants in the tracked
+files — the compose file, the blueprints and the scripts. An authentik API token
+cannot be read back after it is created, so a constant is the only way the two
+ends can agree on one. Each value carries the word `bench`: `benchpass`,
+`kerbridge-bench-bootstrap-token`, `bench-user-password`,
+`bench-only-secret-key-not-for-anything-real`. The CI tier keeps its own copies
+under `deploy/`, by the same rule — see
+[Development bench versus production](../deploy/README.md#development-bench-versus-production).
+
 ## `deploy/bench.env` — the bench's own fixtures, and why they are not here
 
 The development bench also uses seeded accounts, object IDs, the `mockidp`

@@ -15,9 +15,12 @@ against a real server, the run says so and writes no file rather than inventing
 one.
 
 MEASURED against ghcr.io/goauthentik/server:2026.8.0, the same image
-`compose.authentik.yaml` pins. It seeds its own cast, so it wipes and
-re-creates every object it owns on each run: the recordings are reproducible in
-*shape*, never byte-for-byte, because uuids and timestamps are the server's.
+`compose.authentik.yaml` pins. It seeds its own cast, so it wipes and re-creates
+every object it owns on each run. What a re-record reproduces is the
+MEASUREMENTS, not the pages: the group stream sorts by a server-generated uuid,
+so which group lands on which page is a fresh draw, and the group-insert probe
+may take any number of tries or none that work.
+`testbench/authentik/captured/README.md` states the invariants that do hold.
 
 The cast includes a service account held by the admission group, a disabled
 service account, a two-level nesting, a group

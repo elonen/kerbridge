@@ -52,8 +52,20 @@ Secret files:
 - The notification webhook URL. Its presence is what enables notification. It
   ships empty, and empty means that notification is off.
 
-No secret value is ever put in a checked-in file: not in the Compose files, not
-in `.env.example`, and not in `bench.env`.
+No value a deployment relies on is put in a checked-in file: not in the Compose
+files a deployment composes, not in `.env.example`, and not in `bench.env`.
+
+The bench and CI files are the exception, and they are an exception by
+construction rather than by promise. `deploy/compose.authentik.yaml` and
+`testbench/authentik/` carry constant passwords and API tokens, because both
+ends of each pair must hold the same value and authentik makes a token
+unreadable once it is created. Every one of them carries the word `bench` in its
+value, so one that escapes is legible on sight. None of those files is in a
+deployment's `COMPOSE_FILE`:
+`deploy/Makefile` composes `compose.yaml` and, on request, `compose.nas.yaml`
+and `compose.mockidp.yaml`, and nothing else. A tier that wants one layers it
+onto a throwaway tree under `.local-tmp/`, which is where its `deploy/secrets/`
+is written too.
 
 ## Durable state
 

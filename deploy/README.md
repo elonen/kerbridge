@@ -577,6 +577,28 @@ disposable tree, which is staged from the tracked files and nothing else.
   one a bench against a live tenant must change: it has to be the `oid` the token
   actually carries, or every login is a 403.
 
+### The bench's credentials are constants, and each one names itself
+
+`bench.env` holds no credential, but `compose.authentik.yaml` does: a Postgres
+password, authentik's signing key, the bootstrap token and `akadmin`'s password,
+all written into the file. `scripts/bench/ci-authentik.sh` writes one more, the
+sync token, into the staged tree's `deploy/secrets/idp/authentik/credential`.
+They are constants because both ends have to hold the same value, and authentik
+makes an API token unreadable once it is created, so nothing can read one back
+to pass it along.
+
+Every value carries the word `bench` —
+`bench-authentik-postgres-password`, `bench-only-secret-key-not-for-anything-real`,
+`bench-akadmin-password` — so one that escapes into a real deployment is legible
+on sight. `testbench/authentik/` follows the same rule for its standalone stack.
+
+**None of this reaches a deployment.** `compose.authentik.yaml` is in no
+`COMPOSE_FILE` the Makefile builds — that is `compose.yaml`, plus
+`compose.nas.yaml` under `NAS=1` and `compose.mockidp.yaml` under `MOCKIDP=1`.
+Only `ci-authentik.sh` layers it, and it does so inside the disposable tree the
+tier stages under `.local-tmp/`, so the credential it writes lands in that
+tree's `deploy/secrets/` and never in yours.
+
 ### The example-realm gate
 
 `make up` refuses to provision while `.env` still names the documented example
