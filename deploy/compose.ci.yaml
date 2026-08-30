@@ -14,7 +14,8 @@
 #      gives it its own volumes and its own network. The durable state of a
 #      bench is untouched.
 #   2. `container_name` is fixed in compose.yaml, and a fixed name is global --
-#      two projects cannot both have kerbridge-realm. Renamed here.
+#      two projects cannot both have kerbridge-realm. Renamed here, after
+#      CI_PROJECT, so that two *tiers* cannot collide either.
 #   3. The subnet is fixed in .env, and Docker refuses a second network
 #      overlapping the first. provision.sh writes a different one.
 #   4. Published ports are the one thing no namespace separates. Dropped here,
@@ -27,7 +28,7 @@
 
 services:
   realm:
-    container_name: kerbridge-ci-realm
+    container_name: ${CI_PROJECT:-kerbridge-ci}-realm
     # Nothing outside the compose network talks to the KDC, LDAP or SMB in a CI
     # run: the only SMB client is nas1, which is on it. `!reset` rather than an
     # empty override because compose *appends* to a port list, so an override
@@ -35,10 +36,10 @@ services:
     ports: !reset []
 
   issuer:
-    container_name: kerbridge-ci-issuer
+    container_name: ${CI_PROJECT:-kerbridge-ci}-issuer
 
   broker:
-    container_name: kerbridge-ci-broker
+    container_name: ${CI_PROJECT:-kerbridge-ci}-broker
     # `!override` and not `!reset` here: `!reset` discards the node whatever is
     # written under it, so a replacement list under it publishes nothing.
     # `!override` is the one that substitutes -- compose.nas.yaml uses it on this
@@ -58,13 +59,13 @@ services:
         aliases: ["${BROKER_FQDN}"]
 
   caddy:
-    container_name: kerbridge-ci-caddy
+    container_name: ${CI_PROJECT:-kerbridge-ci}-caddy
 
   sync:
-    container_name: kerbridge-ci-sync
+    container_name: ${CI_PROJECT:-kerbridge-ci}-sync
 
   nas1:
-    container_name: kerbridge-ci-nas1
+    container_name: ${CI_PROJECT:-kerbridge-ci}-nas1
     ports: !reset []
     # All tiers mount the client, the sign-in helper, and the CA read-only. The
     # tier's .env fragment selects the sign-in helper.

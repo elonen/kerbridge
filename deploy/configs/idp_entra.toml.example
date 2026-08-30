@@ -1,7 +1,7 @@
 # One cloud IdP, as this realm stores it.
 #
 # The filename stem after `idp_` is the source name, and `name` below repeats
-# it. Everything above [provider_config] is about *our* directory and *our*
+# it. Everything above [provider_config] is about *our* directory (realm) and *our*
 # naming policy and is read by KerBridge itself; everything inside that block is
 # about the cloud IdP and is read only by that provider's adapter.
 #
@@ -22,7 +22,7 @@
 # one of those values is rewritten: sync sees the old objects as gone, retires
 # each account and creates a replacement with a NEW SID, and every file whose
 # owner was resolved from the old SID loses its owner. Silent, and not
-# recoverable without a directory restore.
+# recoverable without a directory (realm) restore.
 #
 # Pointing an existing name at a different IdP costs the same. That one is at
 # least loud -- the new IdP's subjects share none of the old ones, so sync
@@ -33,7 +33,7 @@
 # Example: "entra"
 #name =
 
-# Which adapter verifies this source's tokens and reads its directory.
+# Which adapter verifies this source's tokens and reads its directory (IdP).
 # REQUIRED. KerBridge does not start until this line is completed.
 # Example: "entra"
 #provider =
@@ -47,19 +47,21 @@
 #   -entra, _goog, ...  appended to every synchronized group's login name, so
 #                       `payroll` becomes `payroll-entra`. Up to 20 characters,
 #                       none of them whitespace or anything AD or a DN rejects.
-#   none                no suffix. The right answer while this is your only
-#                       cloud IdP and you accept renaming its groups if you ever
-#                       add a second.
+#   none                no suffix.
 #
-# Choose it before a second source exists. Chosen afterwards it renames groups
-# that are already in use, and a share ACL refers to the old name.
-# REQUIRED. KerBridge does not start until this line is completed.
+# Unset derives `-` and this source's name, which is the answer that cannot
+# collide. State `none` to drop the suffix -- a shorter group name while this is
+# your only cloud IdP, at the price of renaming its groups if you ever add a
+# second.
+#
+# Either way, choose before a second source exists. Chosen afterwards it renames
+# groups that are already in use, and a share ACL refers to the old name.
 # Example: "-entra"
 #group_suffix =
 
-# This source's own directory account, and the file holding its password. One
+# This source's own directory (realm) account, and the file holding its password. One
 # account per source, never a shared one: AD enforces the write delegation
-# against the bound identity, and the directory's own audit is how you tell
+# against the bound identity, and the directory (realm) audit is how you tell
 # which source's cycle wrote what.
 #
 # Under /etc/kerbridge.secrets/generated/idp/<name>/, which is one mounted
@@ -75,13 +77,13 @@
 #bind_password_file =
 
 # The IdP-specific OU this source owns, derived from `name` and
-# realm.idp_parent_ou. State it only for a directory whose existing layout
+# realm.idp_parent_ou. State it only for a directory (realm) whose existing layout
 # collides with the derived name.
 #
 # Example: "OU=Entra,OU=CloudIdP,DC=example,DC=site"
 #ou =
 
-# Entra: the three app registrations from SETUP.md step 2, the sync app's Graph
+# Entra: the three app registrations from docs/setup/entra.md, the sync app's Graph
 # credential, and the group that admits a user to the realm. What each value is,
 # and the four Entra defaults that are wrong for KerBridge: docs/setup/entra.md.
 # `terraform apply` in deploy/terraform/entra/ creates all three and prints
@@ -147,7 +149,7 @@
 # Example: "/etc/kerbridge/entra-jwks.json"
 #jwks_file =
 
-# The directory sync app: app-only, read-only Graph, and the only one of the
+# The sync app: app-only, read-only Graph, and the only one of the
 # three holding a credential. Without admin consent on its permissions its token
 # carries no roles and every read is a 403.
 # REQUIRED. KerBridge does not start until this line is completed.

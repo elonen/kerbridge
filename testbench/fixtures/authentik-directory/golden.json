@@ -1,0 +1,69 @@
+{
+  "note": "The desired state a directory read of users_page1, users_page2, groups_page1 and groups_page2 yields, corpus-local because deriving it is IdP-agnostic work the planner already owns for Entra. Subjects are user uuids throughout (sub_mode user_uuid): the wire names members by integer pk inside a group's users array, and this has already mapped every such pk to the member's uuid. The population is narrowed to the admission closure -- the groups reachable from kb-admission by following child-group edges (kb-admission, kb-mid, kb-inner, kb-two-parents, kb-cyc-a, kb-cyc-b), plus the users those selected groups hold. That is why the four pages carry 13 users and 11 groups while this carries 5 and 6: the filler groups, authentik's own three accounts and every unheld person are read but not admitted, and get no account. Every structural case survives the narrowing: kb-svc-sync is a held service account, kb-svc-retired a held disabled account (enabled false), kb-admission reaches kb-inner through kb-mid (two levels), kb-two-parents is a child of both kb-admission and kb-mid, and kb-cyc-a and kb-cyc-b name each other (the closure expands each selected group once and the second arrival is a no-op). name_candidates are username, then the dotted display name, then the address local part, each reduced by the shared name rule and dropped when nothing survives, deduplicated first-wins -- so a user whose three spellings collapse keeps one, and kb-svc-sync keeps its username and its dotted display name cut to the 20-character budget ('kerbridge.sync.colle') but nothing from its empty address. membership values list each selected group's held users first (in wire order) then its selected child groups; a member group the closure did not select is not named here. refused is empty: no adapter rule turns an authentik account away, so no held account is refused.",
+  "admission": "9665b31a-b1e6-42e6-9204-45e14bb0eb21",
+  "grant": null,
+  "refused": [],
+  "desired": {
+    "users": {
+      "10931101-8391-40c4-9554-4ea40f3d24d5": {
+        "display_name": "Kerbridge Sync Collector",
+        "name_candidates": ["kb-svc-sync", "kerbridge.sync.colle"],
+        "enabled": true
+      },
+      "19427827-69e8-4d8f-9db4-b90bd5ff364e": {
+        "display_name": "Ada Lovelace",
+        "name_candidates": ["ada.lovelace"],
+        "enabled": true
+      },
+      "68c9a109-235c-48c3-a721-e98b23869457": {
+        "display_name": "Retired Collector",
+        "name_candidates": ["kb-svc-retired", "retired.collector"],
+        "enabled": false
+      },
+      "a6d20261-aee9-4dff-9699-2c4015fd69b0": {
+        "display_name": "Bob Nested",
+        "name_candidates": ["bob.nested"],
+        "enabled": true
+      },
+      "ca306869-7bc2-4ddf-bdae-a9a4fed1c6c6": {
+        "display_name": "Carol Cycle",
+        "name_candidates": ["carol.cycle"],
+        "enabled": true
+      }
+    },
+    "groups": {
+      "004ea54c-fef6-4b96-8f7d-5846f68055c5": { "display_name": "kb-cyc-b" },
+      "4dd29757-1821-4ad0-8bff-b48dc2c51714": { "display_name": "kb-cyc-a" },
+      "5fe9eabf-dbda-42c1-82e3-e52e5558ec10": { "display_name": "kb-mid" },
+      "807f5b7b-40f4-4836-9774-b8d3f7a77b0f": { "display_name": "kb-inner" },
+      "9665b31a-b1e6-42e6-9204-45e14bb0eb21": { "display_name": "kb-admission" },
+      "d02aca4a-5661-40bc-96e3-4afbfe8bd30c": { "display_name": "kb-two-parents" }
+    },
+    "membership": {
+      "004ea54c-fef6-4b96-8f7d-5846f68055c5": [
+        "4dd29757-1821-4ad0-8bff-b48dc2c51714"
+      ],
+      "4dd29757-1821-4ad0-8bff-b48dc2c51714": [
+        "ca306869-7bc2-4ddf-bdae-a9a4fed1c6c6",
+        "004ea54c-fef6-4b96-8f7d-5846f68055c5"
+      ],
+      "5fe9eabf-dbda-42c1-82e3-e52e5558ec10": [
+        "807f5b7b-40f4-4836-9774-b8d3f7a77b0f",
+        "d02aca4a-5661-40bc-96e3-4afbfe8bd30c"
+      ],
+      "807f5b7b-40f4-4836-9774-b8d3f7a77b0f": [
+        "a6d20261-aee9-4dff-9699-2c4015fd69b0"
+      ],
+      "9665b31a-b1e6-42e6-9204-45e14bb0eb21": [
+        "10931101-8391-40c4-9554-4ea40f3d24d5",
+        "19427827-69e8-4d8f-9db4-b90bd5ff364e",
+        "5fe9eabf-dbda-42c1-82e3-e52e5558ec10",
+        "d02aca4a-5661-40bc-96e3-4afbfe8bd30c",
+        "4dd29757-1821-4ad0-8bff-b48dc2c51714"
+      ],
+      "d02aca4a-5661-40bc-96e3-4afbfe8bd30c": [
+        "68c9a109-235c-48c3-a721-e98b23869457"
+      ]
+    }
+  }
+}

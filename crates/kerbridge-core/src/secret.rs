@@ -63,16 +63,36 @@ pub fn read(path: &Path) -> Result<String> {
     }
 }
 
-/// The same diagnosis, for a caller that meets the denial before it reaches
-/// [`read`].
+/// The same read, for a secret the deployment is allowed not to have yet.
 ///
-/// The sync credential and notify's `notify_url` are both read once before
-/// this module sees them, to tell a secret that is empty (a deployment that has
-/// not got there yet) from one that is absent. `EACCES` arrives at that read,
-/// not at ours, and it is the same failure with the same audience -- so it gets
-/// the same words, from the same numbers, instead of a hand-written guess at
-/// which group the deployment meant.
-pub fn denial(path: &Path) -> String {
+/// A compose secret is a bind mount, so the file exists before its container
+/// starts and starts empty. Empty and absent therefore both mean the operator
+/// has not pasted one in, which is a state and not a fault -- the reader waits
+/// and looks again. Everything else is a fault, `EACCES` above all: that one
+/// arrives at the peek below rather than inside [`read`], and answering it with
+/// `None` would disable a credential that is present behind a message saying
+/// none was configured.
+pub fn read_optional(path: &Path) -> Result<Option<String>> {
+    let shown = path.display();
+    match std::fs::read_to_string(path) {
+        Ok(raw) if raw.trim().is_empty() => Ok(None),
+        // Read again through `read`, which is where the permission rule lives.
+        Ok(_) => read(path).map(Some),
+        // This arm never reaches `read`, so the diagnosis is asked for by name.
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => bail!("{}", denial(path)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("reading secret {shown}")),
+    }
+}
+
+/// The same diagnosis, for the denial [`read_optional`] meets at its own peek
+/// rather than inside [`read`].
+///
+/// That peek exists to tell a secret that is empty from one that is absent, and
+/// `EACCES` arrives there instead. It is the same failure with the same
+/// audience, so it gets the same words, from the same numbers, instead of a
+/// hand-written guess at which group the deployment meant.
+fn denial(path: &Path) -> String {
     let reader = Reader::current();
     match std::fs::metadata(path) {
         Ok(meta) => file_denial(path, Owned::of(&meta), &reader),
@@ -303,6 +323,40 @@ fn clean(raw: &str, path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_TEMP_DIR: AtomicUsize = AtomicUsize::new(0);
+
+    struct TempDir(std::path::PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            let serial = NEXT_TEMP_DIR.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir()
+                .join(format!("kerbridge-secret-test-{}-{serial}", std::process::id()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+
+        fn write(&self, name: &str, value: &[u8]) -> std::path::PathBuf {
+            let path = self.0.join(name);
+            std::fs::write(&path, value).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+            path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
 
     /// The deployment's own numbers: sync at `10003:10002`, its credential
     /// written `0640 root:root` by a root that never chgrp'd it. Fixed rather
@@ -323,6 +377,83 @@ mod tests {
         assert_eq!(clean("s3cret", Path::new("p")).unwrap(), "s3cret");
         assert!(clean("\n", Path::new("p")).is_err());
         assert!(clean("", Path::new("p")).is_err());
+    }
+
+    #[test]
+    fn optional_secret_treats_only_absence_as_unconfigured() {
+        let dir = TempDir::new();
+        assert_eq!(read_optional(&dir.path().join("absent")).unwrap(), None);
+    }
+
+    #[test]
+    fn optional_secret_treats_empty_and_whitespace_only_as_unconfigured() {
+        let dir = TempDir::new();
+        for (name, value) in [("empty", b"".as_slice()), ("whitespace", b" \t\r\n".as_slice())] {
+            assert_eq!(read_optional(&dir.write(name, value)).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn optional_secret_cleans_line_endings_without_trimming_the_secret() {
+        let dir = TempDir::new();
+        let path = dir.write("credential", b"  secret value  \r\n");
+        assert_eq!(read_optional(&path).unwrap().as_deref(), Some("  secret value  "));
+    }
+
+    #[test]
+    fn optional_secret_reports_a_directory_instead_of_calling_it_absent() {
+        let dir = TempDir::new();
+        let error = read_optional(dir.path()).unwrap_err();
+        assert!(error.to_string().contains("reading secret"), "{error:#}");
+        assert!(
+            error.chain().any(|cause| cause.downcast_ref::<std::io::Error>().is_some()),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn optional_secret_reports_invalid_utf8_instead_of_calling_it_absent() {
+        let dir = TempDir::new();
+        let path = dir.write("binary", &[0xff, 0xfe]);
+        let error = read_optional(&path).unwrap_err();
+        assert!(error.to_string().contains("reading secret"), "{error:#}");
+        assert_eq!(
+            error
+                .chain()
+                .find_map(|cause| cause.downcast_ref::<std::io::Error>())
+                .map(std::io::Error::kind),
+            Some(std::io::ErrorKind::InvalidData),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn optional_secret_reports_other_io_errors_instead_of_calling_them_absent() {
+        let path = std::path::PathBuf::from(std::ffi::OsString::from_vec(b"bad\0path".to_vec()));
+        let error = read_optional(&path).unwrap_err();
+        assert!(error.to_string().contains("reading secret"), "{error:#}");
+        assert_eq!(
+            error
+                .chain()
+                .find_map(|cause| cause.downcast_ref::<std::io::Error>())
+                .map(std::io::Error::kind),
+            Some(std::io::ErrorKind::InvalidInput),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn optional_secret_keeps_the_bespoke_permission_diagnosis() {
+        if rustix::process::geteuid().is_root() {
+            return;
+        }
+        let dir = TempDir::new();
+        let path = dir.write("unreadable", b"secret");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let error = read_optional(&path).unwrap_err().to_string();
+        assert!(error.contains("cannot read secret file"), "{error}");
+        assert!(error.contains("Fix:    chmod 0640"), "{error}");
+        assert!(!error.contains("reading secret"), "{error}");
     }
 
     #[test]

@@ -1,0 +1,16 @@
+{
+  "note": "ERROR SHAPE, byte-faithful body. The response to a syntactically fine bearer token that names no Token row -- a revoked or rotated credential. Same 403, same content type, different detail. This is the one that maps to a rejected-credential outcome and must NOT count the cycle as a failure: the credential is dead, the server is healthy, and the fix is a rotation, not an outage.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?page_size=1"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "detail": "Token invalid/expired"
+    }
+  }
+}

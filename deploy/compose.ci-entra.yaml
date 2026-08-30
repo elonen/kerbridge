@@ -23,7 +23,7 @@ services:
   # This stand-in authority lets the client test authorization code with PKCE
   # without an Entra tenant.
   mockidp:
-    container_name: kerbridge-ci-mockidp
+    container_name: ${CI_PROJECT:-kerbridge-ci}-mockidp
     # Nothing outside the network talks to it: the only client is inside nas1.
     # The overlay publishes :8443 for a bench, and that is also the port this
     # run publishes the broker on -- so leaving it would make the two collide

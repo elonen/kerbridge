@@ -66,7 +66,7 @@ def add_member(group_id, obj_id):
     return r
 
 
-admission = mkgroup("admission", "onprem-realm-users")
+admission = mkgroup("kb-admission", "KerBridge Allowed On-prem Users")
 eng = mkgroup("eng-team", "eng-team")
 projx = mkgroup("proj-x", "proj-x")
 dup1 = mkgroup("kb-dup-a", "kb-duplicate-name")

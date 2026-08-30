@@ -220,7 +220,7 @@ impl Config {
             sources.push(SourceConfig {
                 source: Source::new(source.name.clone())
                     .with_context(|| format!("{file}: name"))?,
-                settings: IdpSettings::parse(provider, &source.provider_config)
+                settings: IdpSettings::parse(provider, &source.name, &source.provider_config)
                     .with_context(|| format!("in {file}"))?,
                 ou: source.ou(&parent_ou),
             });

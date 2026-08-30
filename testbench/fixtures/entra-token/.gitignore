@@ -1,3 +1,8 @@
 # The token-fixture generator creates a throwaway RSA key on every run and drops it
 # next to the corpus. No key is ever committed -- that is why the fixtures can be.
 signing-key.pem
+
+# The second admitted caller, written only by an in-place regeneration. The live
+# corpus `--out` writes is where it is read from; a copy here is a leftover, and
+# an untracked one is a file `provision.sh` would copy into the CI tree.
+positive_other_user.jwt

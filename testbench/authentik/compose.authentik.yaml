@@ -1,0 +1,83 @@
+# A minimal, pinned authentik for the standalone authorization-code proof.
+#
+# Run `./authcode.sh`. The `make test-authentik` tier stands its own authentik up
+# on the compose network (deploy/compose.authentik.yaml); this pair is for manual
+# iteration on the sign-in flow alone.
+#
+# Three containers and no Redis -- caching, the embedded outpost and the
+# WebSocket layer moved into Postgres in 2025.10. Any recipe that adds a
+# `redis` service is stale.
+#
+# Both images are pinned tag-and-digest: half of this map depends on the version
+# number, and a bare digest hides it from every diff.
+# Do not pin below 2025.12 -- role-based access control, which the sync
+# service account's read-only grant needs, does not exist before it. Do not
+# chase `2026.11.0-rc1`; that string is main's in-development version, not a
+# release.
+#
+# Nothing here is a production shape. The secret key is a constant, Postgres
+# has a constant password, and the server answers plain HTTP on :9000.
+
+name: kerbridge-authentik-bench
+
+services:
+  postgresql:
+    image: docker.io/library/postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: benchpass
+    volumes:
+      - authentik-db:/var/lib/postgresql/data
+    # The only healthcheck in the stack that upstream ships. The two authentik
+    # services have none, which is why the harness polls /-/health/ready/ itself.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  server:
+    image: ghcr.io/goauthentik/server:2026.8.0@sha256:7421753cfea67e89a6d295a1f0173ccea3866b33768c88dad90453b151cdcfd5
+    command: server
+    environment: &ak_env
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: benchpass
+      AUTHENTIK_SECRET_KEY: bench-only-secret-key-not-for-anything-real
+      # Read only on first startup, all targeting `akadmin`. The token string
+      # becomes the token key verbatim and carries `intent: api`, which is the
+      # only intent `TokenAuthentication` will look up.
+      AUTHENTIK_BOOTSTRAP_TOKEN: kerbridge-bench-bootstrap-token
+      AUTHENTIK_BOOTSTRAP_EMAIL: akadmin@bench.invalid
+      AUTHENTIK_BOOTSTRAP_PASSWORD: bench-akadmin-password
+      AUTHENTIK_LOG_LEVEL: info
+      AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+      AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+      AUTHENTIK_AVATARS: none
+    volumes:
+      # Mounted on BOTH server and worker, per upstream. The worker discovers
+      # and applies what lands here; the script does not wait for that -- it
+      # calls `ak apply_blueprint`, which is synchronous.
+      - ./blueprints:/blueprints/kerbridge:ro
+    ports:
+      - "127.0.0.1:9000:9000/tcp"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
+  worker:
+    image: ghcr.io/goauthentik/server:2026.8.0@sha256:7421753cfea67e89a6d295a1f0173ccea3866b33768c88dad90453b151cdcfd5
+    command: worker
+    environment: *ak_env
+    volumes:
+      - ./blueprints:/blueprints/kerbridge:ro
+    depends_on:
+      postgresql:
+        condition: service_healthy
+
+volumes:
+  authentik-db:

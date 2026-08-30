@@ -19,9 +19,6 @@
           "securityEnabled": true,
           "mailEnabled": false,
           "groupTypes": [],
-          "membershipRule": null,
-          "membershipRuleProcessingState": null,
-          "onPremisesSyncEnabled": null,
           "members@delta": [
             {
               "@odata.type": "#microsoft.graph.user",
@@ -35,9 +32,6 @@
           "securityEnabled": true,
           "mailEnabled": false,
           "groupTypes": [],
-          "membershipRule": null,
-          "membershipRuleProcessingState": null,
-          "onPremisesSyncEnabled": null,
           "members@delta": [
             {
               "@odata.type": "#microsoft.graph.group",
@@ -51,9 +45,6 @@
           "securityEnabled": true,
           "mailEnabled": false,
           "groupTypes": [],
-          "membershipRule": null,
-          "membershipRuleProcessingState": null,
-          "onPremisesSyncEnabled": null,
           "members@delta": [
             {
               "@odata.type": "#microsoft.graph.group",
@@ -71,9 +62,6 @@
           "securityEnabled": true,
           "mailEnabled": false,
           "groupTypes": [],
-          "membershipRule": null,
-          "membershipRuleProcessingState": null,
-          "onPremisesSyncEnabled": null,
           "members@delta": [
             {
               "@odata.type": "#microsoft.graph.user",

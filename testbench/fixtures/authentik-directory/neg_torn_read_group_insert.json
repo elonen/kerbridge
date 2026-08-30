@@ -1,0 +1,82 @@
+{
+  "note": "STRUCTURAL NEGATIVE, and the asymmetric one. A page-2 group read to pair with groups_page1, recorded after a group was created between the two requests whose random uuid sorted before page one's last row. Because a group's pk is its uuid -- random, not append-only -- ?ordering=pk reorders on insert, and kb-filler-2 (83c1e618-...), which the reader already saw on page 1, comes back here on page 2. A count comparison does not catch this: count went UP (11 to 12), so the check that catches a delete passes while the assembled membership set is wrong. The duplicate pk across pages is the only detector, and it too must yield not-whole and no snapshot.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/groups/?ordering=pk&include_users=false&page_size=8&page=2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 1,
+        "count": 12,
+        "current": 2,
+        "total_pages": 2,
+        "start_index": 9,
+        "end_index": 12
+      },
+      "results": [
+        {
+          "pk": "83c1e618-bbbb-426c-8a90-632df2c64ad7",
+          "num_pk": 17513,
+          "name": "kb-filler-2",
+          "parents": [],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "children": [],
+          "children_obj": null
+        },
+        {
+          "pk": "9665b31a-b1e6-42e6-9204-45e14bb0eb21",
+          "num_pk": 19991,
+          "name": "kb-admission",
+          "parents": [],
+          "parents_obj": null,
+          "users": [
+            48,
+            47
+          ],
+          "users_obj": null,
+          "children": [
+            "5fe9eabf-dbda-42c1-82e3-e52e5558ec10",
+            "d02aca4a-5661-40bc-96e3-4afbfe8bd30c",
+            "4dd29757-1821-4ad0-8bff-b48dc2c51714"
+          ],
+          "children_obj": null
+        },
+        {
+          "pk": "ac5759dd-302a-42d7-9b77-0897ce9ece6e",
+          "num_pk": 22908,
+          "name": "authentik Agent-Users",
+          "parents": [],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "children": [],
+          "children_obj": null
+        },
+        {
+          "pk": "d02aca4a-5661-40bc-96e3-4afbfe8bd30c",
+          "num_pk": 27670,
+          "name": "kb-two-parents",
+          "parents": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21",
+            "5fe9eabf-dbda-42c1-82e3-e52e5558ec10"
+          ],
+          "parents_obj": null,
+          "users": [
+            49
+          ],
+          "users_obj": null,
+          "children": [],
+          "children_obj": null
+        }
+      ]
+    }
+  }
+}

@@ -432,28 +432,14 @@ pub const TEST_NOTIFICATION_FLAG: &str = "--test-notification";
 
 /// The webhook URL, or `None` when the deployment has not configured one.
 ///
-/// Present-but-empty reads as unconfigured, the same way sync treats the sync
-/// credential: a Compose secret is a bind mount, so the file has to exist before
-/// the container starts and is created empty. `EACCES` is the one error that does
-/// not mean "not yet" -- the file exists and the deployment meant this process to
-/// have it, so treating it as absent would silently disable notification behind a
-/// message saying none was configured.
+/// The URL is a credential -- it is the channel's only authentication for common
+/// receivers -- so it is read as one, and an unconfigured channel is the
+/// not-yet-pasted state [`kerbridge_core::secret::read_optional`] describes.
 fn webhook_url(path: Option<&Path>) -> Result<Option<String>> {
     let Some(path) = path else {
         return Ok(None);
     };
-    match std::fs::read_to_string(path) {
-        Ok(raw) if raw.trim().is_empty() => Ok(None),
-        // Re-read through `secret::read`, which is where the permission rule
-        // lives: this file is a credential and must not be world-readable.
-        Ok(_) => Ok(Some(kerbridge_core::secret::read(path)?)),
-        // This arm never reaches `secret::read`, so the diagnosis is asked for
-        // by name: one sentence for this credential, whichever read was refused.
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            bail!("{}", kerbridge_core::secret::denial(path))
-        }
-        Err(_) => Ok(None),
-    }
+    kerbridge_core::secret::read_optional(path)
 }
 
 /// Whether TLS validation is turned off for this URL, and the checks that make

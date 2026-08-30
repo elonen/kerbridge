@@ -2,7 +2,7 @@
 //!
 //! An adapter has **two faces**, and they are here together because they have to
 //! agree byte for byte. The broker turns a bearer credential into an
-//! [`ExternalIdentity`]; sync turns a directory object from the same IdP into
+//! [`ExternalIdentity`]; sync turns a directory (IdP) object from the same IdP into
 //! one. Nothing connects the two processes -- separate containers, separate
 //! credentials, no channel -- so a disagreement about what the stored value
 //! should be breaks every login for that source, and neither program looks
@@ -60,12 +60,15 @@
 #![forbid(unsafe_code)]
 
 mod auth;
+pub mod authentik;
 pub mod entra;
 mod jwks;
+mod jwt;
 #[cfg(feature = "sync")]
 pub mod sync;
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Result, bail};
@@ -83,19 +86,21 @@ pub use jwks::JwksSource;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provider {
     Entra,
+    Authentik,
 }
 
 impl Provider {
     /// Every adapter this build carries. A caller that writes or checks one file
     /// per provider iterates this rather than naming the arms, which is what
     /// keeps a second adapter to one arm in one match.
-    pub const ALL: [Self; 1] = [Self::Entra];
+    pub const ALL: [Self; 2] = [Self::Entra, Self::Authentik];
 
     /// From a source file's `provider = "..."`. The caller names the file; this
     /// knows only the word it was handed.
     pub fn from_name(name: &str) -> Result<Self> {
         match name {
             "entra" => Ok(Self::Entra),
+            "authentik" => Ok(Self::Authentik),
             other => bail!("{other:?} is not an adapter this build carries"),
         }
     }
@@ -105,6 +110,7 @@ impl Provider {
     pub fn name(self) -> &'static str {
         match self {
             Self::Entra => "entra",
+            Self::Authentik => "authentik",
         }
     }
 
@@ -117,6 +123,11 @@ impl Provider {
                 "provider_config",
                 entra::ENTRA_SRC,
                 &entra::schema()?,
+            ),
+            Self::Authentik => kerbridge_core::config::render(
+                "provider_config",
+                authentik::AUTHENTIK_SRC,
+                &authentik::schema()?,
             ),
         }
     }
@@ -145,6 +156,7 @@ impl Provider {
     pub fn source_schema(self) -> Result<serde_json::Value, String> {
         let mut block = match self {
             Self::Entra => entra::schema()?,
+            Self::Authentik => authentik::schema()?,
         };
         // `$schema` names a document's own dialect, and this one stops being a
         // document here. `title` is the private struct's name, which is
@@ -172,12 +184,17 @@ impl Provider {
 #[derive(Debug, PartialEq)]
 pub enum IdpSettings {
     Entra(entra::Settings),
+    Authentik(authentik::Settings),
 }
 
 impl IdpSettings {
-    pub fn parse(provider: Provider, table: &toml::Table) -> Result<Self> {
+    /// `name` is the source name. An adapter may derive a default from it --
+    /// the secrets directory is keyed by it, the same way the OU and the bind
+    /// account are -- so a file that states only what is site-specific parses.
+    pub fn parse(provider: Provider, name: &str, table: &toml::Table) -> Result<Self> {
         match provider {
             Provider::Entra => Ok(Self::Entra(entra::Settings::parse(table)?)),
+            Provider::Authentik => Ok(Self::Authentik(authentik::Settings::parse(name, table)?)),
         }
     }
 
@@ -194,6 +211,16 @@ impl IdpSettings {
     pub fn paths(&self) -> BTreeMap<String, String> {
         match self {
             Self::Entra(settings) => entra::paths(settings),
+            Self::Authentik(settings) => authentik::paths(settings),
+        }
+    }
+
+    /// The sync credential file. Callers can supply its content to [`probe`]
+    /// without knowing the adapter type.
+    pub fn sync_credential_file(&self) -> &Path {
+        match self {
+            Self::Entra(settings) => &settings.sync_credential_file,
+            Self::Authentik(settings) => &settings.sync_credential_file,
         }
     }
 }
@@ -235,6 +262,56 @@ impl Probe {
     }
 }
 
+/// Append the standard OIDC discovery suffix to the configured authority.
+pub(crate) fn discovery_url(authority: &str) -> String {
+    format!("{}/.well-known/openid-configuration", authority.trim_end_matches('/'))
+}
+
+/// A failed GET, sorted into the two kinds but not yet attached to a question.
+pub(crate) struct Trouble(Verdict, String);
+
+impl Trouble {
+    pub(crate) fn at(self, check: &'static str) -> Probe {
+        Probe { check, verdict: self.0, detail: self.1 }
+    }
+}
+
+/// One GET with the signing-key fetch limits.
+///
+/// Classify only transport and status. The adapter decides what the response
+/// document means.
+pub(crate) async fn get(url: &str, timeout: Duration) -> Result<String, Trouble> {
+    let response = jwks::http_client(timeout)
+        .map_err(|e| Trouble(Verdict::Warn, format!("{e:#}")))?
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| Trouble(Verdict::Warn, format!("{url} did not answer: {}", root_cause(&e))))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(Trouble(status_verdict(status.as_u16()), format!("{url} answered {status}")));
+    }
+    jwks::bounded_body(response)
+        .await
+        .map_err(|e| Trouble(Verdict::Warn, format!("{url} answered, the body did not: {e:#}")))
+}
+
+/// The DNS or connection cause at the bottom of an error chain.
+fn root_cause(error: &dyn std::error::Error) -> String {
+    let mut cause = error;
+    while let Some(next) = cause.source() {
+        cause = next;
+    }
+    cause.to_string()
+}
+
+/// Which side of the line a status falls on. A 4xx is the server answering
+/// *about the request*, which settles the question against the configuration; a
+/// 5xx is the server failing to answer it at all.
+pub(crate) fn status_verdict(status: u16) -> Verdict {
+    if (500..600).contains(&status) { Verdict::Warn } else { Verdict::Fail }
+}
+
 /// Ask this source's IdP the questions only it can answer.
 ///
 /// Which document to fetch and which claim to compare are provider facts, so
@@ -244,9 +321,21 @@ impl Probe {
 /// Never called at startup or on the bootstrap path. A transient IdP outage must
 /// not become a local one, which is why every verdict here is advisory to a
 /// caller that already validated the file offline.
-pub async fn probe(settings: &IdpSettings, timeout: Duration) -> Vec<Probe> {
+///
+/// `credential` is the source's sync credential, read from
+/// [`IdpSettings::sync_credential_file`] by the caller, or `None` when the
+/// operator has yet to paste one in. Entra's probe reads only public documents
+/// and ignores it; authentik's uses it for the three authenticated legs that a
+/// public document cannot answer. Passing it rather than reading the file here
+/// keeps the one secret read on the caller's side of the seam.
+pub async fn probe(
+    settings: &IdpSettings,
+    credential: Option<&str>,
+    timeout: Duration,
+) -> Vec<Probe> {
     match settings {
         IdpSettings::Entra(settings) => entra::probe(settings, timeout).await,
+        IdpSettings::Authentik(settings) => authentik::probe(settings, credential, timeout).await,
     }
 }
 
@@ -263,6 +352,7 @@ pub fn encode_identity(
 ) -> Result<ExternalIdentity, IdentityError> {
     match provider {
         Provider::Entra => entra::identity(source, subject),
+        Provider::Authentik => authentik::identity(source, subject),
     }
 }
 
@@ -311,7 +401,8 @@ mod tests {
 
     /// The block this provider's own template carries, parsed.
     fn template_settings(provider: Provider, block: toml::Table) -> IdpSettings {
-        IdpSettings::parse(provider, &block).expect("the block the envelope carried")
+        IdpSettings::parse(provider, provider.name(), &block)
+            .expect("the block the envelope carried")
     }
 
     /// One provider's whole source file with its lines to complete filled in
@@ -391,6 +482,24 @@ mod tests {
                  `KB_WRITE_CONFIG_TEMPLATES=1 cargo test -p kerbridge-idp`."
             );
         }
+    }
+
+    /// A 4xx rejects the request. A 5xx gives no configuration verdict.
+    #[test]
+    fn a_4xx_names_the_config_and_a_5xx_names_the_world() {
+        for definitive in [400, 401, 403, 404, 410] {
+            assert_eq!(status_verdict(definitive), Verdict::Fail, "{definitive}");
+        }
+        for transient in [500, 502, 503, 504] {
+            assert_eq!(status_verdict(transient), Verdict::Warn, "{transient}");
+        }
+    }
+
+    #[test]
+    fn the_discovery_url_hangs_off_the_authority() {
+        let want = "https://idp.example.site/tenant/.well-known/openid-configuration";
+        assert_eq!(discovery_url("https://idp.example.site/tenant"), want);
+        assert_eq!(discovery_url("https://idp.example.site/tenant/"), want);
     }
 
     #[test]

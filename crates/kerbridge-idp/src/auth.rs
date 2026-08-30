@@ -2,7 +2,7 @@
 //! must be told to obtain one.
 //!
 //! The other face is [`encode_identity`](crate::encode_identity): the same
-//! [`ExternalIdentity`], built from a directory object instead of a token. See
+//! [`ExternalIdentity`], built from a directory (IdP) object instead of a token. See
 //! the crate doc for what a disagreement between the two costs.
 
 use std::collections::BTreeMap;
@@ -14,7 +14,7 @@ use kerbridge_core::{ExternalIdentity, Source};
 use kerbridge_notify::Notifier;
 use serde::Serialize;
 
-use crate::{IdpSettings, entra};
+use crate::{IdpSettings, authentik, entra};
 
 /// Bring up one source's adapter. The settings variant names the adapter, so a
 /// caller cannot hand one provider's block to another's constructor.
@@ -31,6 +31,9 @@ pub async fn connect(
     match settings {
         IdpSettings::Entra(settings) => {
             Ok(Box::new(entra::Entra::connect(settings, source, notifier, timeout).await?))
+        }
+        IdpSettings::Authentik(settings) => {
+            Ok(Box::new(authentik::Authentik::connect(settings, source, notifier, timeout).await?))
         }
     }
 }
@@ -59,6 +62,12 @@ pub struct OidcDiscovery {
     /// not every IdP takes it that way -- some want it as a parameter on the
     /// authorization request. One field here beats an IdP branch in the client.
     /// Omitted from the wire when empty, which is every Entra deployment.
+    ///
+    /// Never name a parameter the flow sets itself -- `client_id`,
+    /// `response_type`, `redirect_uri`, `response_mode`, `scope`, `state`,
+    /// `code_challenge`, `code_challenge_method`. The client appends its own
+    /// after these, so a duplicate here costs a sign-in on any authority that
+    /// reads the first of the two.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub extra_auth_params: BTreeMap<String, String>,
 }
@@ -92,6 +101,18 @@ pub(crate) fn reject(msg: impl Into<String>) -> Reject {
 /// INVARIANT: the [`Source`] an adapter builds identities against must be the
 /// one this IdP's sync writes. Separate processes, no channel between them; a
 /// disagreement breaks every login for that IdP and nothing reports it.
+///
+/// INVARIANT: the credential [`IdentityProvider::identify`] receives is opaque.
+/// Nothing in this trait requires a JWT, nor a JWKS or an OIDC discovery
+/// document behind it. An adapter verifies its IdP's credential however that
+/// IdP works, and establishes trust in the key however that IdP publishes one
+/// -- the seam is "prove an identity", not "validate a token". Only the `&str`
+/// in the signature holds that open.
+///
+/// A helper two adapters come to share therefore stays private to this crate.
+/// A public type is a contract: it makes every future adapter's protocol a
+/// commitment this trait never asked for. ([`b64url`] is public for the
+/// broker's device grant, which is no IdP adapter.)
 #[async_trait::async_trait]
 pub trait IdentityProvider: Send + Sync {
     fn client_config(&self) -> OidcDiscovery;

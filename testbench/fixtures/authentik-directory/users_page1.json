@@ -1,0 +1,146 @@
+{
+  "note": "The first page of the full user read, pinned from a live 2026.8.0 recording. page_size is 10 to force a two-page boundary; the live read uses 100. The rows are the whole cast, unfiltered: /core/users/ has no server-side filter the adapter asks for, so authentik's own three accounts (ak-outpost, akadmin, benchuser) ride along with the seeded people. Structural cases carried as rows here: a service account (kb-svc-sync, type service_account) and a disabled account (kb-svc-retired, is_active false). The membership edge is readable from this side too -- groups holds the uuid list while groups_obj is null under include_groups=false, so a reader that follows groups_obj gets nothing. pagination.next is the integer 2. The autocomplete UI hint block the live response carries is dropped; the directory read ignores it.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=10&page=1"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "pagination": {
+        "next": 2,
+        "previous": 0,
+        "count": 13,
+        "current": 1,
+        "total_pages": 2,
+        "start_index": 1,
+        "end_index": 10
+      },
+      "results": [
+        {
+          "pk": 2,
+          "username": "ak-outpost-56ed4113d3bf4242a44e7436d9051147",
+          "name": "Outpost authentik Embedded Outpost Service-Account",
+          "is_active": true,
+          "groups": [],
+          "groups_obj": null,
+          "email": "",
+          "type": "internal_service_account",
+          "uuid": "9947186f-0c38-4d63-aaea-3af91f8b59ed"
+        },
+        {
+          "pk": 4,
+          "username": "akadmin",
+          "name": "authentik Default Admin",
+          "is_active": true,
+          "groups": [
+            "0af8e7f1-82d8-4265-9f16-844061421ae4"
+          ],
+          "groups_obj": null,
+          "email": "akadmin@bench.invalid",
+          "type": "internal",
+          "uuid": "b1bd1039-fe26-438f-b0c9-b21508e2844f"
+        },
+        {
+          "pk": 6,
+          "username": "benchuser",
+          "name": "Bench User",
+          "is_active": true,
+          "groups": [],
+          "groups_obj": null,
+          "email": "benchuser@bench.invalid",
+          "type": "internal",
+          "uuid": "a9ff0acc-50af-4745-adbf-36f537c6571d"
+        },
+        {
+          "pk": 44,
+          "username": "dave.filler",
+          "name": "Dave Filler",
+          "is_active": true,
+          "groups": [],
+          "groups_obj": null,
+          "email": "dave.filler@bench.invalid",
+          "type": "internal",
+          "uuid": "97bc2daf-8099-4b56-af6c-92c65cfdca43"
+        },
+        {
+          "pk": 45,
+          "username": "erin.filler",
+          "name": "Erin Filler",
+          "is_active": true,
+          "groups": [],
+          "groups_obj": null,
+          "email": "erin.filler@bench.invalid",
+          "type": "internal",
+          "uuid": "e82f67d1-8060-40cd-bf35-e4999ad0ee9b"
+        },
+        {
+          "pk": 46,
+          "username": "frank.filler",
+          "name": "Frank Filler",
+          "is_active": true,
+          "groups": [],
+          "groups_obj": null,
+          "email": "frank.filler@bench.invalid",
+          "type": "internal",
+          "uuid": "6b6becae-cbea-4321-b1db-507c45c29d91"
+        },
+        {
+          "pk": 47,
+          "username": "ada.lovelace",
+          "name": "Ada Lovelace",
+          "is_active": true,
+          "groups": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21"
+          ],
+          "groups_obj": null,
+          "email": "ada.lovelace@bench.invalid",
+          "type": "internal",
+          "uuid": "19427827-69e8-4d8f-9db4-b90bd5ff364e"
+        },
+        {
+          "pk": 48,
+          "username": "kb-svc-sync",
+          "name": "Kerbridge Sync Collector",
+          "is_active": true,
+          "groups": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21"
+          ],
+          "groups_obj": null,
+          "email": "",
+          "type": "service_account",
+          "uuid": "10931101-8391-40c4-9554-4ea40f3d24d5"
+        },
+        {
+          "pk": 49,
+          "username": "kb-svc-retired",
+          "name": "Retired Collector",
+          "is_active": false,
+          "groups": [
+            "d02aca4a-5661-40bc-96e3-4afbfe8bd30c"
+          ],
+          "groups_obj": null,
+          "email": "",
+          "type": "service_account",
+          "uuid": "68c9a109-235c-48c3-a721-e98b23869457"
+        },
+        {
+          "pk": 50,
+          "username": "bob.nested",
+          "name": "Bob Nested",
+          "is_active": true,
+          "groups": [
+            "807f5b7b-40f4-4836-9774-b8d3f7a77b0f"
+          ],
+          "groups_obj": null,
+          "email": "bob.nested@bench.invalid",
+          "type": "internal",
+          "uuid": "a6d20261-aee9-4dff-9699-2c4015fd69b0"
+        }
+      ]
+    }
+  }
+}

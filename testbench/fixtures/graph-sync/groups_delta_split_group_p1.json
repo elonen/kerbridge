@@ -18,9 +18,6 @@
           "securityEnabled": true,
           "mailEnabled": false,
           "groupTypes": [],
-          "membershipRule": null,
-          "membershipRuleProcessingState": null,
-          "onPremisesSyncEnabled": null,
           "members@delta": [
             {
               "@odata.type": "#microsoft.graph.user",

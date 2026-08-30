@@ -1,0 +1,84 @@
+{
+  "note": "RECORDED with the same partially-granted credential, after granting view_group on the admission group only. The group rows name member ids ([48]) that the user read above will not return. On a read that is complete by construction a dangling id cannot be ordering, so this -- not the count -- is the one detectable shadow of a partial grant, and it only shows where the grant cuts across a membership edge. It dangles in three places at once: `users`, `children`, and (in the user recording above) the visible users' own `groups` arrays, none of which the object filter touches.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/groups/?ordering=pk&include_users=false&page_size=100"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:39 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "824",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "7800d13f65944026b6126d8bea237599",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 0,
+        "count": 1,
+        "current": 1,
+        "total_pages": 1,
+        "start_index": 1,
+        "end_index": 1
+      },
+      "results": [
+        {
+          "pk": "9665b31a-b1e6-42e6-9204-45e14bb0eb21",
+          "num_pk": 19991,
+          "name": "kb-admission",
+          "is_superuser": false,
+          "parents": [],
+          "parents_obj": null,
+          "users": [
+            48,
+            47
+          ],
+          "users_obj": null,
+          "attributes": {},
+          "roles": [],
+          "roles_obj": [],
+          "inherited_roles_obj": null,
+          "children": [
+            "5fe9eabf-dbda-42c1-82e3-e52e5558ec10",
+            "d02aca4a-5661-40bc-96e3-4afbfe8bd30c",
+            "4dd29757-1821-4ad0-8bff-b48dc2c51714"
+          ],
+          "children_obj": null
+        }
+      ],
+      "autocomplete": {
+        "current_model": "authentik_core.group",
+        "models": {
+          "authentik_core.group": {
+            "name": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "is_superuser": {
+              "type": "bool",
+              "nullable": true,
+              "options": null
+            },
+            "attributes": {
+              "type": "relation",
+              "nullable": false,
+              "options": null,
+              "relation": "authentik_core.group_attributes"
+            }
+          }
+        }
+      }
+    }
+  }
+}

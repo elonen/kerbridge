@@ -1,5 +1,5 @@
 use super::*;
-use crate::sync::{Desired, build_desired};
+use crate::sync::{Desired, build_desired, conformance};
 
 const ADMISSION: &str = "4e8a1c9d-5f6b-4d7e-b8a9-001122334455";
 const PROJX: &str = "77770001-aaaa-bbbb-cccc-000000000001";
@@ -112,9 +112,16 @@ fn held_guest_reproduces_the_s13_desired_state() {
     assert_eq!(d, desired_fixture("S13_held_guest_upn_name"));
 }
 
+/// The initial Entra shadow narrows to the S1 desired state through the shared
+/// directory-source conformance check.
 #[test]
 fn initial_read_reproduces_the_s1_desired_state() {
-    assert_eq!(built(&initial_shadow()), desired_fixture("S1_initial_full_sync"));
+    conformance::whole_read_reproduces_golden(
+        initial_shadow().enumerate(SamSource::Upn),
+        &sub(ADMISSION),
+        &[sub(PROJX)],
+        &desired_fixture("S1_initial_full_sync"),
+    );
 }
 
 #[test]

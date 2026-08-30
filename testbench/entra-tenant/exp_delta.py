@@ -75,7 +75,7 @@ ucursor = j.get("@odata.deltaLink")
 admin("POST", "/v1.0/groups/%s/members/$ref" % ENG,
       {"@odata.id": "https://graph.microsoft.com/v1.0/directoryObjects/%s" % U["kb-bob"]})
 admin("DELETE", "/v1.0/groups/%s/members/%s/$ref" % (ADMISSION, U["kb-alice"]))
-admin("PATCH", "/v1.0/groups/%s" % ADMISSION, {"displayName": "onprem-realm-users-renamed"})
+admin("PATCH", "/v1.0/groups/%s" % ADMISSION, {"displayName": "KerBridge Allowed On-prem Users (renamed)"})
 admin("PATCH", "/v1.0/users/%s" % U["kb-carol"], {"accountEnabled": False})
 print("mutations applied; waiting for delta propagation")
 time.sleep(45)

@@ -1,0 +1,23 @@
+{
+ "keys": [
+  {
+   "kty": "RSA",
+   "key_ops": [
+    "verify"
+   ],
+   "n": "lviAx1wNV9uD5V4laP5BLEVcynMKd8o-s5SbVWg9yhrGaweLrM-lXCxQ_eVphIpSYJd2saDyfNTDWfVeCBft8Qel38e01hNrmV9MnFqkqGkVjyAG0U3qIKpGjnfuCinyjwbOvHNAOcXqYGdvv8KEUie5-wzsM5HcJLhmTKo6XRqnue-ffkBk3f-QbTAUaG9DeDEIhew7Ryh6cfTP3u3NJN-I0a5fu2aKcPJ2E1cXOvRFKfg61TK8aTgT8akrFGm37Hh1BkRuf8a5nadj8ua8LU7KyUkSo6l5uQnWGMNujhG2KBYt-CpRlKi_aEsc9HbOEm4AVhPXFqrdjwXETlgs1w",
+   "e": "AQAB",
+   "kid": "nz5y5GNAflYKpIookrzRgpzg4oDnkXJtXjzLkigiqDdVOwt_jFBjTUlMVDEATA04QGkZ_TWujtnX_viQNIxXtg",
+   "use": "sig",
+   "alg": "RS256"
+  },
+  {
+   "x": "6Bt_kNVEak3zDkvlPYXTalAArCwKQoTBqbkKoXQlovc",
+   "kty": "OKP",
+   "crv": "Ed25519",
+   "kid": "fixture-key-ed25519",
+   "use": "sig",
+   "alg": "EdDSA"
+  }
+ ]
+}

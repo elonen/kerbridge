@@ -24,6 +24,39 @@ version of the build, so a note left in it is shown a second time.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
+## Unreleased
+
+- Added authentik as a second identity provider. It supports browser sign-in,
+  ticket issuance, and read-only user and group synchronization.
+- Added `make test-authentik`, which tests authentik sign-in and sync through
+  a Kerberos-authenticated SMB file read.
+- A signing-key document that publishes two usable keys under one `kid` is
+  now refused whole. Which key verified a token must not depend on the order
+  the document lists the keys in.
+- `SETUP.md` §9 now says what to delete in the identity provider. Each
+  provider's step-2 page names its objects, and warns what a deleted admission
+  group costs.
+- The two IdP signing-key conditions, `idp-trust-failure` and
+  `idp-keys-unavailable`, now carry the source name and are opened and
+  cleared per source. A deployment with two identity providers no longer
+  has the second one's key fetch announce a recovery for the first one's
+  outage while that outage is still running.
+- `group_suffix` now defaults to `-` and the source name. State it only to
+  choose `none` or another suffix.
+- An authentik source no longer states `application_slug`, `client_id` or
+  `sync_credential_file` unless it differs from what the setup blueprint
+  creates. Only `url` and `admission_group_id` are left to complete.
+- `kbconfig check` now begins its output with `Config OK` or `Config ERROR`.
+- The example Caddyfile for the Debian packages now shows how to serve a
+  certificate you supply yourself, instead of one Caddy obtains over ACME.
+- `kerbridge-broker` now installs the landing page that answers `/`, and the
+  Caddy and nginx examples serve it. A person who types the broker address
+  into a browser got a bare 404, which reads as a broken service. The Docker
+  Compose deployment already answered this address.
+- `make test` now holds every reverse proxy in front of the broker to the
+  broker's own route list. A route the broker gains and a proxy does not is a
+  404 at the edge that no test reaching the broker directly can see.
+
 ## 0.9.3
 
 - Every option a config file must set is now a commented line to complete,
@@ -78,7 +111,7 @@ names the tag, and it stops if that section is absent or empty.
   provisions with gid 3000000, which an unprivileged container cannot use.
 - Audit logs moved to `/var/log/kerbridge/`, state to `/var/lib/kerbridge/`.
 - Secrets moved to `/etc/kerbridge.secrets/`.
-- New `kbsetup` provisions the realm and bootstraps the directory.
+- New `kbsetup` provisions the realm and bootstraps the directory (realm).
 - `kbconfig template` is now `kbconfig init`, with your answers in it.
 - A lowercase realm is refused, by `kbconfig check` and at startup.
 - Default Entra groups renamed: `KerBridge Allowed On-prem Users` and

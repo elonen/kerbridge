@@ -52,8 +52,8 @@
 | `kerbridge-idp` | Every provider-specific fact, behind one interface. Linked by **both** the broker and sync, because the two build the same stored identity from opposite sides and must not disagree. This is where a second cloud IdP is added. |
 | `kerbridge-notify` | Operator-notification channel: persists lists of open problems as files, and sends notifications about them through a configurable webhook. Meant for Slack, Telegram, Mattermost etc. You can also read the problem files with Zabbix agent scripts for example. |
 | `kerbridge-manage` | The operator CLI, and one of the crates that are not services. |
-| `kerbridge-setup` | The setup CLI, `kbsetup`: provisions the realm, bootstraps the directory, and answers whether durable state still matches the config set. Runs as root on the domain controller and drives the Samba command-line tools; the one crate that creates things which cannot be uncreated. |
-| `kerbridge-config` | The configuration CLI: validates the config set, and prints one value or the source list for the shell scripts, which cannot read TOML. Links no LDAP client, because it runs before the realm exists -- directory reach is unavailable to it rather than merely unexercised. Also ships `libexec/prepare-state`, the helper that creates the package directories: not Rust, because both deployments have to run the same bytes and one of them runs them from a container. |
+| `kerbridge-setup` | The setup CLI, `kbsetup`: provisions the realm, bootstraps the directory (realm), and answers whether durable state still matches the config set. Runs as root on the domain controller and drives the Samba command-line tools; the one crate that creates things which cannot be uncreated. |
+| `kerbridge-config` | The configuration CLI: validates the config set, and prints one value or the source list for the shell scripts, which cannot read TOML. Links no LDAP client, because it runs before the realm exists -- directory (realm) reach is unavailable to it rather than merely unexercised. Also ships `libexec/prepare-state`, the helper that creates the package directories: not Rust, because both deployments have to run the same bytes and one of them runs them from a container. |
 
 ## `deploy/` - deployment and build containers
 
@@ -136,11 +136,26 @@ nothing generates or installs a NEWS file then.
 Only what is below, and nothing else. `crates/` is the implementation now, so the
 Python reference implementations and the spike bring-up scripts are gone.
 
-- `fixtures/` — the corpora `cargo test` loads, and the two generators that are
-  the only way to regenerate them. `entra-token/make_fixtures.py` is also *run*
-  by `make test-stack`.
-- `entra-tenant/` — the tools for driving a live Entra tenant. Kept because they
-  implement nothing KerBridge ships and the work they serve is still open.
+- `fixtures/` — the corpora `cargo test` loads, and the generators that are the
+  only way to regenerate them; the two token generators share `tokenforge.py`.
+  `entra-token/make_fixtures.py` is also *run* by `make test-stack`.
+- `authentik/` — everything that stands a live authentik up. `blueprints/`, the
+  `wait_defaults` gate and `approve.sh` are what the `make test-authentik` stack
+  tier applies and signs in through; the tier itself is
+  `deploy/scripts/bench/ci-authentik.sh`. `compose.authentik.yaml` and
+  `authcode.sh` are the standalone stack and authorization-code proof it grew
+  out of, kept for manual iteration. `capture_directory.py` seeds a cast against
+  that stack and records the directory (IdP) read into `captured/`, which
+  `fixtures/authentik-directory/` is derived from.
+- `mock-idp/` — the fake OIDC server and approval hook that `make test-stack`
+  runs instead of a live tenant.
+- `entra-tenant/` — the tools for driving a live Entra tenant, and
+  `conformance.py`, which reads one to check that `fixtures/graph-sync/` still
+  describes what Graph sends — the corpus is written from documentation, so
+  `make test` cannot tell.
+  [`testbench/entra-tenant/README.md`](testbench/entra-tenant/README.md) is the
+  procedure and the tenant it expects. The rest are kept because they implement
+  nothing KerBridge ships and the work they serve is still open.
 - `wire.py` — decodes a tcpdump capture without tshark, which
   [`docs/windows-testbench.md`](docs/windows-testbench.md) needs and nothing else provides.
 

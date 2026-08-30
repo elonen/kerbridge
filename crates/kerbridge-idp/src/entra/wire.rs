@@ -1,7 +1,7 @@
 //! Microsoft Graph's wire shapes, and the shadow they patch.
 //!
 //! The read model is a **shadow** -- a locally accumulated copy of the directory
-//! that delta cycles patch. Graph delta entries are *sparse*: a change carries
+//! (IdP) that delta cycles patch. Graph delta entries are *sparse*: a change carries
 //! only the properties that changed and only the membership edges that changed,
 //! so a slice is merged into the shadow, never treated as a whole object. A user
 //! object deletion arrives on the *users* stream and must be scrubbed from group
@@ -25,7 +25,7 @@ use crate::sync::{
     local_part, name_candidate,
 };
 
-/// A directory-object membership edge's object class, taken from `@odata.type`.
+/// An object's class on a directory (IdP) membership edge, from `@odata.type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemberKind {
     User,
@@ -128,7 +128,7 @@ pub struct Member {
     pub id: String,
 }
 
-/// The accumulated directory copy. Delta cycles mutate it; a full read starts
+/// The accumulated directory (IdP) copy. Delta cycles mutate it; a full read starts
 /// from an empty one.
 #[derive(Debug, Default)]
 pub struct Shadow {
@@ -277,7 +277,7 @@ fn name_candidates(u: &ShadowUser, sam_source: SamSource) -> Vec<NameCandidate> 
 }
 
 impl Shadow {
-    /// The shadow as a whole-directory enumeration, with the syncable rule
+    /// The shadow as a whole directory (IdP) enumeration, with the syncable rule
     /// applied and every edge Samba cannot mirror dropped.
     ///
     /// The rule is Entra's own: `userType` is a wire fact about this IdP, so

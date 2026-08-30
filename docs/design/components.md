@@ -35,7 +35,7 @@ Responsibilities:
 
 Constraints:
 
-- Caddy validates no Entra token and creates no trusted identity headers.
+- Caddy validates no identity proof and creates no trusted identity headers.
   Authentication stays in the broker. Thus the proxy header configuration is
   never an authorization boundary.
 - DNS-01 usually needs a Caddy image that contains the selected DNS provider
@@ -101,8 +101,8 @@ that the client depends on.
   exists to avoid.
 - Anonymous PKINIT with FAST armoring still needs a KDC trust anchor on the
   client.
-- The broker holds no Entra credential today (`config.rs` — tenant id, JWKS
-  source, two client ids for `aud`/`azp`). Thus any scheme in which the broker
+- The broker holds no cloud IdP secret. It holds provider settings and public
+  signing keys only. Thus any scheme in which the broker
   proves itself *to* the client must start by giving it one, with the renewal
   problem of
   [Sync credential lifetime](identity-and-directory.md#sync-credential-lifetime).
@@ -128,15 +128,15 @@ that a Debian host installs, not a second build of the same source.
 
 Trust anchors:
 
-- The broker needs the public CA roots for outbound TLS to Entra, and the realm
-  CA for LDAPS to Samba.
-- The Entra roots come from Debian's `ca-certificates` package, read as the OS
+- The broker needs public CA roots for outbound TLS to each cloud IdP. It needs
+  the realm CA for LDAPS to Samba.
+- The public roots come from Debian's `ca-certificates` package, read as the OS
   trust store (`rustls-tls-native-roots`). Thus the roots refresh with `apt`, or
   with a base-image rebump, and KerBridge is not recompiled. The image names the
   package explicitly, because the image takes no `Recommends`.
 - `webpki-roots` stays compiled in as a fallback for a host that has no bundle.
   If both are enabled, the two root sets merge.
-- A TLS trust failure on the Entra path is a categorized failure and an operator
+- A TLS trust failure on an IdP path is a categorized failure and an operator
   notification (see [Operator notification](operations.md#operator-notification)).
   It is never a silent verification error: a verifier that cannot get keys must
   say so, and must not fail closed in silence.
@@ -187,8 +187,8 @@ a time, under that source's own OU and bind account.
 Responsibilities:
 
 - Read the configured users and groups from each configured cloud IdP.
-- Read the Entra realm-admission group the source file names by object id. The
-  documented group is `KerBridge Allowed On-prem Users`.
+- Read the admission group that each source file names by immutable IdP object
+  ID.
 - Reconcile the IdP-controlled users and groups into dedicated Samba AD OUs.
 - Store the immutable external identity mapping on each Samba AD object.
 - Create user accounts with random, undisclosed key-generating passwords.
@@ -196,14 +196,15 @@ Responsibilities:
   that are removed and clear their sync-owned membership, as the configured
   policy specifies.
 - Keep the locally managed Samba objects and the local group memberships.
-- Hold only its own synchronization cursors and reconciliation state, in memory.
+- Hold provider read state and reconciliation state in memory. Entra uses delta
+  cursors and a shadow. authentik performs a full read and has no cursor.
 - Monitor the expiry of its own sync credential and give a warning well before
   the credential lapses.
 
-Samba AD is the single source of truth for the external-to-realm mappings. There
-is no second mapping database in the broker. A full reconciliation can rebuild
-the cursors, and thus the cursors need no durable home. The directory mapping is
-part of the Samba database and cannot be discarded.
+Samba AD is the single source of truth for external-to-realm mappings. The
+broker has no second mapping database. Entra can rebuild its cursors and shadow
+with a full reconciliation. authentik rebuilds its complete read in each cycle.
+The mapping is part of the Samba database and cannot be discarded.
 
 ### `realm`
 
@@ -244,7 +245,7 @@ administrator. On another host, that state would cross a network boundary. Thus
 
 They are two processes, and each deployment runs them as two. A Debian
 deployment has `samba-ad-dc.service` and `kerbridge-issuerd.service`. Compose has
-the `realm` and `issuer` services, from one image, which share the directory
+the `realm` and `issuer` services, from one image, which share the directory (realm)
 volumes and one network namespace. Thus a restart stops one program only, and a
 failure names the program that failed.
 

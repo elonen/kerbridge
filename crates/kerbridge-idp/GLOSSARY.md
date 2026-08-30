@@ -1,7 +1,7 @@
 # kerbridge-idp glossary
 
 The two faces of a cloud IdP: what a bearer credential is reduced to, and what a
-directory read returns. Every term here is one adapter's, below the seam — the
+directory (IdP) read returns. Every term here is one adapter's, below the seam — the
 mirror above it reads none of them. What the mirror does with a
 [source snapshot](../kerbridge-sync/GLOSSARY.md#source-snapshot) is in
 [`crates/kerbridge-sync/GLOSSARY.md`](../kerbridge-sync/GLOSSARY.md).
@@ -10,6 +10,15 @@ Part of the repo-wide vocabulary in [`GLOSSARY.md`](../../GLOSSARY.md) — a ter
 means the same thing there and here. It lives in this file, closest to where
 it's used, rather than in the root file, because the root file would be
 unreadably long if it carried every term at once.
+
+### application slug
+
+The stable text key of one authentik application. It is part of each
+application-specific URL. KerBridge uses it to derive the issuer, authority,
+and JWKS URL for one source.
+<!-- refs: `application_slug` in `configs/idp_<source>.toml`; `authentik::application_base` -->
+<!-- avoid: slug, provider slug, application name -->
+<!-- different than: client ID, source name -->
 
 ### corrupt cursor
 
@@ -80,7 +89,7 @@ place. A GUID-shaped credential file is refused for exactly that reason.
 
 ### shadow
 
-The locally accumulated copy of the Entra directory that delta
+The locally accumulated copy of the Entra directory (IdP) that delta
 pages patch. It lives in memory alone: a full read starts from an empty one, a
 full resync rebuilds it, and a restart loses it.
 <!-- refs: `kerbridge_idp::entra::wire::Shadow` -->
@@ -100,7 +109,7 @@ it dead, and therefore no evidence that anything is absent. Nothing may be
 planned from one: the [cycle](../kerbridge-sync/GLOSSARY.md#cycle) is discarded
 and counted toward the consecutive-
 failure alert. It says Graph is unreachable or refusing, never that the
-directory is large — how long a whole read takes is not bounded.
+directory (IdP) is large — how long a whole read takes is not bounded.
 <!-- refs: `StreamResult::Stalled` -->
 <!-- avoid: incomplete read, partial read, partial-read refusal, incomplete, timeout, read deadline -->
 
@@ -108,6 +117,6 @@ directory is large — how long a whole read takes is not bounded.
 
 A Graph 429 with `Retry-After`. It stops a read from finishing — no
 [source snapshot](../kerbridge-sync/GLOSSARY.md#source-snapshot) comes out of
-one — and says nothing about the directory.
+one — and says nothing about the directory (IdP).
 <!-- refs: `Outcome::Throttled` in `crates/kerbridge-idp/src/entra/client.rs` -->
 <!-- avoid: 429, throttling, rate limit -->

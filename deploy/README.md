@@ -18,8 +18,8 @@ how the containers are assembled and run, and the traps in each part.
 
 ```mermaid
 flowchart LR
-  client["Windows client"]
-  msgraph["Microsoft Graph"]
+  client["Workstation client"]
+  idp["Cloud IdP"]
 
   subgraph realmc["realm network namespace"]
     realm["realm: Samba AD DC"]
@@ -41,7 +41,7 @@ flowchart LR
   broker -->|"636 ldaps"| realm
   broker -->|"issuer.sock"| issuerd
   sync -->|"636 ldaps"| realm
-  sync -->|"443 https"| msgraph
+  sync -->|"443 https"| idp
   nas1 -->|"joined member"| realm
 ```
 
@@ -52,15 +52,15 @@ this repository, and every base image is pinned by digest.
 |---|---|---|
 | `realm` | The domain: Samba AD DC, KDC and Samba DNS. | 88 tcp+udp (KDC, all interfaces), 389 and 445 (a member joins through these), 636 LDAPS and 53 DNS (not published by default) |
 | `issuer` | The custom `issuerd`. It is the only component that makes TGTs. It runs from the `realm` image, and it shares that container's volumes and network namespace, because it needs local access to the AD databases. A Debian deployment runs the same two programs as two systemd units. | none |
-| `broker` | It validates the Entra token, finds the identity under `OU=Entra,OU=CloudIdP,<base DN>` through LDAPS, and asks `issuerd` for the ticket through a unix socket. It holds no KDC authority. It runs unprivileged, with a read-only rootfs, and it executes nothing. | 443, on behalf of `caddy` |
+| `broker` | It validates the source's identity proof, finds the identity under that source's IdP-specific OU through LDAPS, and asks `issuerd` for the ticket through a unix socket. It holds no KDC authority. It runs unprivileged, with a read-only rootfs, and it executes nothing. | 443, on behalf of `caddy` |
 | `caddy` | The TLS terminator in front of the broker, and the only component that a client connects to. It shares the broker's network namespace, so that their loopback is the one that host networking gives them in production. | — (uses the broker's) |
-| `sync` | It reads the users and groups of each configured source from MS Graph, one source after another, over its own LDAP connection. It writes them to the `realm` directory over LDAPS as `svc-kerbridge-sync-entra`. A source stays idle until `secrets/idp/<name>/credential` has content. | none |
+| `sync` | It reads users and groups from each configured cloud IdP, one source at a time. It writes them to the source's IdP-specific OU over LDAPS as `svc-kerbridge-sync-<source>`. A source stays idle until `secrets/idp/<name>/credential` has content. | none |
 | `nas1` | **Optional.** A joined Samba member, so that the full path operates on one machine. It is a fixture, not a product — [`nas1` is not part of this stack](#nas1-is-not-part-of-this-stack). | 445 |
 
 `realm` and `broker` run with `cap_drop: ALL` and `no-new-privileges`. `realm`
 gets back only the capabilities that measurements showed necessary. The
 permanent state is in three Docker volumes: `samba` (domain SID, KDC keys,
-directory, SYSVOL), `etc-samba` and `caddy-data`. All other data is tmpfs, or
+directory (realm), SYSVOL), `etc-samba` and `caddy-data`. All other data is tmpfs, or
 the stack can make it again. To back the volumes up, see
 [Backup and restore](#backup-and-restore).
 
@@ -73,7 +73,7 @@ so `make up` works from either directory.
 |---|---|
 | `build` | `docker compose build` |
 | `up` | fresh clone → running stack; the ordered steps below |
-| `stack` | the rest of the stack, once the directory is bootstrapped |
+| `stack` | the rest of the stack, once the directory (realm) is bootstrapped |
 | `secrets` | `scripts/compose/bootstrap-secrets.sh` — the host tree, prepared by the shipped helper |
 | `directory` | `docker compose run --rm setup directory` |
 | `kbmanage-config` | the realm CA and config set a host-run `kbmanage` needs; re-run after a realm rebuild |
@@ -98,6 +98,19 @@ The test has a shared provisioning script and a stack tier.
 `scripts/bench/provision.sh` creates the isolated stack and waits for `/config`.
 It does not name an identity source. `ci-stack.sh` selects Entra, provides the
 source-specific configuration, and runs the assertions.
+
+`scripts/bench/ci-authentik.sh` is the second stack tier — `make test-authentik`
+— and the same shape over the same `provision.sh`. It puts a pinned, live
+authentik on the compose network behind this Caddy on `idp.kbci.test`, so the
+broker fetches real signing keys over TLS instead of reading a key document off
+disk; answering `/config` at all is the proof that fetch succeeded.
+Sync reads that live instance and mirrors its blueprint user and admission group
+into the realm. `approve.sh` then signs that same user in through the flow
+executor with no browser, the client turns the authentik token into a KDC-signed
+TGT for the account sync wrote, and that ticket reads a file over SMB. The
+wrong-issuer negative cannot be minted by a real authentik instance and stays in
+the forged token corpus. Unlike `test-stack`, this tier pulls images, so it needs
+the network.
 
 ## `make up`, step by step
 
@@ -155,13 +168,13 @@ bakes the realm identity into a durable database.
   It is `kbsetup directory`, the same binary a Debian deployment runs from
   `/usr/sbin`, in a throwaway container that holds `secrets/generated/` and
   nothing else. It creates:
-  - `OU=CloudIdP` and `OU=Entra` inside it (which `kerbridge-sync` writes into
-    but never creates) and
-    `OU=Resources` (deliberately outside it, for the operator's own groups)
-  - `svc-kerbridge-broker`, `svc-kerbridge-sync-entra` and `svc-kerbridge-manage`, with freshly generated
-    passwords
-  - the delegations: a confined `OU=Entra,OU=CloudIdP` write for `svc-kerbridge-sync-entra`; `OU=Resources`
-    write plus `OU=CloudIdP` delete-child and nothing else for `svc-kerbridge-manage`
+  - `OU=CloudIdP`, one IdP-specific OU for each listed source, and
+    `OU=Resources` outside them
+  - `svc-kerbridge-broker`, one `svc-kerbridge-sync-<source>` per listed source,
+    and `svc-kerbridge-manage`, with freshly generated passwords
+  - the delegations: each sync account can write only its source's IdP-specific
+    OU; `svc-kerbridge-manage` can write `OU=Resources` and delete children under
+    `OU=CloudIdP`, and nothing else
 - **`scripts/bench/seed-demo.sh` is bench only.** It hand-provisions the
   admission group, a demo user with its external identity, and the
   resource-group chain, so the broker's end-to-end path can be proven without
@@ -235,8 +248,8 @@ to flip, and no restart — the service re-checks the file on a poll.
 Why? `secrets/idp` is a directory mount, so an absent or empty credential
 file inside it is not a refused bind mount — sync skips that source for the
 cycle with a warning, and every other source still mirrors. Only emptiness is
-forgiven: a credential that is present but wrong, such as the portal's *Secret
-ID* GUID, still fails configuration loudly.
+forgiven: a credential that is present but wrong fails loudly. For Entra, the
+common example is the portal's *Secret ID* GUID pasted instead of its *Value*.
 
 <details>
 <summary>Why not a `sync` compose profile</summary>
@@ -369,14 +382,14 @@ Append-only files, written by the services themselves onto bind mounts:
 |---|---|---|
 | `state/broker-audit/audit.log` | broker | device grant made (`GRANT`) or removed (`REVOKE`) — the account, the grant id `kbmanage device list` shows, and `by=<login>` when someone did it as that account's delegate |
 | `state/issuer-audit/audit.log` | `issuerd` | ticket issued (`ISSUE`), and the same two writes from the side that performed them |
-| `state/sync-audit/audit.log` | `kerbridge-sync` | cycle that changed the directory: the tally, then one `APPLY <operation> <dn>` per write that landed and one `APPLY-FAIL <dn>: <why>` per write the directory refused. A cycle that changed nothing writes nothing here |
+| `state/sync-audit/audit.log` | `kerbridge-sync` | cycle that changed the directory (realm): the tally, then one `APPLY <operation> <dn>` per write that landed and one `APPLY-FAIL <dn>: <why>` per write the directory (realm) refused. A cycle that changed nothing writes nothing here |
 
 The third is the one whose subject outlives the record. A ticket expires in
 hours and a device grant in days, but an account `kerbridge-sync` creates owns
 files and is a Kerberos principal until somebody retires it — and nothing else
 in the deployment says who was given one. It also records `STALLED` when a
 source has discarded three cycles in a row and stopped mirroring, and `RESUMED`
-when it starts again, so a stretch during which the directory was not being
+when it starts again, so a stretch during which the directory (realm) was not being
 updated can be dated afterwards.
 
 Every line is RFC 3339-stamped and is also on the service's console, unchanged —
@@ -564,6 +577,28 @@ disposable tree, which is staged from the tracked files and nothing else.
   one a bench against a live tenant must change: it has to be the `oid` the token
   actually carries, or every login is a 403.
 
+### The bench's credentials are constants, and each one names itself
+
+`bench.env` holds no credential, but `compose.authentik.yaml` does: a Postgres
+password, authentik's signing key, the bootstrap token and `akadmin`'s password,
+all written into the file. `scripts/bench/ci-authentik.sh` writes one more, the
+sync token, into the staged tree's `deploy/secrets/idp/authentik/credential`.
+They are constants because both ends have to hold the same value, and authentik
+makes an API token unreadable once it is created, so nothing can read one back
+to pass it along.
+
+Every value carries the word `bench` —
+`bench-authentik-postgres-password`, `bench-only-secret-key-not-for-anything-real`,
+`bench-akadmin-password` — so one that escapes into a real deployment is legible
+on sight. `testbench/authentik/` follows the same rule for its standalone stack.
+
+**None of this reaches a deployment.** `compose.authentik.yaml` is in no
+`COMPOSE_FILE` the Makefile builds — that is `compose.yaml`, plus
+`compose.nas.yaml` under `NAS=1` and `compose.mockidp.yaml` under `MOCKIDP=1`.
+Only `ci-authentik.sh` layers it, and it does so inside the disposable tree the
+tier stages under `.local-tmp/`, so the credential it writes lands in that
+tree's `deploy/secrets/` and never in yours.
+
 ### The example-realm gate
 
 `make up` refuses to provision while `.env` still names the documented example
@@ -666,7 +701,7 @@ the order a request meets them:
 |---|---|---|
 | `read_header 10s`, `read_body 30s`, `idle 60s` | `caddy/timeouts.caddyfile` | connections that hold the listener without making a request — Caddy sets none of these itself, and an idle connection would otherwise be kept five minutes |
 | `max_size 16KB` | `caddy/routes.caddyfile` | a request body larger than any token |
-| `max_inflight` in `configs/broker.toml` (16 by default) | broker | tickets past the cap, with **429** and no directory traffic at all; the helper reads that as "back off and retry" |
+| `max_inflight` in `configs/broker.toml` (16 by default) | broker | tickets past the cap, with **429** and no directory (realm) traffic at all; the helper reads that as "back off and retry" |
 | `max_inflight` in `configs/issuerd.toml` (8 by default) | `issuerd` | connections past the cap, before the thread and the forks exist |
 
 The two in-flight caps refuse rather than queue: a queue is the same unbounded
@@ -843,7 +878,7 @@ modules read credentials from the environment and cannot read a file.
 
 - `secrets/generated/` is machine territory: every file there was generated
   here and none should ever be opened, let alone edited — the value also lives
-  in the directory, so editing one desynchronizes a password rather than
+  in the directory (realm), so editing one desynchronizes a password rather than
   changing it.
 - Everything directly under `secrets/` is yours to place, from a portal, a CA or
   a DNS provider.

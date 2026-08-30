@@ -9,8 +9,8 @@ Terms that apply to only one component are in these files:
 | Shared formats and rules. | [`crates/kerbridge-core/GLOSSARY.md`](crates/kerbridge-core/GLOSSARY.md) |
 | Configuration options, defaults and templates. | [`crates/kerbridge-config/GLOSSARY.md`](crates/kerbridge-config/GLOSSARY.md) |
 | Broker HTTP API. | [`crates/kerbridge-broker/GLOSSARY.md`](crates/kerbridge-broker/GLOSSARY.md) |
-| Cloud IdP adapters: tokens and directory reads. | [`crates/kerbridge-idp/GLOSSARY.md`](crates/kerbridge-idp/GLOSSARY.md) |
-| Cloud-to-directory synchronization. | [`crates/kerbridge-sync/GLOSSARY.md`](crates/kerbridge-sync/GLOSSARY.md) |
+| Cloud IdP adapters: tokens and directory (IdP) reads. | [`crates/kerbridge-idp/GLOSSARY.md`](crates/kerbridge-idp/GLOSSARY.md) |
+| Directory (IdP)-to-directory (realm) synchronization. | [`crates/kerbridge-sync/GLOSSARY.md`](crates/kerbridge-sync/GLOSSARY.md) |
 | Operator commands and diagnostics. | [`crates/kerbridge-manage/GLOSSARY.md`](crates/kerbridge-manage/GLOSSARY.md) |
 | Ticket issuance and device grants. | [`crates/kerbridge-issuerd/GLOSSARY.md`](crates/kerbridge-issuerd/GLOSSARY.md) |
 | Operator notifications. | [`crates/kerbridge-notify/GLOSSARY.md`](crates/kerbridge-notify/GLOSSARY.md) |
@@ -29,7 +29,7 @@ in the [`admission group`](#admission-group) gives admission. Admission does not
 ### admission group
 
 The group whose members have [admission](#admission) to the [realm](#realm).
-[Sync](#sync) uses its cloud membership to select accounts. The [directory](#directory)
+[Sync](#sync) uses its cloud membership to select accounts. The [directory (realm)](#directory-realm)
 must contain exactly one admission group.
 <!-- refs: `admission_group_id` in `configs/idp_<source>.toml`'s `[provider_config]`, marker `kbrole1|realm-admission` -->
 <!-- avoid: realm group, the first gate, the users group -->
@@ -41,6 +41,14 @@ for one user. The name in code and on disk is the agent. The name shown to users
 is the *[NAS Access](#nas-access)* app.
 <!-- refs: binary `kerbridge-agent` -->
 <!-- avoid: helper, systray helper, winhelper.exe, tray, client app -->
+
+### authentik
+
+The cloud IdP product supported by KerBridge's authentik adapter. The product
+styles its name `authentik`: lowercase, including at the start of a sentence
+and in headings.
+<!-- refs: `PRODUCT_NAME` in `crates/kerbridge-idp/src/authentik/mod.rs` -->
+<!-- avoid: Authentik -->
 
 ### base_url
 
@@ -66,12 +74,20 @@ A disposable environment that represents a deployment. A bench can include the
 Compose stack, test tools, and test [workstations](#workstation). Do not put data
 that a person depends on in a bench.
 
+### blueprint
+
+An authentik YAML declaration of model objects, attributes, and relationships.
+A blueprint instance imports it, and authentik reapplies it on its schedule.
+Reapplication restores a `state: present` entry to the declared state. A
+`state: created` entry is created once; later operator changes remain.
+<!-- refs: `docs/setup/authentik-blueprint.yaml`; `testbench/authentik/blueprints/` -->
+
 ### broker
 
 The KerBridge HTTP service that exchanges an [`identity proof`](#identity-proof) for a [ticket](#ticket).
 It verifies the proof, finds one admitted account, and asks [issuerd](#issuerd)
 to issue the ticket. The broker does not hold Kerberos keys or change the
-[directory](#directory).
+[directory (realm)](#directory-realm).
 <!-- avoid: the ticket api, the api service -->
 <!-- different than: kerbridge server -->
 
@@ -115,12 +131,12 @@ creates a corresponding object in a [IdP-specific OU](#idp-specific-ou).
 ### cloud IdP
 
 The identity provider that is the authority for users and
-groups. Entra ID is the first implementation.
+groups. KerBridge has Entra and authentik adapters.
 
 ### Organizational Unit
 
-The place in the LDAP [directory](#directory) that contains an object.
-KerBridge compares the parts of a directory name to test containment. It does
+The place in the LDAP [directory (realm)](#directory-realm) that contains an object.
+KerBridge compares the parts of a distinguished name to test containment. It does
 not compare text suffixes. Acronym: OU.
 <!-- refs: `kerbridge_core::dn::parent_of` -->
 <!-- avoid: container (confuses with Docker) -->
@@ -203,13 +219,23 @@ at each [ticket exchange](#ticket-exchange).
 <!-- avoid: grant group, device group, device grants group, the second gate -->
 <!-- different than: delegate group -->
 
-### directory
+### directory (IdP)
+
+The users and groups that a [cloud IdP](#cloud-idp) exposes to [sync](#sync).
+Each [directory source](crates/kerbridge-sync/GLOSSARY.md#directory-source)
+reads one directory (IdP). The adapter defines the protocol and the rules for
+the read.
+<!-- avoid: directory (bare), cloud directory, provider directory -->
+<!-- different than: directory (realm), which is the Samba AD data store -->
+
+### directory (realm)
 
 The Samba AD data store. It contains identities, groups, [markers](#marker), and
 [device grants](#device-grant). [Server](#server) components use this store to
 share state.
 <!-- refs: remote access by LDAPS; local issuer access to `sam.ldb` -->
-<!-- avoid: ad, ldap, the dc, the sam -->
+<!-- avoid: directory (bare), ad, ldap, the dc, the sam -->
+<!-- different than: directory (IdP), which a directory source reads -->
 
 ### Docker Compose deployment
 
@@ -223,7 +249,7 @@ other way to run the server is a [Debian deployment](#debian-deployment).
 ### doctor
 
 The [kbmanage](#kbmanage) command that checks access for one user or checks the
-full [directory](#directory). A failed check gives a nonzero exit status. A
+full [directory (realm)](#directory-realm). A failed check gives a nonzero exit status. A
 warning does not.
 <!-- refs: whole-directory mode `sweep` -->
 <!-- avoid: diagnose, `diagnose_user` -->
@@ -285,7 +311,7 @@ to remove the grant. Shown to users as *Remove authorization*.
 What every [synced group's](#synced-group) [`sAMAccountName`](#samaccountname) from
 one [source](#source) ends with — `payroll` becomes `payroll-entra` — so that two
 [cloud IdPs](#cloud-idp) which each hold a group of the same name do not need the
-same directory name for it.
+same name in the directory (realm).
 
 It exists because a `sAMAccountName` is unique across the whole [realm](#realm),
 not within an [IdP-specific OU](#idp-specific-ou). Without distinct suffixes, the
@@ -330,7 +356,8 @@ its own, so this is the only way one reaches a screen.
 The [adapter's](#cloud-idp) product name is the default, and an operator
 overrides it. The name a workforce recognises is the one on the sign-in page they
 were just redirected to, which is often neither the vendor's nor the
-[source name](#source-name). Purely cosmetic: it reaches no directory object and
+[source name](#source-name). Purely cosmetic: it reaches no directory (realm)
+object and
 is safe to change whenever.
 <!-- refs: `configs/idp_<source>.toml` `provider_config.display_name`; `kerbridge_idp::OidcDiscovery::display_name` -->
 <!-- avoid: idp name, provider name, tenant name, the brand -->
@@ -383,7 +410,7 @@ synchronized object.
 
 ### issuerd
 
-The privileged KerBridge daemon that issues [tickets](#ticket), and records [device grants](#device-grant) to [directory](#directory).
+The privileged KerBridge daemon that issues [tickets](#ticket), and records [device grants](#device-grant) to [directory (realm)](#directory-realm).
 It runs on the same host as the [KDC](#kdc) and holds KDC authority. On Docker
 Compose that is the `issuer` service, beside `realm`; on Debian it is
 `kerbridge-issuerd.service`, beside `samba-ad-dc.service`.
@@ -405,7 +432,7 @@ one value by path, lists the active [source names](#source-name), and writes the
 templates. On request it also probes a [cloud IdP](#cloud-idp).
 
 A different tool from [kbmanage](#kbmanage) rather than a subcommand of it: it
-runs before a realm exists, and it has no [directory](#directory) rights and no
+runs before a realm exists, and it has no [directory (realm)](#directory-realm) rights and no
 way to acquire any. The middle of [setup → config →
 manage](#setup--config--manage).
 <!-- refs: `crates/kerbridge-config`, `dist/kbconfig` -->
@@ -482,7 +509,7 @@ the configured [tenant](#tenant). [Sync](#sync) manages these objects.
 
 ### marker
 
-One value in the [directory](#directory) `extensionName` attribute. Markers store
+One value in the [directory (realm)](#directory-realm) `extensionName` attribute. Markers store
 KerBridge roles, states, and [device grants](#device-grant) in LDAP. Components
 must preserve the exact stored value. They start with string `kbrole1|`,
 `kbstate1|` or `kbkey1|`.
@@ -536,7 +563,7 @@ users with NTLM. A [repair](#repair) clears the failed connection state.
 
 The person(s) who deploys and runs KerBridge. The operator controls the server,
 [tenant](#tenant) configuration, DNS, [file servers](#file-server), and the
-resource side of the [directory](#directory). [Sync](#sync) controls the [IdP-specific OUs](#idp-specific-ou).
+resource side of the [directory (realm)](#directory-realm). [Sync](#sync) controls the [IdP-specific OUs](#idp-specific-ou).
 <!-- avoid: admin, administrator, sysadmin, user (in the person-running-the-tool sense) -->
 
 ### operator notification
@@ -633,7 +660,7 @@ for the Kerberos authority.
 
 ### realm volume
 
-The persistent Docker volume that contains the [directory](#directory), KDC keys,
+The persistent Docker volume that contains the [directory (realm)](#directory-realm), KDC keys,
 domain [SID](#sid), SYSVOL, and LDAPS certificate. Deletion of this volume
 deletes the [realm](#realm).
 <!-- refs: Compose volume `samba`, host volume `kerbridge_samba` -->
@@ -649,7 +676,7 @@ The user-approved action that restarts the Windows Workstation service to clear
 
 ### resource OU
 
-The LDAP [directory](#directory) [Organizational Unit](#organizational-unit) that the [operator](#operator)
+The LDAP [directory (realm)](#directory-realm) [Organizational Unit](#organizational-unit) that the [operator](#operator)
 controls. It contains resource groups and [delegate groups](#delegate-group). It
 is outside the [IdP parent OU](#idp-parent-ou).
 <!-- refs: default DN `OU=Resources,<base DN>`, `configs/realm.toml` `resource_ou` -->
@@ -683,7 +710,7 @@ authorize the workstation again.
 
 ### `sAMAccountName`
 
-The [directory](#directory) attribute that contains the login name. KerBridge
+The [directory (realm)](#directory-realm) attribute that contains the login name. KerBridge
 uses one rule to create, validate, and compare this value. Informal code and
 prose can use "a sam," but not "the SAM."
 <!-- refs: `kerbridge_core::sam`; letters, digits, `.`, `-`, `_`; no leading `-`; maximum 64 bytes; NFC -->
@@ -728,15 +755,24 @@ The part of [KerBridge](#kerbridge) that runs on the Linux host. It includes the
 server*.
 <!-- avoid: the stack, the broker stack, the compose project, the backend -->
 
+### service account (authentik)
+
+An authentik [directory (IdP)](#directory-idp) user object with type
+`service_account`, used by software instead of a person. KerBridge's
+`svc-kerbridge-sync` owns the sync API token and receives the global read-only
+Role. It is not a [service account (directory)](#service-account-directory) or a
+[service account (device grant)](#service-account-device-grant).
+<!-- refs: `docs/setup/authentik.md`; authentik type `service_account` -->
+
 ### service account (device grant)
 
 An ordinary cloud user account that an unattended machine uses to get [tickets](#ticket).
 A [delegate](#delegate) authorizes the machine for this account. The account has
-no [directory](#directory) privileges.
+no [directory (realm)](#directory-realm) privileges.
 
 ### service account (directory)
 
-An account that a [server](#server) component uses to access the [directory](#directory).
+An account that a [server](#server) component uses to access the [directory (realm)](#directory-realm).
 These accounts have only the permissions that their components need. They are
 outside the [IdP parent OU](#idp-parent-ou).
 <!-- refs: `svc-kerbridge-broker`, `svc-kerbridge-sync-<source>` (one per cloud IdP), `svc-kerbridge-manage` -->
@@ -766,7 +802,7 @@ to.
 
 ### SID
 
-The Windows security identifier of a [directory](#directory) object. It stays
+The Windows security identifier of a [directory (realm)](#directory-realm) object. It stays
 stable when the object name changes. File-system access-control lists use SIDs.
 <!-- refs: form `S-1-5-21-...`; issuer protocol account key; `idmap_rid` input -->
 <!-- avoid: objectsid, security identifier -->
@@ -838,13 +874,13 @@ silent — the new tenant's object ids share none of the old ones, so
 sync retires every account and creates a replacement, which is loud — but it
 costs every SID and therefore every file's owner, exactly as renaming the source
 name does. Give a new tenant its own name and its own OU. What records the
-binding is `idp_<name>.toml`, and nothing in the directory restates it.
+binding is `idp_<name>.toml`, and nothing in the directory (realm) restates it.
 <!-- refs: `kerbridge_core::Source` -->
 <!-- avoid: source alias, alias, idp alias, provider name -->
 
 ### svc-kerbridge-sync-&lt;source&gt;
 
-The [directory](#directory) account that [sync](#sync) uses for writes — **one per
+The [directory (realm)](#directory-realm) account that [sync](#sync) uses for writes — **one per
 cloud IdP**, named for the IdP it reads, so the Entra deployment's is
 `svc-kerbridge-sync-entra`. Each has delegated write access to that IdP's OU and to no
 other, which is what keeps one IdP's sync from rewriting another's objects. Other
@@ -854,10 +890,12 @@ components do not have this set of permissions.
 
 ### sync
 
-The KerBridge daemon that reads selected users and groups from the [cloud IdP](#cloud-idp)
-and makes its [IdP-specific OU](#idp-specific-ou) match them. It uses Microsoft Graph for cloud
-reads and LDAPS for [directory](#directory) writes.
-<!-- refs: crate and service `kerbridge-sync`; directory account `svc-kerbridge-sync-entra` -->
+The KerBridge daemon that reads selected users and groups from a
+[directory (IdP)](#directory-idp). It makes the source's
+[IdP-specific OU](#idp-specific-ou) match the read. An adapter reads the
+directory (IdP). Sync writes to the [directory (realm)](#directory-realm) with
+LDAPS.
+<!-- refs: crate and service `kerbridge-sync`; directory (realm) accounts `svc-kerbridge-sync-<source>` -->
 <!-- avoid: reconciler -->
 
 ### syncable
@@ -877,7 +915,7 @@ An [operator](#operator) nests it in a resource group to give access to a resour
 
 ### tenant
 
-The Entra [directory](#directory) that a deployment reads and trusts. Its GUID
+The Entra [directory (IdP)](#directory-idp) that a deployment reads and trusts. Its GUID
 identifies it. The [broker](#broker) and [sync](#sync) must use the same tenant.
 
 An Entra concept, and not the same thing as a [source](#source): a tenant is what
@@ -887,6 +925,7 @@ tenant, so once the adapter has pinned `tid` to the configured tenant the `oid`
 alone is a sufficient key — which is why the identity does not carry the tenant.
 <!-- refs: token claim `tid`, `tenant_id` in `configs/idp_<source>.toml` -->
 <!-- avoid: the org, organization -->
+<!-- different than: an authentik instance; authentik no longer uses tenant as its product name -->
 
 ### test tier
 
@@ -950,4 +989,3 @@ The user's computer that runs the [agent](#agent). It must be unjoined or
 Entra-only-joined. It must not join the KerBridge [realm](#realm).
 <!-- avoid: the pc, the endpoint -->
 <!-- different than: client -->
-

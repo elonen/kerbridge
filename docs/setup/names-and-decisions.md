@@ -12,7 +12,7 @@ are expensive to change later.
 | The source name | The first sync cycle | **High**: it orphans every synchronized object, and it detaches every file whose owner came from one |
 | The group suffix | The first sync cycle | **Medium**: every synchronized group is renamed, so a share ACL that names one by hand stops matching |
 | TLS strategy | Not frozen, but easier to select now | **Low**: rebuild the Caddy image, then restart |
-| The admission group | Not frozen | **None** — it is a standard Entra group |
+| The admission group | Not frozen | **None** — it is a group in that cloud IdP |
 | Resource groups | Not frozen | **None** |
 
 ## Make the realm the uppercased DNS domain
@@ -61,17 +61,18 @@ heuristic. There is no other source.
 The source name is `name` in `configs/idp_<source>.toml`, and it is listed in
 `main.toml`'s `sources`. It names one cloud IdP as this realm stores it.
 
-- The default is `entra`. Keep it.
-- It should match the OU name (`OU=Entra,OU=CloudIdP,…`).
-- A plain lowercase word is the whole of it: `entra`, `google`, `authentik`.
+- For the first source, use the adapter's lowercase name: `entra` or `authentik`.
+- The IdP-specific OU is normally derived from it (`OU=Entra` or
+  `OU=Authentik`).
+- A plain lowercase word is the whole of it.
 
 > **CAUTION: Do not change the source name after the first sync cycle. Do not
-> point an existing name at a different tenant.** Both operations replace every
-> synchronized account with a new one that has a *different SID*, and every file
+> point an existing name at a different directory (IdP).** Both operations replace
+> every synchronized account with one that has a *different SID*, and every file
 > whose owner came from the old SID loses its owner. To recover, you must restore
-> the directory.
+> the directory (realm).
 
-A new tenant gets a new name and its own `ou`, in its own
+A replacement directory (IdP) gets a new source name, its own `ou`, and its own
 `configs/idp_<source>.toml`. That is what a second source is.
 
 <details>
@@ -84,21 +85,21 @@ Sync then sees the old objects as gone and the new ones as new: it retires each
 account and creates a replacement. Nothing warns you. The accounts stop
 working, and the files show unresolved SIDs.
 
-A repoint to a different tenant is at least loud, because the new tenant's
-object ids share none of the old ones. But the bill is the same.
+Repointing an Entra source at another tenant is at least loud, because the new
+tenant's object ids share none of the old ones. But the bill is the same.
 
-Nothing in the directory records which cloud IdP a name means. The OU holds the
+Nothing in the directory (realm) records which cloud IdP a name means. The OU holds the
 objects, and the config set says what filled it. So a name that you repoint in
 `configs/idp_<source>.toml` is a name that changed meaning silently. The
-directory has no older answer to contradict it with.
+directory (realm) has no older answer to contradict it with.
 
 </details>
 
 ## The group suffix
 
 `group_suffix` in `configs/idp_<source>.toml` is what this source's group login
-names end with. `payroll` in Entra then becomes `payroll-entra` in the
-directory.
+names end with. With suffix `-entra`, `payroll` becomes `payroll-entra` in the
+directory (realm).
 
 - Use up to 20 characters. Use no whitespace, and no character that AD refuses.
 - Use the literal `none` for no suffix.
@@ -158,28 +159,25 @@ terminator of your own in front of it on that same host —
 > a longer certificate does not look like a certificate problem. It looks like
 > a broken Mac client.
 
-## Which Entra group admits users to the realm
+## Which group admits users to the realm
 
-The default is `KerBridge Allowed On-prem Users`. Only the members of this
-group are mirrored from Entra, and only they can get Kerberos tickets.
+Each source needs one admission group. The documented default is **KerBridge
+Allowed On-prem Users**.
 
-- Create a security group in Entra with that name.
-- Add the users who must reach your Kerberos services. **You can add groups
-  instead.** Nested groups are expanded recursively, so an existing
-  `engineering` group admits all of its members, including the persons that you
-  add to it later. Security, Microsoft 365 and dynamic groups all operate
-  correctly.
+- Create it in that cloud IdP.
+- Add the users who must reach your Kerberos services. Nested groups are
+  expanded recursively, so you can add an existing group instead of each user.
 - This group is Kerberos admission only. It gives no file access.
+- Record its immutable identifier, not its name:
+  - **Entra:** the group **Object ID**.
+  - **authentik:** the group **pk**.
 
-- Record the group's **Object Id**. That, and not the name, is what binds the
-  group to the realm.
+The provider page in step 2 tells you how to create or read the group and how to
+put its identifier in `admission_group_id`.
 
-For how the group is bound, and how to repoint the realm at another one, see
-[The `[provider_config]` values (`entra.md`)](entra.md#the-providerconfig-values).
+## Which cloud IdP groups carry your authorization
 
-## Which Entra groups carry your authorization
-
-- Use the groups that you already have, for example `proj-x` or `finance`.
+- Use groups that you already have, for example `proj-x` or `finance`.
 - Sync mirrors each group that is reachable from the admission group.
 - Some groups are not reachable, for example a share-access group with no
   members from the admission group. You can name those groups explicitly later.

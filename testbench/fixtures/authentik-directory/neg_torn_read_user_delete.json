@@ -1,0 +1,48 @@
+{
+  "note": "STRUCTURAL NEGATIVE. A page-2 user read to pair with users_page1, recorded after a page-1 user (frank.filler) was deleted between the two requests. pagination.count is 12 against page one's 13, and carol.cycle (the row that had been first on this page) falls into neither page the reader holds: every row after the deleted one shifted back one index and the page boundary moved past it. The lower count is the detectable half of the completeness check; the skipped row is what it protects against. A reader assembling the two pages must conclude the read is not whole and produce no snapshot -- never a population quietly missing a user.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=10&page=2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 1,
+        "count": 12,
+        "current": 2,
+        "total_pages": 2,
+        "start_index": 11,
+        "end_index": 12
+      },
+      "results": [
+        {
+          "pk": 52,
+          "username": "nomad",
+          "name": "",
+          "is_active": true,
+          "groups": [],
+          "groups_obj": null,
+          "email": "",
+          "type": "internal",
+          "uuid": "e4233883-25a1-4b48-907f-b6c16b2222c7"
+        },
+        {
+          "pk": 53,
+          "username": "...",
+          "name": "...",
+          "is_active": true,
+          "groups": [],
+          "groups_obj": null,
+          "email": "",
+          "type": "internal",
+          "uuid": "082c0217-f362-4b8d-a043-159119acfc00"
+        }
+      ]
+    }
+  }
+}

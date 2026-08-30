@@ -60,7 +60,7 @@ _Description: Invalid LDAPS URL
 # crates/kerbridge-config holds it to Provider::ALL.
 Template: kerbridge-config/provider
 Type: select
-Choices: none, entra
+Choices: none, entra, authentik
 Default: entra
 _Description: Cloud identity provider for this deployment:
   KerBridge admits the users of one cloud IdP per source.
@@ -73,6 +73,6 @@ _Description: Cloud identity provider for this deployment:
   with no identity provider in them.
  .
   Nothing else about the provider is asked here.
-  The identifiers that name your tenant and its applications
-  are lines to complete in /etc/kerbridge/idp_<name>.toml,
+  Provider-specific values are lines to complete
+  in /etc/kerbridge/idp_<name>.toml,
   and `kbconfig check` lists every one of them at once.

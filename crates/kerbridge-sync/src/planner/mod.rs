@@ -9,7 +9,7 @@
 //! - Every op targets a DN inside the IdP-specific OU; [`Builder::add`] asserts it, so a
 //!   bug cannot make the applier write outside this source's own OU.
 //! - A `sAMAccountName` collision on any new group refuses the whole cycle rather
-//!   than applying the rest, so a first deploy against a directory that already
+//!   than applying the rest, so a first deploy against a directory (realm) that already
 //!   holds a same-named object never half-applies.
 //! - There is no delete op. [`Op`] cannot express one, so no plan -- however
 //!   wrong -- can destroy an object. Deletion is the operator's, through
@@ -296,12 +296,12 @@ pub struct Plan {
 pub enum PlanError {
     /// One or more desired objects need a `sAMAccountName` that already belongs to
     /// a different object. The whole cycle is refused -- nothing is touched -- so
-    /// a first deploy against a directory that already holds a same-named object
+    /// a first deploy against a directory (realm) that already holds a same-named object
     /// never half-applies. The operator resolves the listed collisions.
     ///
     /// Two cloud IdPs that both hold, say, a `payroll` group reach this without
     /// anyone having done anything wrong: a name is unique per source, and the
-    /// directory gives them one namespace. Distinct `group_suffix` values
+    /// directory (realm) gives them one namespace. Distinct `group_suffix` values
     /// are what keep them apart.
     NameCollision(Vec<String>),
 }
@@ -406,7 +406,7 @@ pub fn plan_sync(
     // group whose membership came back empty, a permissions change that quietly stopped
     // expanding it. Every one of those is indistinguishable from "the IdP has
     // no users", and acting on it retires every account in a single cycle --
-    // recoverable only by restoring the directory, and a total outage until
+    // recoverable only by restoring the directory (realm), and a total outage until
     // someone does. The first deployment is unaffected: nothing is synchronized
     // yet, so there is nothing to lose.
     if desired.users.is_empty() && !cur_users.is_empty() {
@@ -414,7 +414,7 @@ pub fn plan_sync(
             "ADMISSION GROUP expansion yields no users at all while {} are synchronized: \
              reconciliation FROZEN, operator escalation required. If this is deliberate, the \
              accounts are removed one at a time with `kbmanage cloud delete` -- or stop the \
-             broker to cut access immediately; sync will not empty the directory in one \
+             broker to cut access immediately; sync will not empty the directory (realm) in one \
              cycle on the strength of an empty read",
             cur_users.len()
         )));
@@ -596,8 +596,7 @@ pub fn plan_sync(
                 // A live account's login name follows its display name, unless
                 // an operator has pinned it. The name is not an internal key --
                 // Windows shows it as the file owner and in the *Security* tab
-                // -- so a person who changes their name and finds the old one
-                // still on their files has been failed by the directory.
+                // -- so an old name on their files means the directory (realm) is stale.
                 //
                 // It costs the user a sign-out: the sam is their Kerberos
                 // principal, and tickets already issued name the old one.

@@ -81,7 +81,7 @@ st, h, j = app_get("/v1.0/groups/%s/members?$select=id,displayName" % ADMISSION)
 rec("E10b admission-group direct members", "HTTP %s\n%s" % (st, json.dumps(j.get("value", []), indent=2)))
 
 # E11: display-name admission-group resolution + ambiguity, no ConsistencyLevel header
-st, h, j = app_get("/v1.0/groups?$filter=displayName eq 'onprem-realm-users'&$select=id,displayName")
+st, h, j = app_get("/v1.0/groups?$filter=displayName eq 'KerBridge Allowed On-prem Users'&$select=id,displayName")
 rec("E11 admission-group resolve by displayName (plain eq, no ConsistencyLevel)", "HTTP %s\n%s" % (st, json.dumps(j.get("value", j), indent=2)))
 
 st, h, j = app_get("/v1.0/groups?$filter=displayName eq 'kb-duplicate-name'&$select=id,displayName")

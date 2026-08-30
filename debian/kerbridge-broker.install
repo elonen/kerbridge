@@ -1,2 +1,3 @@
 usr/sbin/kerbridge-broker
 usr/share/man/man8/kerbridge-broker.8
+usr/share/kerbridge/site/index.html

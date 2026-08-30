@@ -1,8 +1,15 @@
 .local-tmp/
+
+# Credentials for a live tenant, exported into a shell. `deploy/.gitignore`
+# already excludes the deployment's own; this is the repository root, where the
+# Graph conformance run's three variables are kept.
+/.env
+
 .DS_Store
 target/
 dist/
 CLAUDE.md
+.claude
 
 # Byte-compiled Python, which importing or running any script here leaves beside
 # it. The scripts are the artifact; a .pyc is a copy of one for the interpreter

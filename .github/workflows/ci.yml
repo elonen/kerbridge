@@ -1,17 +1,18 @@
 # Everything here is `make` underneath, so a green run means the same
 # commands pass on a developer's machine.
 #
-#   changes  Whether the push touched anything but prose. Gates every job
-#            that compiles something -- all of them but `fast` and `audit` --
-#            because a compile cannot be affected by an edit to a `.md` file.
-#            It answers `true` for a pull request, so the gate only ever skips
-#            work on a push to main.
+#   changes  Whether the push touched anything but prose. Gates every test or
+#            build job except `fast` and `audit`. It answers `true` for a pull
+#            request, so the gate only ever skips work on a push to main.
 #   fast     Fast checks without Docker. Ungated: it runs the doc checks, which
 #            a prose-only push is exactly the thing that can break.
 #   windows  The cross-build gate for the client.
 #   macos    The gate for the other client half, on a Mac runner. Its tests
 #            link the real Kerberos.framework, so they run rather than compile.
 #            Billed at ten times an ubuntu runner, so the gate earns most here.
+#   authentik  Main, manual. A realm beside a live authentik: sync mirrors its
+#              directory (IdP), a scripted sign-in issues a TGT, and a file is read
+#              over SMB with it.
 #   build    Main, manual. Every shipping artifact still builds.
 #   stack    Main, manual. A realm provisioned from scratch, a TGT issued
 #            against it, and a file read over SMB with that ticket.
@@ -21,6 +22,17 @@
 #   audit    Manual. Advisories against the tree's dependencies.
 #
 # No job needs a secret. `stack` mocks Entra with a locally generated key document.
+#
+# Why the four Docker tiers are main-only rather than merely expensive. A pull
+# request runs unreviewed code in a repository whose Actions hold the apt
+# signing key, so nothing that pulls images or builds a shipping artifact runs
+# on that path. Merges here are made by hand for the same reason, and these
+# tiers are run by hand beside them -- `make test-authentik`, `make test-stack`,
+# `make test-build`, `make test-deb`, each the same command CI runs.
+#
+# Do not read a fast tier as grounds to move one back. `authentik` takes about
+# four minutes with the layer cache warm, against a 30-minute limit; the limit
+# was never what kept it off pull requests.
 name: CI
 
 on:
@@ -138,6 +150,42 @@ jobs:
       # is on the runner image; `make icon` is what would want librsvg, and the
       # .icns it writes is committed.
       - run: make test-mac
+
+  authentik:
+    name: authentik (sync, sign-in, SMB)
+    needs: changes
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    # Includes a full stack, SMB read, and uncached authentik image pull.
+    timeout-minutes: 30
+    steps:
+      # fetch-depth: 0. `make` derives KB_VERSION from `git describe`, and
+      # compose's `debs` service requires it. A shallow checkout reaches no tag,
+      # so compose refuses before any Dockerfile runs.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      # The same key `build`, `stack` and `deb` use: all four reach the six-crate
+      # compile through debian/Dockerfile's `build` stage, so whichever runs
+      # first populates it and a second write under one key is dropped rather
+      # than duplicated.
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/buildx-cache
+          key: buildx-amd64-${{ hashFiles('Cargo.lock', 'crates/**', 'debian/stage-prebuilt', 'debian/about.toml', 'debian/about.hbs') }}
+          restore-keys: buildx-amd64-
+      - run: make test-authentik
+        env:
+          KB_CACHE_FROM: type=local,src=/tmp/buildx-cache
+          KB_CACHE_TO: type=local,dest=/tmp/buildx-cache-new,mode=max
+      - name: rotate the layer cache
+        if: always()
+        run: |
+          if [ -d /tmp/buildx-cache-new ]; then
+            rm -rf /tmp/buildx-cache
+            mv /tmp/buildx-cache-new /tmp/buildx-cache
+          fi
 
   build:
     name: artifacts (images, exes, MSI)

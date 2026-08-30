@@ -16,7 +16,7 @@ boundaries. The topic pages under [`docs/design/`](docs/design/) hold the rest.
 | Page | What it answers |
 |---|---|
 | [Components](docs/design/components.md) | What each container is, and what it is denied |
-| [Identity and directory](docs/design/identity-and-directory.md) | What a cloud identity is, how a token becomes one, and who owns which object in Samba AD |
+| [Identity and directories](docs/design/identity-and-directory.md) | What a cloud identity is, how a token becomes one, and who owns which object in the directory (realm) |
 | [Tickets](docs/design/tickets.md) | How one sign-in becomes a TGT, who holds KDC authority, what bounds a ticket, and how a machine gets one without a browser |
 | [API and network](docs/design/api-and-network.md) | The wire contract, and the ports, resolvers and firewall zones that carry it |
 | [Operations](docs/design/operations.md) | What configures a deployment, what must survive it, what it tells an operator, and what the tests cover |
@@ -30,7 +30,7 @@ Samba, SMB or one identity provider.
 | Component | Executable or service |
 |---|---|
 | Public ticket API | `kerbridge-broker` |
-| Entra directory synchronization | `kerbridge-sync` |
+| Cloud IdP synchronization | `kerbridge-sync` |
 | Local privileged ticket issuer | `issuerd` |
 | Operator CLI | `kbmanage` (crate `kerbridge-manage`) |
 | Compose project | `kerbridge` |
@@ -119,7 +119,7 @@ flowchart TD
   nas["file server<br/>Samba member, winbind + idmap_rid"]
 
   wh -->|"OIDC browser"| entra
-  entra -->|"directory sync"| sync
+  entra -->|"directory (IdP) → directory (realm)"| sync
   wh -->|"HTTPS"| caddy
   caddy -->|"reverse proxy"| broker
   broker -->|"Unix socket"| realm
@@ -143,8 +143,8 @@ services that these tasks need:
 | Component | Sensitive authority |
 |---|---|
 | Caddy | Public TLS private key and DNS update credential |
-| Broker | Ability to validate users and request TGTs; read-only directory access |
-| Sync | Graph read authority and delegated writes to IdP-managed Samba OUs |
+| Broker | Ability to validate users and request TGTs; read-only directory (realm) access |
+| Sync | Cloud IdP read authority and delegated writes to IdP-managed Samba OUs |
 | Realm and `issuerd` | Complete Samba domain and KDC authority |
 
 Additional rules:
@@ -154,7 +154,7 @@ Additional rules:
 - The issuer has no TCP listener.
 - The broker never sees a user's long-term Kerberos account key, only TGT and its session key.
 - The sync identity cannot modify the local resource OUs.
-- The broker LDAP identity cannot write directory data.
+- The broker LDAP identity cannot write directory (realm) data.
 - The `svc-kerbridge-manage` credential is impersonation-grade, and not a
   low-privilege management tool. Its per-attribute `extensionName` write in the
   IdP parent OU was granted for the name pin, and it can also hand-write a

@@ -1,0 +1,28 @@
+{
+  "note": "RECORDED as a real service account holding a real, valid api-intent token and not one permission. THE READ IS REFUSED, NOT EMPTIED: a credential with nothing granted gets this 403 rather than a well-formed 200 holding zero users. That is worth more than the body string -- it means the total-loss case is loud. The partial case below is the quiet one.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=10&page=1"
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:39 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "63",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "1a1ee4b6fbc144068faf7a9953d14038",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "detail": "You do not have permission to perform this action."
+    }
+  }
+}

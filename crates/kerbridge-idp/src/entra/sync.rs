@@ -1,4 +1,4 @@
-//! The Entra adapter: Microsoft Graph, behind the directory seam.
+//! The Entra adapter: Microsoft Graph, behind the directory-source seam.
 //!
 //! Owns everything one tenant costs -- the credential, the app-only token, the
 //! two delta cursors and the [`Shadow`] they patch -- and hands the mirror a
@@ -21,7 +21,7 @@ use crate::sync::{
 
 /// One Entra tenant, read over Graph.
 ///
-/// Nothing about the directory this feeds -- no bind identity, no OU -- is
+/// Nothing about the directory (realm) this feeds -- no bind identity, no OU -- is
 /// reachable from here: the fields below are the whole of what crosses the seam.
 pub struct EntraSource {
     /// This source's name, the subject of every problem raised below the seam.
@@ -61,52 +61,27 @@ impl EntraSource {
     }
 
     /// This source's sync credential -- the app-only client secret Graph is read
-    /// with -- or `None` while the operator has yet to paste one in.
+    /// with -- or `None` while the operator has yet to paste one in, which is
+    /// the state [`kerbridge_core::secret::read_optional`] defines. Empty means
+    /// the Graph app registration has not happened yet, so the source is skipped
+    /// and re-checked next cycle rather than refused.
     ///
-    /// A compose secret is a bind mount, so the file has to exist before the
-    /// container starts and `prepare-state` creates it empty. Empty means
-    /// the Graph app registration has not happened yet -- a deployment that has
-    /// not got there, not a fault. So the source is skipped and re-checked next
-    /// cycle rather than refused, and an operator who drops the secret in starts
-    /// mirroring with nothing to restart.
-    ///
-    /// Only emptiness is treated this way. A credential that is present and
-    /// wrong -- the *Secret ID* GUID, say -- is an error, and so is one this
-    /// process is not allowed to read.
-    ///
-    /// `EACCES` in particular must not read as "not yet": it is the *likely*
-    /// failure on Linux, where a compose secret is a bind mount and the host
-    /// file's mode reaches the container unchanged. Sync runs unprivileged and
-    /// reaches its secret through `BROKER_GID`, so a credential written `0600`
-    /// owned by the root that wrote it is unreadable to it. Docker Desktop
-    /// remaps the ownership and hides this, which is why the bench never saw it
-    /// -- the same reason [`kerbridge_core::secret::read`] records.
+    /// Only emptiness is treated that way. A credential that is present and
+    /// wrong -- the *Secret ID* GUID, say -- is an error.
     fn credential(&self) -> Result<Option<String>> {
-        let shown = self.credential_file.display();
-        match std::fs::read_to_string(&self.credential_file) {
-            Ok(raw) if raw.trim().is_empty() => Ok(None),
-            Ok(_) => {
-                let value = kerbridge_core::secret::read(&self.credential_file)?;
-                // Folded: `is_guid` is canonical-only, and an uppercase Secret
-                // ID is still a Secret ID. Losing the fold is fail-open.
-                if is_guid(&value.to_ascii_lowercase()) {
-                    bail!(
-                        "secret file {shown} contains a GUID: that is the credential's Secret ID, \
-                         not its Value"
-                    );
-                }
-                Ok(Some(value))
-            }
-            // This arm never reaches `secret::read`, so the diagnosis is asked
-            // for by name -- and it prints the group the file actually has,
-            // where a message written here could only name `$BROKER_GID`.
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                bail!("{}", kerbridge_core::secret::denial(&self.credential_file))
-            }
-            // Absent is the fresh-deployment case `prepare-state` creates,
-            // and anything else here is a path that is not there either.
-            Err(_) => Ok(None),
+        let Some(value) = kerbridge_core::secret::read_optional(&self.credential_file)? else {
+            return Ok(None);
+        };
+        // Folded: `is_guid` is canonical-only, and an uppercase Secret ID is
+        // still a Secret ID. Losing the fold is fail-open.
+        if is_guid(&value.to_ascii_lowercase()) {
+            bail!(
+                "secret file {} contains a GUID: that is the credential's Secret ID, not its \
+                 Value",
+                self.credential_file.display()
+            );
         }
+        Ok(Some(value))
     }
 
     /// One read of both delta streams, into the shadow they patch.
@@ -210,7 +185,7 @@ impl EntraSource {
     fn snapshot(&self) -> SourceSnapshot {
         // The device-grant group joins the closure roots the way an allowlist entry
         // does, so it synchronizes whether or not the operator nested it inside the
-        // admission group. Someone held only by this group gets a directory object
+        // admission group. Someone held only by this group gets a directory (realm) object
         // and no admission, so no ticket -- the two groups are additive, never
         // alternatives.
         let mut roots: Vec<Subject> = self.allowlist.iter().cloned().map(Subject::new).collect();
@@ -304,6 +279,7 @@ mod tests {
 
     use super::*;
     use crate::entra::wire::{RawGroup, RawUser};
+    use crate::sync::conformance;
 
     const STORED_CURSOR: &str = "https://graph.microsoft.com/v1.0/users/delta?$deltatoken=stored";
     const STALE_USER: &str = "user-from-the-last-cycle";
@@ -397,6 +373,78 @@ mod tests {
 
     fn raw<T: serde::de::DeserializeOwned>(id: &str) -> T {
         serde_json::from_value(serde_json::json!({ "id": id, "displayName": id })).unwrap()
+    }
+
+    /// A reader whose user cursor stays corrupt after a full resync.
+    struct CursorNeverRecovers;
+
+    impl GraphReader for CursorNeverRecovers {
+        async fn acquire_token(&self) -> Result<String, TokenError> {
+            Ok("bearer".to_owned())
+        }
+
+        async fn read_users(
+            &self,
+            _token: &str,
+            _cursor: Option<&str>,
+        ) -> Result<StreamResult<RawUser>> {
+            Ok(StreamResult::CursorCorrupt)
+        }
+
+        async fn read_groups(
+            &self,
+            _token: &str,
+            _cursor: Option<&str>,
+        ) -> Result<StreamResult<RawGroup>> {
+            Ok(StreamResult::Complete { items: Vec::new(), delta_link: Some("g".to_owned()) })
+        }
+    }
+
+    /// A source for direct [`EntraSource::read`] tests. Notifications are off.
+    fn bare_source() -> EntraSource {
+        EntraSource {
+            source: "entra".to_owned(),
+            tenant_id: String::new(),
+            client_id: "11111111-1111-1111-1111-111111111111".to_owned(),
+            credential_file: PathBuf::from("/nonexistent/credential"),
+            credential_expires: None,
+            admission_group_id: "77778888-bbbb-9999-cccc-0000dddd1111".to_owned(),
+            grant_group_id: None,
+            allowlist: Vec::new(),
+            sam_source: SamSource::default(),
+            notifier: Arc::new(Notifier::disabled("sync")),
+            shadow: Shadow::default(),
+            users_cursor: Some(STORED_CURSOR.to_owned()),
+            groups_cursor: Some(STORED_CURSOR.to_owned()),
+        }
+    }
+
+    /// A cursor that stays corrupt after full resync yields no snapshot.
+    #[tokio::test]
+    async fn a_read_that_never_recovers_yields_no_snapshot() {
+        let mut source = bare_source();
+        let verdict = match source.read(&CursorNeverRecovers).await {
+            Ok(Progress::Complete(_)) => conformance::Verdict::Snapshot,
+            Ok(Progress::Idle(why)) => panic!("idle is not a torn read: {why}"),
+            Err(e) => conformance::Verdict::Refused(e.to_string()),
+        };
+        let why = conformance::a_torn_read_yields_no_snapshot(verdict);
+        assert!(why.contains("still refused after a full resync"), "{why}");
+    }
+
+    /// Only a rejected credential does not count as a source failure.
+    #[test]
+    fn only_a_rejected_credential_is_spared_from_counting() {
+        let errs = [
+            SourceError::CredentialRejected("the app secret expired".to_owned()),
+            transport(anyhow::anyhow!("the tenant did not answer")),
+            SourceError::NotWhole(
+                "a delta cursor was still refused after a full resync".to_owned(),
+            ),
+        ];
+        for err in &errs {
+            conformance::credential_rejection_is_the_only_non_failure(err);
+        }
     }
 
     /// A loopback webhook keeping every body posted to it, so "once" is a count.

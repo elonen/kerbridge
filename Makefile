@@ -20,7 +20,7 @@ CLIENT_WIN := $(MAKE) -C client/kerbridge-agent-windows
 .PHONY: all build-docker build-local docker windows macos macos-zip installer kbmanage kbconfig cli-dist debian-docker up down \
         clean clean-docker-images clean-docker-volumes \
         setup setup-rustfmt setup-clippy setup-tools \
-        test test-fast test-win test-mac test-build test-stack test-deb test-all
+        test test-fast test-win test-mac test-build test-authentik test-stack test-deb test-all
 
 # Compatibility alias for the containerized build.
 all: build-docker
@@ -77,7 +77,10 @@ cli-dist:
 # tags are unavailable: `make debian-docker KB_VERSION=0.10.0`.
 #
 # Build one native architecture per run. Do not reuse KBMANAGE_PLATFORM because
-# emulating six crate builds is slow.
+# emulating six crate builds is slow. Release CI builds each architecture on a
+# runner of that architecture for the same reason. DEB_PLATFORM overrides it for
+# a one-off cross build: `make debian-docker DEB_PLATFORM=linux/amd64`.
+DEB_PLATFORM ?=
 KB_VERSION ?= $(shell debian/make-changelog --print-version)
 
 # CI sets optional BuildKit cache flags because a fresh runner has no builder
@@ -87,11 +90,22 @@ KB_VERSION ?= $(shell debian/make-changelog --print-version)
 # Use buildx because the default Docker builder cannot export a cache. CI selects
 # a docker-container builder with docker/setup-buildx-action.
 DOCKER_CACHE ?=
+# Simply expanded, so the derivation runs once rather than once per reference.
+debian-docker: KB_VERSION := $(KB_VERSION)
 debian-docker:
+	@# A variable set from a shell command keeps no exit status, so a checkout
+	@# with no tags -- `git clone --depth 1` -- leaves KB_VERSION empty and the
+	@# build starts anyway. debian/Dockerfile refuses an empty one, but only
+	@# past the compile stages.
+	@[ -n "$(KB_VERSION)" ] || { \
+		echo "no version: see the message above, or pass KB_VERSION=<version>" >&2; \
+		exit 1; \
+	}
 	@# Remove old packages because versioned filenames accumulate and make
 	@# `apt-get install ./*.deb` select multiple versions.
 	rm -rf $(DIST)/debian
 	docker buildx build -f debian/Dockerfile --build-arg KB_VERSION=$(KB_VERSION) \
+	  $(if $(DEB_PLATFORM),--platform=$(DEB_PLATFORM)) \
 	  $(DOCKER_CACHE) --target dist --output type=local,dest=$(DIST)/debian .
 	@ls -l $(DIST)/debian
 
@@ -188,6 +202,12 @@ test-fast:
 	cargo fmt --all --check
 	cd client && cargo fmt --all --check
 	cd website && cargo fmt --all --check
+	@stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT; \
+		python3 testbench/fixtures/graph-sync/make_fixtures.py --out "$$stage" >/dev/null; \
+		diff -ru --exclude=make_fixtures.py --exclude=__pycache__ testbench/fixtures/graph-sync "$$stage"
+	@# The authentik corpus has no generator -- it is hand-derived from the
+	@# recordings, so it is held to the derivation instead of regenerated.
+	python3 testbench/fixtures/authentik-directory/check_derivation.py
 	cargo test --workspace
 	cargo clippy --workspace --all-targets -- -D warnings
 	@# Run the client core on Darwin or Linux. Darwin links Kerberos.framework;
@@ -257,16 +277,36 @@ test-fast:
 				exit 1; }; \
 		done; \
 	done
+	@# provision.sh writes .env and the config set from unquoted heredocs. An
+	@# unquoted heredoc expands three things and only $$VAR is wanted, so the other
+	@# two are refused between an unquoted <<EOF and its terminator. shellcheck
+	@# does not see them: a backtick that runs leaves the tier green, printing
+	@# "command not found" and writing the line with a hole in it. A backslash is
+	@# the quiet one -- it eats the character after it, and one before a newline
+	@# joins two lines.
+	@if sed -n '/<<EOF$$/,/^EOF$$/p' deploy/scripts/bench/provision.sh | grep -nE '`|\$$\(|\\'; then \
+		echo "FAIL: the lines above are inside an unquoted heredoc in provision.sh" >&2; \
+		echo "      a backtick or a \$$( there runs as a command, and a backslash" >&2; \
+		echo "      rewrites the line -- write it without one, or quote the heredoc" >&2; \
+		echo "      if it needs no \$$VAR expansion" >&2; \
+		exit 1; \
+	fi
 	@# provision.sh must not depend on one identity source. Otherwise, one tier can
-	@# pass while the shared provisioning code is no longer reusable.
+	@# pass while the shared provisioning code is no longer reusable. Every source
+	@# any tier uses belongs in the pattern, not only the first one.
 	@#
 	@# In ci-stack.sh, source-specific terms are valid only in comments, SOURCE and
-	@# TENANT declarations, COMPOSE_FILE, and the three idp_* hook bodies.
-	@if grep -inE 'mock-?idp|entra' deploy/scripts/bench/provision.sh; then \
+	@# TENANT declarations, COMPOSE_FILE, and the three idp_* hook bodies. There is
+	@# no counterpart for ci-authentik.sh: that tier states its own source in the
+	@# assertions it prints, so the same gate would refuse prose it is right to
+	@# have. The guard that matters is the one above, on the shared file.
+	@if grep -inE 'mock-?idp|entra|authentik' deploy/scripts/bench/provision.sh; then \
 		echo "FAIL: deploy/scripts/bench/provision.sh contains the source-specific lines above" >&2; \
 		echo "      shared provisioning code must not name an identity source" >&2; \
 		exit 1; \
 	fi
+	python3 deploy/scripts/bench/test_prepare_ci_tree.py
+	python3 testbench/entra-tenant/test_conformance.py
 	@body=$$(sed -e '/^idp_prepare()/,/^}$$/d' -e '/^idp_env_lines()/,/^}$$/d' \
 		-e '/^idp_source_toml()/,/^}$$/d' -e '/^[[:space:]]*#/d' \
 		-e '/^SOURCE=/d' -e '/^TENANT=/d' -e '/^export COMPOSE_FILE=/d' \
@@ -297,6 +337,10 @@ test-fast:
 	python3 docs/scripts/check-research.py
 	python3 docs/scripts/check-doc-links.py
 	python3 docs/scripts/check-signing-key.py
+	@# The reverse proxies allow a route list and 404 the rest, so a route the
+	@# broker gained and a proxy did not is a 404 nothing reaching the broker
+	@# directly can see.
+	python3 docs/scripts/check-broker-routes.py
 	@# Render every help-site language in memory to detect invalid templates,
 	@# renamed fields, and missing translation keys before publication.
 	$(MAKE) -C website check
@@ -357,10 +401,19 @@ test-mac:
 # parsing when the deployment file is absent.
 test-build: build-docker installer
 
+# Test authentik sign-in and a directory (IdP) read through an SMB file read.
+# This tier uses a disposable project, subnet, port and tree of its own under
+# .local-tmp/ -- distinct from test-stack's, so the two can run at once -- and
+# pulls pinned external images. `ARGS=--keep` preserves the stack.
+test-authentik:
+	deploy/scripts/bench/ci-authentik.sh $(ARGS)
+
 # Test sign-in through an SMB file read against a new realm without a tenant or
-# secret. The disposable stack uses a separate project, container names, and
-# subnet under .local-tmp/. Its HTTPS port defaults to 8443; CI_HTTPS_PORT
-# overrides it. ARGS=--keep preserves the stack.
+# secret. The disposable stack uses a separate project, container names, subnet
+# and tree under .local-tmp/, so it runs beside a bench and beside the other
+# tier. Its HTTPS port defaults to 8443; CI_HTTPS_PORT overrides it, as
+# CI_PROJECT, CI_SUBNET and CI_TREE override the rest. ARGS=--keep preserves
+# the stack.
 test-stack:
 	deploy/scripts/bench/ci-stack.sh $(ARGS)
 
@@ -372,4 +425,4 @@ test-stack:
 test-deb: debian-docker
 	debian/check-install $(DIST)/debian
 
-test-all: test-fast test-win test-build test-stack test-deb
+test-all: test-fast test-win test-build test-authentik test-stack test-deb

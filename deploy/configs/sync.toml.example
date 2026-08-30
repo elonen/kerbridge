@@ -33,7 +33,7 @@
 #automatic_sam_renames = true
 
 # Log the plan every cycle and apply nothing. The safe way to watch a new
-# deployment before letting it write the directory.
+# deployment before letting it write the directory (realm).
 #dry_run = false
 
 # How far ahead of a device grant's effective deadline to warn: `off`, or a
@@ -47,7 +47,7 @@
 # idp_<source>.toml.
 #credential_warn_before_days = 30
 
-# What each cycle changed in the directory: the tally, and the object every
+# What each cycle changed in the directory (realm): the tally, and the object every
 # applied write touched. A separate file on a separate mount from the other two
 # audit logs -- see the reason in issuerd.toml. An account created here outlives
 # any ticket or grant, and nothing else says who was given one. `none` keeps the

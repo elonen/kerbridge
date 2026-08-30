@@ -1,0 +1,72 @@
+{
+  "note": "VALUE NEGATIVE. A structurally perfect terminating group page to read against the corpus user pages (users_page1 and users_page2, whose pks are 2, 4, 6 and 44-53). kb-admission names member pk 900 in its users array, and no user in the read carries that pk. authentik's read is complete by construction, so a member id that resolves to nothing is not a race to wait out -- it is a signal, and any dangling id makes the read not-whole. There are three places one can dangle: a group's users (here), a group's children, and a visible user's own groups; one detector covers all three.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/groups/?ordering=pk&include_users=false&page_size=8&page=2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 1,
+        "count": 11,
+        "current": 2,
+        "total_pages": 2,
+        "start_index": 9,
+        "end_index": 11
+      },
+      "results": [
+        {
+          "pk": "9665b31a-b1e6-42e6-9204-45e14bb0eb21",
+          "num_pk": 19991,
+          "name": "kb-admission",
+          "parents": [],
+          "parents_obj": null,
+          "users": [
+            48,
+            47,
+            900
+          ],
+          "users_obj": null,
+          "children": [
+            "5fe9eabf-dbda-42c1-82e3-e52e5558ec10",
+            "d02aca4a-5661-40bc-96e3-4afbfe8bd30c",
+            "4dd29757-1821-4ad0-8bff-b48dc2c51714"
+          ],
+          "children_obj": null
+        },
+        {
+          "pk": "ac5759dd-302a-42d7-9b77-0897ce9ece6e",
+          "num_pk": 22908,
+          "name": "authentik Agent-Users",
+          "parents": [],
+          "parents_obj": null,
+          "users": [],
+          "users_obj": null,
+          "children": [],
+          "children_obj": null
+        },
+        {
+          "pk": "d02aca4a-5661-40bc-96e3-4afbfe8bd30c",
+          "num_pk": 27670,
+          "name": "kb-two-parents",
+          "parents": [
+            "9665b31a-b1e6-42e6-9204-45e14bb0eb21",
+            "5fe9eabf-dbda-42c1-82e3-e52e5558ec10"
+          ],
+          "parents_obj": null,
+          "users": [
+            49
+          ],
+          "users_obj": null,
+          "children": [],
+          "children_obj": null
+        }
+      ]
+    }
+  }
+}

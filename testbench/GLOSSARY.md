@@ -26,7 +26,7 @@ thing wrong with them.
 
 One directory under the fixtures root that its reader loads as a set and that
 is regenerated whole or not at all.
-<!-- refs: path `testbench/fixtures/`; corpora `entra-token`, `graph-sync`, `planner`, `tls` -->
+<!-- refs: path `testbench/fixtures/`; corpora `entra-token`, `authentik-token`, `graph-sync`, `authentik-directory`, `planner`, `tls` -->
 <!-- avoid: test corpora, fixture set, golden files -->
 
 ### evidence
@@ -44,13 +44,33 @@ certificate. Every identifier in one is synthetic, and the committed tokens are
 expired on purpose.
 <!-- avoid: golden file -->
 
+### flow executor
+
+The authentik API endpoint that advances a named flow. The testbench answers the
+identification and password challenges, then follows the redirect target until
+the re-entry returns an authorization code.
+<!-- refs: authentik `/api/v3/flows/executor/<slug>/` API; `testbench/authentik/approve.sh` -->
+<!-- avoid: executor, flow API, authorization endpoint -->
+
 ### generator
 
 A script, the only sanctioned way to change the [corpus](#corpus) it owns.
-One per generated corpus; the planner corpus has none, its cases being
-hand-written golden files.
-<!-- refs: `make_fixtures.py` / `make_fixtures.sh`, one per generated corpus: `entra-token`, `graph-sync`, `tls` -->
+One per generated corpus; the planner and authentik-directory corpora have
+none, their cases being hand-written or hand-derived golden files.
+<!-- refs: `make_fixtures.py` / `make_fixtures.sh`, one per generated corpus: `entra-token`, `authentik-token`, `graph-sync`, `tls`; the two token generators share `tokenforge.py` -->
 <!-- avoid: script -->
+
+### Graph conformance run
+
+The read-only run that points [`conformance.py`](entra-tenant/conformance.py) at
+a live Entra tenant and names each place where Graph and the `graph-sync`
+[corpus](#corpus) disagree. It states the directory (IdP) it expects, in the
+words the Entra portal uses, so the tenant is reproducible. It is run by hand
+and it gates nothing: it turns red when Microsoft changes something, not when a
+commit does.
+<!-- refs: `testbench/entra-tenant/conformance.py`, `testbench/entra-tenant/README.md` -->
+<!-- avoid: conformance test, live tier, graph test -->
+<!-- different than: the verifier conformance suite, which is a set of cases inside `test-fast` -->
 
 ### instrument
 
@@ -83,11 +103,12 @@ reader must not conclude from it; the corpus's own documentation channel.
 
 ### positive
 
-A token [fixture](#fixture-test-corpus) that must verify. Exactly one is
-committed; the second exists only in the [live corpus](#live-corpus), because
-committing it would mean regenerating the whole corpus and moving the
-[validity window](#validity-window) the broker's verifier pins.
-<!-- refs: the pinned window lives in `kerbridge-idp/src/entra/auth.rs` -->
+A token [fixture](#fixture-test-corpus) that must verify. Exactly one per
+token [corpus](#corpus) is committed; Entra's second exists only in the [live
+corpus](#live-corpus), because committing it would mean regenerating the whole
+corpus and moving the [validity window](#validity-window) the broker's verifier
+pins.
+<!-- refs: each pinned window lives in that adapter's `auth.rs`, `kerbridge-idp/src/{entra,authentik}/` -->
 <!-- avoid: good token, happy path -->
 
 ### recorded-shape exchange
@@ -117,13 +138,15 @@ it belongs on bench networks only.
 
 ### validity window
 
-The `nbf`..`exp` span baked into a committed test token. The committed
-[corpus](#corpus) is expired on purpose, so the verifier tests pin a fixed
-clock; the [live corpus](#live-corpus) gets a fresh window instead.
+The span a committed test token is valid over: `nbf`..`exp` where the IdP
+emits an `nbf`, and everything up to `exp` where it does not -- authentik emits
+none. The committed [corpus](#corpus) is expired on purpose, so the verifier
+tests pin a fixed clock; the [live corpus](#live-corpus) gets a fresh window
+instead.
 <!-- avoid: token lifetime, expiry window -->
 
 ### zoo
 
-A deliberately exhaustive cast of directory objects assembled so that every
+A deliberately exhaustive cast of directory (IdP) objects assembled so that every
 claimed member type or name case appears at least once.
 <!-- avoid: object zoo, cast, menagerie -->

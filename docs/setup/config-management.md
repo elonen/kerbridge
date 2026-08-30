@@ -23,10 +23,10 @@ config set<sup>[?](../../deploy/GLOSSARY.md#config-set)</sup>.
 | File | What it configures |
 |---|---|
 | `main.toml` | The entry point. It names your sources, and holds `[notify]`. |
-| `realm.toml` | The realm, and the directory the services read. |
+| `realm.toml` | The realm, and the directory (realm) the services read. |
 | `issuerd.toml` | The ticket issuer. |
 | `broker.toml` | The broker. |
-| `sync.toml` | The directory mirror. |
+| `sync.toml` | The IdP-to-realm mirror. |
 | `kbmanage.toml` | The operator CLI. Optional. |
 | `idp_<source>.toml` | One file for each identity source. |
 
@@ -79,7 +79,7 @@ Example. `sync.toml` ships this:
 
 ```toml
 # Log the plan every cycle and apply nothing. The safe way to watch a new
-# deployment before letting it write the directory.
+# deployment before letting it write the directory (realm).
 #dry_run = false
 ```
 
@@ -89,7 +89,7 @@ To watch the deployment first, make it this:
 dry_run = true
 ```
 
-To let sync write the directory later, comment the line out again.
+To let sync write the directory (realm) later, comment the line out again.
 
 ## See what you decided
 

@@ -1,7 +1,7 @@
 //! The Entra adapter: the tenant a source file configures, and the subject
 //! encoding both faces share.
 //!
-//! `auth` is the token face; `sync`, `client` and `wire` are the directory one.
+//! `auth` is the token face; `sync`, `client` and `wire` are the directory (IdP) face.
 //! [`identity`] is what makes the two agree -- see the crate doc for what a
 //! divergence costs.
 
@@ -22,7 +22,7 @@ use kerbridge_core::{ExternalIdentity, IdentityError, Source, is_guid};
 use serde::Deserialize;
 
 use crate::jwks::JwksSource;
-use crate::{Probe, Verdict};
+use crate::{Probe, discovery_url, get};
 
 pub(crate) use auth::Entra;
 
@@ -128,7 +128,8 @@ fn tenant_jwks_url(tenant_id: &str) -> String {
 /// One Entra tenant, as a source file's `[provider_config]` states it.
 ///
 /// Both faces are here because one file serves both binaries: the policy the
-/// broker verifies tokens against, and the Graph credential sync reads with.
+/// broker verifies tokens against, and the sync credential used for directory (IdP)
+/// reads.
 /// Split across `broker.toml` and `sync.toml` they could name different
 /// tenants, and that disagreement retires every account and recreates it with a
 /// fresh SID.
@@ -366,13 +367,6 @@ const DISCOVERY: &str = "discovery document";
 const ISSUER: &str = "issuer";
 const KEYS: &str = "signing keys";
 
-/// OIDC fixes the suffix. Hung off the authority rather than assembled from the
-/// tenant, so the document fetched is the one a client signing in here would
-/// find.
-fn discovery_url(authority: &str) -> String {
-    format!("{}/.well-known/openid-configuration", authority.trim_end_matches('/'))
-}
-
 /// The two claims a probe compares. Everything else the document carries is a
 /// client's business rather than this deployment's.
 #[derive(Deserialize)]
@@ -422,56 +416,6 @@ fn issuer_probe(derived: &str, published: &str) -> Probe {
     }
 }
 
-/// A failed GET, sorted into the two kinds but not yet attached to a question.
-struct Trouble(Verdict, String);
-
-impl Trouble {
-    fn at(self, check: &'static str) -> Probe {
-        Probe { check, verdict: self.0, detail: self.1 }
-    }
-}
-
-/// One GET, bounded the same way the signing-key fetch is -- the IdP is remote
-/// and outside the deployment either way.
-///
-/// **Only the status is classified here.** Anything that stopped the exchange
-/// from completing is the world; a document that arrived and does not say what
-/// it should is the caller's to judge, because only the caller knows what it was
-/// reading for.
-async fn get(url: &str, timeout: Duration) -> Result<String, Trouble> {
-    let response = crate::jwks::http_client(timeout)
-        .map_err(|e| Trouble(Verdict::Warn, format!("{e:#}")))?
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| Trouble(Verdict::Warn, format!("{url} did not answer: {}", root_cause(&e))))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(Trouble(status_verdict(status.as_u16()), format!("{url} answered {status}")));
-    }
-    crate::jwks::bounded_body(response)
-        .await
-        .map_err(|e| Trouble(Verdict::Warn, format!("{url} answered, the body did not: {e:#}")))
-}
-
-/// The bottom of an error chain. `reqwest`'s own `Display` repeats the URL the
-/// line already names and says nothing about why; the DNS or connect failure is
-/// the last link.
-fn root_cause(error: &dyn std::error::Error) -> String {
-    let mut cause = error;
-    while let Some(next) = cause.source() {
-        cause = next;
-    }
-    cause.to_string()
-}
-
-/// Which side of the line a status falls on. A 4xx is the server answering
-/// *about the request*, which settles the question against the configuration; a
-/// 5xx is the server failing to answer it at all.
-fn status_verdict(status: u16) -> Verdict {
-    if (500..600).contains(&status) { Verdict::Warn } else { Verdict::Fail }
-}
-
 /// The template source for the `[provider_config]` half of
 /// `idp_<name>.toml.example`, rendered by `kerbridge-core`'s `render` and
 /// appended to the envelope that crate emits.
@@ -481,7 +425,7 @@ fn status_verdict(status: u16) -> Verdict {
 /// not use, named a key the parser dropped or missed one it gained fails the
 /// build rather than misleading an operator.
 #[cfg(feature = "schema")]
-pub(crate) const ENTRA_SRC: &str = r#"# Entra: the three app registrations from SETUP.md step 2, the sync app's Graph
+pub(crate) const ENTRA_SRC: &str = r#"# Entra: the three app registrations from docs/setup/entra.md, the sync app's Graph
 # credential, and the group that admits a user to the realm. What each value is,
 # and the four Entra defaults that are wrong for KerBridge: docs/setup/entra.md.
 # `terraform apply` in deploy/terraform/entra/ creates all three and prints
@@ -537,7 +481,7 @@ pub(crate) const ENTRA_SRC: &str = r#"# Entra: the three app registrations from 
 {{jwks_url}}
 {{jwks_file}}
 
-# The directory sync app: app-only, read-only Graph, and the only one of the
+# The sync app: app-only, read-only Graph, and the only one of the
 # three holding a credential. Without admin consent on its permissions its token
 # carries no roles and every read is a 403.
 {{sync_client_id}}
@@ -617,6 +561,8 @@ pub mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    use crate::Verdict;
+
     pub fn fixture_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testbench/fixtures/entra-token")
     }
@@ -630,7 +576,7 @@ pub mod tests {
         Source::new("entra").unwrap()
     }
 
-    /// One rule at both faces: the directory face is `encode_identity`, the
+    /// One rule at both faces: the directory (IdP) face is `encode_identity`, the
     /// token face is the reduction `verify` ends on. No fixture reaches the
     /// token face -- the corpus signing key is not committed, so one new token
     /// means regenerating all of them. The words are asserted because `verify`
@@ -641,7 +587,7 @@ pub mod tests {
         let uppercase = USER_OID.to_ascii_uppercase();
 
         let from_graph = crate::encode_identity(crate::Provider::Entra, &source(), &uppercase)
-            .expect_err("the directory face refuses it");
+            .expect_err("the directory (IdP) face refuses it");
         let from_token = identity(&source(), &uppercase).expect_err("the token face refuses it");
         assert_eq!(from_graph, from_token, "one rule, so one refusal");
 
@@ -787,19 +733,6 @@ pub mod tests {
         assert!(err.contains("jwks_url") && err.contains("jwks_file"), "{err}");
     }
 
-    /// The distinction the verdict table rests on, and nothing here touches the
-    /// network: an answer about the request settles it against the file, and no
-    /// answer settles nothing.
-    #[test]
-    fn a_4xx_names_the_config_and_a_5xx_names_the_world() {
-        for definitive in [400, 401, 403, 404, 410] {
-            assert_eq!(status_verdict(definitive), Verdict::Fail, "{definitive}");
-        }
-        for transient in [500, 502, 503, 504] {
-            assert_eq!(status_verdict(transient), Verdict::Warn, "{transient}");
-        }
-    }
-
     #[test]
     fn a_published_issuer_that_disagrees_is_a_hard_fail() {
         let derived = v2_endpoint(TENANT);
@@ -827,12 +760,5 @@ pub mod tests {
                 .is_err()
         );
         assert!(serde_json::from_str::<Discovery>("<html>sign in</html>").is_err());
-    }
-
-    #[test]
-    fn the_discovery_url_hangs_off_the_authority() {
-        let want = "https://idp.example.site/tenant/.well-known/openid-configuration";
-        assert_eq!(discovery_url("https://idp.example.site/tenant"), want);
-        assert_eq!(discovery_url("https://idp.example.site/tenant/"), want);
     }
 }

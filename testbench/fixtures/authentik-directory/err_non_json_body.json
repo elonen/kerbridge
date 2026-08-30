@@ -1,0 +1,14 @@
+{
+  "note": "ERROR SHAPE, HAND-AUTHORED -- this could not be recorded on the bench and is not a recording. It needs the operator's reverse proxy, the component this stack does not run. The proxy, not authentik, answers with an HTML error page and a text/html content type, so the body does not parse as JSON at all. The body field below holds that raw HTML payload as a string. A reader must treat an unparseable body as reachability trouble -- warn and retry -- and never as an empty or malformed directory.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=10&page=1"
+  },
+  "response": {
+    "status": 502,
+    "headers": {
+      "content-type": "text/html"
+    },
+    "body": "<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n"
+  }
+}

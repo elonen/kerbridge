@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 kerbridge-core = { workspace = true, features = ["tls", "password"] }
 # The seam and the subject encoding, so what sync writes is what the broker's
-# verifier emits. `sync` is the directory face; this is the one crate that turns
+# verifier emits. `sync` is the directory (IdP) face; this is the one crate that turns
 # it on.
 kerbridge-idp = { workspace = true, features = ["sync"] }
 kerbridge-notify.workspace = true

@@ -123,6 +123,14 @@ def interpolate(raw, env, where):
 
 
 # --- Reading the `environment:` blocks ---------------------------------------
+#
+# A mapping key alone or anchored (`authentik-server: &authentik`), and a merge
+# of one (`<<: *authentik`). `compose.authentik.yaml` gives one image's
+# environment to three services that way, so a walk that reads neither reads
+# none of the largest block in the file.
+
+_KEY = re.compile(r"([A-Za-z0-9_.-]+):(?:\s+&([A-Za-z0-9_.-]+))?$")
+_MERGE = re.compile(r"<<:\s*\*([A-Za-z0-9_.-]+)$")
 
 
 def environments(path):
@@ -131,10 +139,15 @@ def environments(path):
     Indentation-driven rather than YAML-parsed: PyYAML is not in the standard
     library and `make test-fast` takes no dependencies. The shape it accepts is
     narrow on purpose -- two-space service keys, four-space `environment:`,
-    six-space `KEY: value` -- so a file that drifts out of that shape is caught
-    by the checks below going quiet, not by this silently reading less.
+    six-space `KEY: value`, either mapping key optionally anchored, and a
+    four-space `<<:` merging one service into another.
+
+    Every departure from that shape is refused rather than read past: reading
+    past one is how a service goes uncovered while the checks below still
+    report success.
     """
-    services, service, in_services, in_env = {}, None, False, False
+    services, anchors, merges, declared = {}, {}, [], []
+    service, in_services, in_env = None, False, False
     with open(path, encoding="utf-8") as fh:
         for line in fh:
             body = line.strip()
@@ -145,17 +158,58 @@ def environments(path):
                 in_services, service, in_env = body == "services:", None, False
             elif not in_services:
                 continue
-            elif indent == 2 and body.endswith(":"):
-                service, in_env = body[:-1], False
+            elif indent == 2:
+                # A key this does not recognize -- quoted, or trailing a comment
+                # -- would leave `service` on the one before it, and hand that
+                # service the next one's keys.
+                if not (m := _KEY.match(body)):
+                    raise ComposeError(f"{path}: {body!r} is not a service key this reads")
+                service, in_env = m.group(1), False
                 services.setdefault(service, {})
+                if m.group(2):
+                    anchors[m.group(2)] = service
             elif service is None:
                 continue
+            elif indent == 4 and body.startswith("<<:"):
+                # Only a merge of one anchor. A sequence (`<<: [*a, *b]`, or `<<:`
+                # over indented `- *a` lines) is YAML this does not implement, and
+                # reading past it drops every key the service merged.
+                if not (m := _MERGE.match(body)):
+                    raise ComposeError(f"{path}: {service} merges {body!r}, not <<: *anchor")
+                merges.append((service, m.group(1)))
+                in_env = False
             elif indent == 4:
-                in_env = body == "environment:"
+                m = _KEY.match(body)
+                in_env = bool(m) and m.group(1) == "environment"
+                if in_env:
+                    declared.append(service)
+                elif body.startswith("environment:"):
+                    raise ComposeError(f"{path}: {service} opens environment as {body!r}")
             elif in_env and indent == 6:
                 key, sep, value = body.partition(":")
-                if sep and _NAME.fullmatch(key):
-                    services[service][key] = value.strip().strip("\"'")
+                if not sep or not _NAME.fullmatch(key):
+                    raise ComposeError(f"{path}: {service} passes {body!r}, which is not KEY: value")
+                services[service][key] = value.strip().strip("\"'")
+            elif in_env:
+                # Deeper than six: a block scalar or a nested value, whose key
+                # above it was read as if the whole value were on that line.
+                raise ComposeError(f"{path}: {service} passes {body!r}, indented past KEY: value")
+
+    # A merged key yields to one the service states itself, as YAML's does. In
+    # file order, so a service merged from is already resolved when merged.
+    for target, alias in merges:
+        if alias not in anchors:
+            raise ComposeError(f"{path}: <<: *{alias} names no service anchor in this file")
+        for key, value in services[anchors[alias]].items():
+            services[target].setdefault(key, value)
+
+    for service in declared:
+        if not services[service]:
+            raise ComposeError(f"{path}: {service} states environment: and this reads no key from it")
+    # Reading no service at all is the shape drift with no symptom: every check
+    # below still passes, over nothing.
+    if not services:
+        raise ComposeError(f"{path}: this reads no service from it")
     return services
 
 
@@ -265,8 +319,8 @@ def service_field(path, service, field):
                 in_services, cur = body == "services:", None
             elif not in_services:
                 continue
-            elif indent == 2 and body.endswith(":"):
-                cur = body[:-1]
+            elif indent == 2 and (m := _KEY.match(body)):
+                cur = m.group(1)
             elif indent == 4 and cur == service and body.startswith(want):
                 return body[len(want) :].strip()
     return None
@@ -299,6 +353,7 @@ FILES = [
     "compose.yaml",
     "compose.ci.yaml",
     "compose.ci-entra.yaml",
+    "compose.authentik.yaml",
     "compose.mockidp.yaml",
     "compose.nas.yaml",
 ]
@@ -307,25 +362,24 @@ FILES = [
 def run_no_kb_keys(root):
     """Every `KB_*` key any compose file passes, which must be none of them."""
     # The keys as written, uninterpolated: this asks what a service is *passed*,
-    # and a value that cannot be expanded without a .env is still a key.
-    written = {
-        (service, key)
-        for name in FILES
-        for service, env in environments(os.path.join(root, "deploy", name)).items()
-        for key in env
-        if key.startswith("KB_")
-    }
+    # and a value that cannot be expanded without a .env is still a key. The
+    # total is printed because reading nothing also passes.
+    written, total = set(), 0
+    for name in FILES:
+        for service, env in environments(os.path.join(root, "deploy", name)).items():
+            total += len(env)
+            written |= {(service, key) for key in env if key.startswith("KB_")}
     broken = [
         f"{service} is passed {key}: a component's configuration belongs in the config "
         "set, where kbconfig check validates it"
         for service, key in sorted(written)
     ]
-    return len(FILES), broken
+    return len(FILES), total, broken
 
 
 def main(root):
     cases, broken = run_table(root)
-    files, more = run_no_kb_keys(root)
+    files, keys, more = run_no_kb_keys(root)
     broken += more
     broken += run_broker_upstream(root)
     broken += run_example_realm_flag(root)
@@ -337,7 +391,7 @@ def main(root):
         return 1
 
     print(f"compose env: {cases} translation case(s) hold")
-    print(f"compose env: {files} compose file(s) pass no KB_* key to any service")
+    print(f"compose env: {keys} key(s) in {files} compose file(s), none of them KB_*")
     print("compose env: caddy's upstream is the address broker.toml binds")
     print("compose env: the example-realm decision reaches kbsetup as argv, and only when made")
     return 0

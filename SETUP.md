@@ -7,7 +7,7 @@
 | Step | What | Where | Read this first |
 |---|---|---|---|
 | [1](#1-decide-the-names) | Decide the names | on paper | [names-and-decisions.md](docs/setup/names-and-decisions.md) |
-| [2](#2-register-three-applications-in-entra) | Register three applications in Entra | Entra admin center | [entra.md](docs/setup/entra.md) |
+| [2](#2-set-up-your-cloud-identity-providers) | Set up your cloud identity provider(s) | your IdP's admin UI | Choose yours: [entra.md](docs/setup/entra.md) · [authentik.md](docs/setup/authentik.md) |
 | [3](#3-publish-the-dns-records) | Publish the DNS records | your DNS zone | [dns-and-firewall.md](docs/setup/dns-and-firewall.md) |
 | [4](#4-stand-up-the-broker-host) | Stand up the broker host | the Linux host | [broker-host.md](docs/setup/broker-host.md) |
 | [5](#5-join-your-file-server) | Join your file server | the file server | [file-server.md](docs/setup/file-server.md) |
@@ -18,7 +18,7 @@
 
 ```mermaid
 flowchart LR
-  S1["1. Names"] --> S2["2. Entra apps"]
+  S1["1. Names"] --> S2["2. Identity provider(s)"]
   S1 --> S3["3. DNS records"]
   S2 --> S4["4. Broker host"]
   S3 -->|"first, if acme / acme-dns"| S4
@@ -29,24 +29,24 @@ flowchart LR
   S7 --> S8
 ```
 
-Two pages apply to every step:
+Two pages apply throughout:
 
 - [Known rough edges](docs/setup/rough-edges.md) — the limits and the unfinished
   parts. Read this before you pilot KerBridge.
 - [config-management.md](docs/setup/config-management.md) — how the
   configuration files work, and how to carry them to a new version.
-- [mdm-intune.md](docs/setup/mdm-intune.md) — the whole Windows client
-  deployment from Intune: the template, the installer push, and the realm
-  registration.
+
+If you deploy the Windows agent through Microsoft Intune, use
+[mdm-intune.md](docs/setup/mdm-intune.md).
 
 ---
 
 ## What you are building
 
 You install the KerBridge server on one Linux host. The examples call it
-`kerbridge.example.site`. The server copies users from Entra, and it gives
-Kerberos tickets to Windows and macOS workstations through the NAS Access
-agent.
+`kerbridge.example.site`. The server copies selected users and groups from each
+configured cloud IdP, and it gives Kerberos tickets to Windows and macOS
+workstations through the NAS Access agent.
 
 There are two ways to run the server. You select one in step 4. No step before
 step 4 is different:
@@ -59,19 +59,19 @@ step 4 is different:
 
 ```mermaid
 flowchart LR
-  E["Entra ID<br/>the identity source"]
+  E["Cloud IdP<br/>the identity source"]
   subgraph H["KerBridge server"]
     SY["sync"]
     BR["broker"]
     CA["caddy<br/>(TLS terminator)"]
     DC["realm<br/>(Samba AD DC/KDC + issuerd)"]
   end
-  W["Windows PC or Mac\n(Entra- or non-joined)"]
+  W["Windows PC or Mac\n(unjoined or Entra-joined)"]
   F["File server<br/>(Samba member)"]
   E -->|"1. users + groups"| SY
-  SY -->|"2. mirror into OU=Entra,OU=CloudIdP"| DC
+  SY -->|"2. mirror into OU=&lt;source&gt;,OU=CloudIdP"| DC
   W -->|"3. sign-in"| E
-  W -->|"4. signed Entra token"| CA
+  W -->|"4. signed identity proof"| CA
   CA --> BR
   BR -->|"5. exchange"| DC
   BR <-->|"6. KDC-issued TGT"| W
@@ -79,12 +79,12 @@ flowchart LR
   F <-->|"8. service ticket"| DC
 ```
 
-- Entra is your identity source. The Samba DC is not. Only `sync` creates
-  objects in `OU=Entra,OU=CloudIdP,<base DN>`. Do not add an object there by
-  hand.
+- Each configured cloud IdP is the identity source. The Samba DC is not. Only
+  `sync` creates objects in that source's IdP-specific OU beneath
+  `OU=CloudIdP,<base DN>`. Do not add an object there by hand.
 - The `broker` accepts HTTPS connections from the agent, and `caddy` terminates
-  the TLS. The broker exchanges a signed Entra token for a Kerberos TGT that
-  the KDC issues.
+  TLS. The broker exchanges a signed identity proof for a Kerberos TGT that the
+  KDC issues.
 - The agent puts that ticket into the user's own login session. Explorer and
   Finder then do the remaining work. Your file server sees a standard Kerberos
   client.
@@ -93,8 +93,8 @@ For the containers, their capabilities and their volumes, see
 [Topology (`deploy/README.md`)](deploy/README.md#topology).
 
 > **CAUTION: Do not join your workstations to this domain.** Keep them
-> unjoined, or Entra-joined. The domain issues tickets. It does not own
-> machines.
+> unjoined. An existing Entra-only join is also supported. The domain issues
+> tickets. It does not own machines.
 
 > **CAUTION: Enable NTP on every machine before step 1** — the broker host, the
 > file server and the workstations. Kerberos refuses a clock difference of more
@@ -105,24 +105,30 @@ For the containers, their capabilities and their volumes, see
 <details>
 <summary>What you need — get these before step 1</summary>
 
-- **An Entra ID tenant** in which you can register applications and give admin
-  consent. You must be a Global Administrator, or an Application Administrator
-  and a Privileged Role Administrator.
+- **Administrative access to every cloud IdP that you will configure:**
+  - **Microsoft Entra ID:** a tenant in which you can register applications and
+    grant admin consent. The Entra setup page lists the required roles.
+  - **authentik:** an existing HTTPS instance whose certificate the server and
+    workstations trust, with permission to create and apply an internal blueprint
+    and create its API token.
 - **A DNS zone that you control.** You must be able to add records to the
   resolver that your LAN clients use. A `hosts` file is not sufficient, because
   Kerberos service principal names come from DNS.
 - **A Linux host** for the server, with root on it:
-  - Docker Compose v2.24+, Docker Buildx, GNU make, bash, curl and git;
   - a filesystem with extended attributes that operate correctly
     (ext4/xfs/btrfs/…);
-  - **Debian 13 (*trixie*) or Ubuntu 24.04 (*noble*), or newer, for a Debian
-    deployment.** For the Samba versions and the reason, see
-    [`debian-deployment.md`](docs/setup/debian-deployment.md). A Docker Compose
-    deployment brings its own Samba, so there you can select the distribution.
+  - for a **Docker Compose deployment**: Docker Compose v2.24+, Docker Buildx,
+    GNU make, bash, curl and git;
+  - for a **Debian deployment**: Debian 13 (*trixie*) or Ubuntu 24.04
+    (*noble*), or newer. For the Samba versions and the reason, see
+    [`debian-deployment.md`](docs/setup/debian-deployment.md).
   - We did not measure the resource requirements. A virtual machine with 2 vCPU
     and 4 GB was sufficient.
-- **Outbound internet access** from that host to `login.microsoftonline.com:443`,
-  to `graph.microsoft.com:443`, and to your ACME or DNS provider.
+- **HTTPS reachability to each selected cloud IdP.** The server and workstations
+  must reach it. For Entra, the server must reach
+  `login.microsoftonline.com:443` and `graph.microsoft.com:443`. For authentik,
+  they must reach the configured instance URL. The server must also reach the
+  ACME or DNS provider when the selected TLS strategy uses one.
 - **A file server** with a currently maintained Samba, on which you have root.
 - **A workstation for tests**: Windows 10 or 11, or a Mac with macOS 13 or
   later.
@@ -137,7 +143,7 @@ Go to **→ [names-and-decisions.md](docs/setup/names-and-decisions.md)**. It
 gives the cost of each decision, and the decisions that you cannot change
 later.
 
-Decide these four:
+Decide these four realm-wide:
 
 | Decision | Example | Notes |
 |---|---|---|
@@ -146,43 +152,55 @@ Decide these four:
 | NetBIOS/short name | `EXAMPLE` | The name that Explorer shows, as in `EXAMPLE\alice` |
 | TLS strategy | `acme-dns` | How the broker gets its HTTPS certificate |
 
+For each source, decide these before the first sync cycle:
+
+| Decision | Example | Notes |
+|---|---|---|
+| Source name | `entra` or `authentik` | The frozen storage key for one configured cloud IdP. |
+| Group suffix | `-entra`, `-authentik`, or `none` | Separates group login names from those of another source. |
+
 Keep these three defaults. Change one only if it is necessary:
 
 | Decision | Default | Notes |
 |---|---|---|
 | DC hostname | `kerbridge` | Also the broker's name. One host, one A record. |
-| Entra admission group | `KerBridge Allowed On-prem Users` | The Entra group that admits users to the realm. |
+| Admission group, per source | `KerBridge Allowed On-prem Users` | The group in that cloud IdP whose members are admitted to the realm. |
 | Idmap ranges | 100000-199999 (tdb)<br/>1000000-1999999 (rid) | The file server's user ID mappings. You cannot change them later. |
 
 ---
 
-## 2. Register three applications in Entra
+<!-- Keep the fragment shipped before KerBridge supported more than Entra. -->
+<a id="2-register-three-applications-in-entra"></a>
 
-Create three application registrations and one security group, in your one
-tenant. All three applications are read-only in Entra, and no application is an
-administrator:
+## 2. Set up your cloud identity provider(s)
 
-1. **Broker API app** — it validates the tokens that are addressed to it. It
-   holds no credential.
-2. **Public client app** — the app that signs users in over OIDC. It is native,
-   and it has no secret.
-3. **Sync app** — the only app with a credential. It can list users, groups and
-   memberships. It can change nothing.
+KerBridge asks two things of a cloud identity provider, and nothing more:
 
-Select one path. The two paths give the same result:
+1. **It signs a person in to the agent.** The workstation agent authenticates a
+   user against the provider over OIDC and receives a signed token. The broker
+   validates that token, and that is the only thing that admits a user.
+2. **It lets KerBridge read users and groups, one direction only.** Sync reads
+   the directory (IdP) on a read-only credential and mirrors the members of one
+   admission group into the realm. KerBridge writes nothing back to the
+   provider.
 
-| | |
-| --- | --- |
-| **[Terraform](docs/setup/entra-terraform.md)** — recommended | `terraform apply && ./print-provider-config.sh` creates all of it. It then prints a `[provider_config]` block for `configs/idp_entra.toml`. It needs `az login` to your tenant. |
-| **[By hand](docs/setup/entra-manual.md)** | The steps in the portal, and an `az` script that gives the same values. Use this path if the Azure CLI cannot connect to your tenant. |
+Both faces are read-only in the provider, and neither is an administrator. One
+group — the admission group — is what admits a user to the realm; nothing
+KerBridge does changes *whether* a person may sign in, only *who* is mirrored.
 
-On both paths, you must also put the sync app's secret in place yourself. No
-path does this for you —
-[The sync credential (`entra-manual.md`)](docs/setup/entra-manual.md#the-sync-credential).
+Each provider spells these two faces differently and calls its objects by
+different names. Follow the page for the provider, and assign each source the
+source name decided in step 1:
 
-Go to **→ [entra.md](docs/setup/entra.md)**. It gives the values that these
-applications produce, and **the Entra defaults that are wrong for KerBridge**.
-Those defaults break a deployment and show no error message.
+| Provider | Read this first |
+|---|---|
+| **Microsoft Entra ID** — the reference provider | **→ [entra.md](docs/setup/entra.md)** |
+| **authentik** — self-hosted; the one you can stand up yourself | **→ [authentik.md](docs/setup/authentik.md)** |
+
+Each page gives the values its provider produces for that source's
+`[provider_config]`, and the provider defaults that break a deployment and show
+no error message. A realm can carry more than one source: repeat this step per
+source.
 
 ---
 
@@ -213,7 +231,7 @@ Select one of the two methods. Neither is the default. Select the one that fits
 how you run your other services.
 
 Both methods need the same two things: the realm identity from step 1, and the
-`[provider_config]` block from step 2. The realm identity goes into the
+provider-specific values from step 2. The realm identity goes into the
 database at the first provision, and **you cannot change it afterwards**.
 
 ### Option 1: Docker Compose
@@ -226,17 +244,18 @@ git clone <this repo> kerbridge
 cd kerbridge/deploy
 cp .env.example .env
 for f in configs/*.toml.example; do cp "$f" "${f%.example}"; done
-$EDITOR .env configs/*.toml   # both files have many comments; read them as you go
+$EDITOR .env configs/*.toml   # both layers have many comments; read them as you go
 make check-config             # lists every line still to complete, all at once
 make up
 ```
 
 Every copied file arrives with each required option written as a **line to
 complete**: a commented `#key =` under a `# REQUIRED.` note and an example.
-Remove the `#` and write your own value. Nothing starts until all of them are
-done, and `make check-config` names the ones that are left.
+Remove the `#` and write your own value in each file the set loads. Nothing
+starts until those required lines are complete, and `make check-config` names
+all that are left.
 
-You edit two files, because they answer different questions. `.env` is the
+You edit two configuration layers because they answer different questions. `.env` is the
 shape of the deployment, and Compose and the scripts read it. `configs/*.toml`
 is the config set<sup>[?](deploy/GLOSSARY.md#config-set)</sup>, and the
 services read it. `make up` refuses to start until the two agree.
@@ -261,9 +280,10 @@ packages, the install questions, the TLS terminator and the systemd units.
 
 ```sh
 sudo apt install --no-install-recommends ./kerbridge*.deb   # asks the install questions
+sudo $EDITOR /etc/kerbridge/*.toml                          # complete every required line
+sudo kbconfig check                                         # validate before provisioning
 sudo kbsetup realm                                          # provisions the domain and its certificate
-sudo kbsetup directory                                      # the OUs, the service accounts, the delegation
-sudo $EDITOR /etc/kerbridge/*.toml                          # only if you left a question unanswered
+sudo kbsetup directory                                      # the OUs, service accounts, and delegation
 ```
 
 To install from the signed apt repository instead, and to get `apt upgrade`
@@ -344,8 +364,8 @@ misconfiguration:
 
 | Chain | Grants | Owned by |
 |---|---|---|
-| Membership of `KerBridge Allowed On-prem Users` in Entra | A Kerberos ticket. Nothing else. | You, in Entra |
-| Entra group → resource group → filesystem ACL | Access to files | You, on the DC and the file server |
+| Membership of a source's admission group | A Kerberos ticket. Nothing else. | You, in that cloud IdP |
+| Synced cloud IdP group → resource group → filesystem ACL | Access to files | You, in the cloud IdP, directory (realm), and file server |
 
 A user who is in the admission group, but in no resource group, signs in
 correctly and can open nothing. That is the design.
@@ -390,8 +410,9 @@ These facts apply to both platforms:
   prompt. **If you publish the record, you push nothing at all.** This is the
   intended deployment.
 - **A realm with more than one source must say which one.** The address then
-  ends with the source name: `kerbridge.example.site/entra`. The bare host name
-  is sufficient for the single-source realm that this guide builds.
+  ends with the source name from step 1: `kerbridge.example.site/<source>`, for
+  example `/entra` or `/authentik`. A bare host name is sufficient for a
+  single-source realm.
 - **Set *Start at login* in Settings.** Autostart must be per-user. A ticket
   that an elevated or service context injects goes into the wrong logon
   session, and the SMB client does not see it.
@@ -432,8 +453,8 @@ and do these three steps:
    computer after the first registration.
 3. **Set *Start at login*.**
 
-On an Entra-joined machine the agent signs in through the Windows broker, with
-no browser and no prompt.
+With an Entra source on an Entra-joined machine, the agent can use Windows
+sign-in with no browser. With authentik, complete browser sign-in.
 
 ### Mac
 
@@ -540,6 +561,11 @@ The steps above, in reverse.
    A purge is not a decommission: it keeps your secrets, your audit logs and
    the domain itself. For the full list of what stays, see
    [The packages (`debian-deployment.md`)](docs/setup/debian-deployment.md#the-packages).
+5. **Your cloud identity provider(s)** — delete what step 2 created. KerBridge
+   owns nothing else in the provider, and a user's cloud account does not
+   change. Follow the page for the provider:
+   [Entra](docs/setup/entra.md#removing-it),
+   [authentik](docs/setup/authentik.md#removing-it).
 
 > **CAUTION: Make a backup before you destroy the domain.** A new provision of
 > the same realm gives you a *different* domain SID, and the existing

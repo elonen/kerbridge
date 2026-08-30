@@ -1,0 +1,202 @@
+# One cloud IdP, as this realm stores it.
+#
+# The filename stem after `idp_` is the source name, and `name` below repeats
+# it. Everything above [provider_config] is about *our* directory (realm) and *our*
+# naming policy and is read by KerBridge itself; everything inside that block is
+# about the cloud IdP and is read only by that provider's adapter.
+#
+# Add the file's name to `sources` in main.toml. That list is the enable switch:
+# a file no name lists is ignored, with a line in the log saying so.
+#
+# A commented-out line sets nothing. `#some_option = 8` means that KerBridge
+# uses 8, the default for that option. `#some_option =`, with no value, means
+# that the option has no default: the comment above the line says what
+# KerBridge does instead, and shows an example -- or says `# REQUIRED.`, which
+# means the value is yours to supply and nothing starts until you do.
+# main.toml gives the full rule.
+
+# !! FROZEN AT FIRST PROVISIONING !!
+#
+# The source name goes into every synchronized object's identity value, which is
+# what the broker searches for on every login. Change it afterwards and every
+# one of those values is rewritten: sync sees the old objects as gone, retires
+# each account and creates a replacement with a NEW SID, and every file whose
+# owner was resolved from the old SID loses its owner. Silent, and not
+# recoverable without a directory (realm) restore.
+#
+# Pointing an existing name at a different IdP costs the same. That one is at
+# least loud -- the new IdP's subjects share none of the old ones, so sync
+# retires every account and creates a replacement rather than confusing two
+# people -- but every SID is still new. A new IdP gets a new name and its own
+# file. Detail: docs/setup/names-and-decisions.md.
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "authentik"
+#name =
+
+# Which adapter verifies this source's tokens and reads its directory (IdP).
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "authentik"
+#provider =
+
+# What this source's group login names end with, which is what keeps them out of
+# every other source's. A sAMAccountName is unique across the whole realm, so
+# two cloud IdPs that each hold a `payroll` group collide -- and the second one
+# to reach the name refuses every sync cycle, mirroring no users either, until
+# one of them is renamed in its own IdP.
+#
+#   -entra, _goog, ...  appended to every synchronized group's login name, so
+#                       `payroll` becomes `payroll-entra`. Up to 20 characters,
+#                       none of them whitespace or anything AD or a DN rejects.
+#   none                no suffix.
+#
+# Unset derives `-` and this source's name, which is the answer that cannot
+# collide. State `none` to drop the suffix -- a shorter group name while this is
+# your only cloud IdP, at the price of renaming its groups if you ever add a
+# second.
+#
+# Either way, choose before a second source exists. Chosen afterwards it renames
+# groups that are already in use, and a share ACL refers to the old name.
+# Example: "-authentik"
+#group_suffix =
+
+# This source's own directory (realm) account, and the file holding its password. One
+# account per source, never a shared one: AD enforces the write delegation
+# against the bound identity, and the directory (realm) audit is how you tell
+# which source's cycle wrote what.
+#
+# Under /etc/kerbridge.secrets/generated/idp/<name>/, which is one mounted
+# directory rather than a Docker secret each -- so a second source needs no edit
+# to compose.yaml. The host side is deploy/secrets/generated/idp/authentik/, and
+# `kbsetup directory` writes this one with the account. The credential you paste
+# in yourself sits apart, under idp/: the two have different writers.
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "CN=svc-kerbridge-sync-authentik,CN=Users,DC=example,DC=site"
+#bind_dn =
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "/etc/kerbridge.secrets/generated/idp/authentik/bind_password"
+#bind_password_file =
+
+# The IdP-specific OU this source owns, derived from `name` and
+# realm.idp_parent_ou. State it only for a directory (realm) whose existing layout
+# collides with the derived name.
+#
+# Example: "OU=Authentik,OU=CloudIdP,DC=example,DC=site"
+#ou =
+
+# authentik: one OAuth2 provider and one application, plus the API token that
+# sync uses to read the directory (IdP). authentik splits the protocol (the Provider) from
+# the access control (the Application), so there is one of each and no third
+# object. The provider settings KerBridge needs are mandatory and none of them
+# shows up in a token: sub_mode, a Signing Key, the offline_access mapping and a
+# regular-expression loopback redirect URI. The blueprint that sets them:
+# docs/setup/authentik.md.
+[provider_config]
+
+# The authentik instance, and the Application's slug. Every per-application URL
+# is keyed by that slug -- the issuer this deployment accepts, the discovery
+# document the agent bootstraps from, and the signing keys. The slug is on the
+# Application, not on the Provider, and it is yours to choose: some words are
+# reserved (authorize, token, device, userinfo, introspect, revoke).
+#
+# State the instance as scheme and host with no path. Everything below is
+# derived from these two. docs/setup/authentik-blueprint.yaml names the
+# Application `kerbridge`, so only a hand-built one restates the slug.
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "https://authentik.example.site"
+#url =
+#application_slug = "kerbridge"
+
+# The Provider's Client ID, from its OAuth2/OpenID Provider page. The agent
+# signs in with it -- a public client on authorization code plus PKCE, with no
+# secret -- and every access token this source accepts must name it in `azp`.
+#
+# Unlike Entra's, this is a string you may write yourself rather than a
+# generated identifier; whatever it says there is what goes here. The blueprint
+# writes `kerbridge`.
+#client_id = "kerbridge"
+
+# The one `aud` this source accepts. Unset means client_id, which is what
+# authentik issues.
+#
+# It exists as its own key because the two are the same thing only by
+# coincidence here: another IdP has a genuinely separate audience, and a lone
+# client_id would conflate the client that signs a person in with the resource
+# the token is for. Set it only if a scope mapping on this provider rewrites
+# `aud`. `azp` is checked against client_id either way, and a scope mapping
+# cannot reach `azp`.
+# Example: "kerbridge"
+#audience =
+
+# What the agent calls this IdP on screen -- "Sign out of authentik", and the
+# note after a device grant. Set it to whatever your sign-in page says: the name
+# has to match what the user just saw in the browser, not what the vendor calls
+# itself. Cosmetic, and safe to change at any time.
+#display_name = "authentik"
+
+# All three derived from url and application_slug, and stated only for a
+# deployment whose published URLs are not the ones this instance derives -- a
+# reverse proxy that rewrites the Host header is the case that needs them.
+#
+#   issuer     the one `iss` this source accepts, compared exactly. Note the
+#              trailing slash: authentik's own issuer carries one, `iss` is
+#              compared byte for byte, and a value without it refuses every
+#              token.
+#   authority  what the agent is told to sign in against.
+#   jwks_url   this application's live signing-key document.
+#
+# `kbconfig check --online` compares the issuer against what the provider
+# publishes, which is what finds a wrong slug or a rewriting proxy.
+# Example: "https://authentik.example.site/application/o/kerbridge/"
+#issuer =
+# Example: "https://authentik.example.site/application/o/kerbridge"
+#authority =
+# Example: "https://authentik.example.site/application/o/kerbridge/jwks/"
+#jwks_url =
+
+# The file holding the API token that sync reads users and groups with, never
+# the token itself. Create it on a dedicated service account with Intent "API"
+# -- an App password token authenticates nothing here and fails exactly the way
+# a wrong one does -- and grant that account view_user and view_group through a
+# Role, globally. A per-object grant answers 200 with a silently shorter list,
+# which reconciles the people it left out as departures.
+#
+# Under this source's own /etc/kerbridge.secrets/idp/<name>/ -- beside
+# bind_password_file's directory and deliberately not in it, because you write
+# this one and `kbsetup directory` writes that one. Paste the token into
+# deploy/secrets/idp/authentik/credential on the host. Empty means the token
+# does not exist yet: that source is skipped with a warning, and every other
+# source still mirrors.
+#
+# There is no expiry to state beside it. authentik reports an API token's own
+# expiry to the bearer that holds it, so KerBridge measures the headroom rather
+# than asking you to assert it -- but only if you left "Expiring" on when you
+# created the token.
+#
+# Unset derives /etc/kerbridge.secrets/idp/<name>/credential, keyed by this
+# source's name the way its OU and its bind account are. State a path only for a
+# host that keeps it somewhere else.
+# Example: "/etc/kerbridge.secrets/idp/authentik/credential"
+#sync_credential_file =
+
+# The group whose members may hold Kerberos tickets, by the group's pk (a uuid).
+# Nothing works without one: with no admission group sync mirrors no users and
+# every sign-in is a 403. The blueprint reports the pk after it creates the
+# group, and authentik shows it on the group's page.
+#
+# The pk, and not the name: a group that is renamed keeps its pk, while a name
+# can come to answer for a group you did not choose. Repointing at a different
+# group retires every user the new one does not admit.
+# REQUIRED. KerBridge does not start until this line is completed.
+# Example: "0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d"
+#admission_group_id =
+
+# Pks of further groups to mirror, beyond those reachable from the admission
+# group.
+#extra_group_ids = []
+
+# The group whose members may activate a device grant, by pk as above. Unset is
+# a deployment with no device-grant group and therefore no working grants,
+# whatever main.toml's device_grant_days says: the broker finds the group by its
+# marker. docs/setup/device-grants.md.
+# Example: "1b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e"
+#device_grant_group_id =

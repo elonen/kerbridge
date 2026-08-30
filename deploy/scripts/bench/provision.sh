@@ -1,5 +1,5 @@
 # Shared provisioning for all stack tiers. Sourcing this file creates an
-# isolated realm, bootstraps its directory, and waits for `/config` over TLS.
+# isolated realm, bootstraps its directory (realm), and waits for `/config` over TLS.
 # The caller performs source-specific setup and assertions.
 #
 # This file executes when sourced. It has no shebang and is not executable.
@@ -16,10 +16,11 @@
 # The checks below validate this contract before the build. `make test` also
 # verifies that this file does not name an identity source.
 #
-# The script copies tracked and unignored working-tree files to
-# .local-tmp/ci-tree. Gitignored deployment data, including .env and secrets/,
-# is not copied. The CI project also uses separate container names, volumes, a
-# subnet, and a published port. It can run while the development bench is up.
+# The script copies tracked and unignored working-tree files to a disposable
+# tree under .local-tmp/. Gitignored deployment data, including .env and
+# secrets/, is not copied. Each tier also uses separate container names,
+# volumes, a subnet, and a published port -- see the namespace block below. It
+# can run while the development bench is up, and while another tier is.
 # The default teardown removes its volumes; `--keep` preserves them.
 
 # shellcheck shell=bash
@@ -39,7 +40,17 @@ for hook in idp_prepare idp_env_lines idp_source_toml; do
     die "the tier must define $hook() before sourcing provision.sh"
 done
 
-PROJECT=kerbridge-ci
+# The tier's namespace: everything two tiers must not share. Each one is an
+# environment override, so a tier states its own before it sources this file,
+# and the defaults are the stack tier's values unchanged. None of them names an
+# identity source, which is what keeps this file reusable.
+#
+# The container names derive from CI_PROJECT too -- compose.ci.yaml and the tier
+# overlays interpolate it -- because a `container_name` is global and a project
+# name alone separates nothing.
+PROJECT=${CI_PROJECT:-kerbridge-ci}
+SUBNET=${CI_SUBNET:-172.29.0.0/24}
+PORT=${CI_HTTPS_PORT:-8443}
 REALM=KBCI.TEST
 DOMAIN=kbci.test
 NETBIOS=KBCI
@@ -51,12 +62,24 @@ FQDN=broker.$DOMAIN
 IDP_FQDN=idp.$DOMAIN
 # Derive the base DN so it cannot diverge from DOMAIN.
 BASE_DN=DC=${DOMAIN//./,DC=}
-SUBNET=172.29.0.0/24
-REALM_IP=172.29.0.10
-NAS_IP=172.29.0.20
-PORT=${CI_HTTPS_PORT:-8443}
+# The realm and the member take fixed hosts in whichever /24 the tier chose.
+# Parsed, not pattern-matched, and both addresses come from what parsed: a
+# spelling this cannot build two hosts from is refused, rather than turned into
+# two addresses nothing reaches.
+hosts=$(python3 - "$SUBNET" 2>&1 <<'EOF'
+import ipaddress, sys
+try:
+    net = ipaddress.ip_network(sys.argv[1])
+except ValueError as e:
+    raise SystemExit(f"{e}")
+if net.version != 4 or net.prefixlen != 24:
+    raise SystemExit("not an IPv4 /24")
+print(net, net[10], net[20])
+EOF
+) || die "CI_SUBNET is $SUBNET: $hosts. It has to be an IPv4 /24 with no host bits set, written x.y.z.0/24, because the realm and the member take .10 and .20 in it"
+read -r SUBNET REALM_IP NAS_IP <<<"$hosts"
 USER_NAME=alice
-# seed-demo.sh maps this token object ID to $USER_NAME in the directory.
+# seed-demo.sh maps this token object ID to $USER_NAME in the directory (realm).
 OID=33334444-dddd-5555-eeee-6666ffff7777
 # OTHER is admitted but cannot delegate. SERVICE receives a delegated grant and
 # does not sign in.
@@ -98,7 +121,7 @@ done
 # The published port is the only resource that the Compose project does not
 # isolate. Check it before copying files or building images. The development
 # bench also uses 8443 by default.
-python3 - "$PORT" <<'EOF' || die "port $PORT is already published (the bench's authority overlay takes 8443) -- rerun with CI_HTTPS_PORT=<free port>"
+python3 - "$PORT" <<'EOF' || die "port $PORT is already published (the bench's authority overlay takes 8443, and each tier defaults to one of its own) -- rerun with CI_HTTPS_PORT=<free port>"
 import socket, sys
 s = socket.socket()
 try:
@@ -117,10 +140,17 @@ if [ -z "${KB_CI_TREE:-}" ]; then
   toplevel=$(git -C "$(dirname "$0")" rev-parse --show-toplevel) ||
     die "not inside a git checkout"
   cd "$toplevel"
-  TREE=$PWD/.local-tmp/ci-tree
+  # One tree per project. A tier's `rm -rf` below would otherwise delete the
+  # tree another tier's kept containers are still bind-mounting configs/,
+  # secrets/tls/ and the CA out of.
+  TREE=${CI_TREE:-$PWD/.local-tmp/${PROJECT#kerbridge-}-tree}
+  # The helper resolves symlinks, refuses the checkout/root/ancestors, and only
+  # reuses external paths carrying this checkout's ownership marker. It prints
+  # the canonical path so cleanup cannot be validated under one spelling and
+  # then performed through a symlink spelling.
+  TREE=$(deploy/scripts/bench/prepare-ci-tree.py "$PWD" "$TREE") ||
+    die "CI_TREE is not a safe disposable tree"
   say "staging a disposable tree at $TREE"
-  rm -rf "$TREE"
-  mkdir -p "$TREE"
   # Copy tracked and unignored files at their working-tree contents. This includes
   # uncommitted files but excludes .env, secrets/, target/, dist/, and .local-tmp/.
   # --ignore-missing-args omits tracked files that are deleted in the working tree.
@@ -156,6 +186,10 @@ cd "$ROOT/deploy"
 . scripts/lib.sh
 
 # Use a non-example realm because check-env.sh rejects the documented example.
+#
+# This heredoc and the config-set ones below are unquoted, for the $VAR each
+# needs, so a backtick or a $( in one runs and a backslash rewrites its line.
+# `make test` refuses all three.
 say "writing deploy/.env for the throwaway realm"
 cat > .env <<EOF
 # Written by scripts/bench/provision.sh in a disposable tree. Not a deployment.
@@ -166,6 +200,9 @@ AD_DC_HOSTNAME=kerbridge
 BROKER_FQDN=$FQDN
 TLS_STRATEGY=external
 CI_HTTPS_PORT=$PORT
+# The container names in compose.ci.yaml and the tier overlays. A fixed
+# container name is global, so this is what lets two tiers run at once.
+CI_PROJECT=$PROJECT
 # compose.ci.yaml mounts the client and CA into nas1. The tier fragment adds its
 # sign-in helper.
 CI_CLIENT_BIN=$CLIENTDIR/kerbridge
@@ -257,6 +294,14 @@ root: run this as root, or grant passwordless sudo."
   PRIV="sudo -n"
 fi
 own_root() { [ "$(uname -s)" = Linux ] || return 0; $PRIV chown 0:0 "$@"; }
+# A source's sync credential is pasted, never generated: `kbsetup directory`
+# writes only what it generates, and the `setup` service mounts
+# secrets/generated and deliberately not secrets/idp. Nothing below fixes its
+# group, then, and sync -- ${SYNC_UID}:${BROKER_GID}, no DAC_OVERRIDE -- reads
+# it through that group alone. The invoking user cannot chgrp into a group they
+# are not in, so this takes the privilege the TLS key takes. Off Linux it is a
+# no-op for own_root's reason: ownership is remapped at the VM boundary.
+own_secret() { [ "$(uname -s)" = Linux ] || return 0; $PRIV chgrp "${BROKER_GID:-10002}" "$@"; }
 teardown() {
   local rc=$?
   # Capture diagnostics before `down -v` removes the containers. A later CI
@@ -298,7 +343,7 @@ docker build -f "$ROOT/client/kerbridge-client/Dockerfile" --target dist \
 # client world-readable and executable. The ccache remains 0600.
 chmod 0755 "$CLIENTDIR/kerbridge"
 
-say "make up -- provision, bootstrap the directory, start the stack"
+say "make up -- provision, bootstrap the directory (realm), start the stack"
 # Do not run `make up`; it writes host configuration for the development bench.
 # Run only its deployment steps in the disposable copy.
 scripts/config/check-env.sh
@@ -310,6 +355,12 @@ scripts/compose/bootstrap-secrets.sh
 own_root secrets/tls/broker.key
 docker compose up -d --wait realm nas1
 docker compose run --rm setup directory
+# Whatever idp_prepare pasted in, given the group sync reads it through. The
+# glob matches nothing on a tier whose source has no credential file.
+for credential in secrets/idp/*/credential; do
+  [ -s "$credential" ] || continue
+  own_secret "$credential"
+done
 # Run the deployment's secret check without privilege. The current user owns
 # secrets/generated, so the check can enumerate files created by root.
 scripts/check-secrets.sh

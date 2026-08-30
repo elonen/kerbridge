@@ -88,6 +88,12 @@ override_dh_auto_install:
 	# directly, and Compose calls it in a throwaway root container.
 	install -D -m 0755 crates/kerbridge-config/libexec/prepare-state \
 	    debian/tmp/usr/libexec/kerbridge/prepare-state
+	# The landing page Caddy or nginx serves at exactly `/`, one copy shared
+	# with the Compose deployment, which mounts this same file. It reaches
+	# neither the broker nor any identity: it is a static file, and it names no
+	# realm, no version and no component.
+	install -D -m 0644 deploy/caddy/site/index.html \
+	    debian/tmp/usr/share/kerbridge/site/index.html
 	# The three hand-written pages. They list no options at all, on purpose,
 	# and `make test` holds them to it -- a page that names a flag is a page
 	# that goes stale, and these three daemons parse their arguments by hand

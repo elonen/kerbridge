@@ -42,17 +42,34 @@ pub const SUFFIX: &str = "_credential_file";
 ///
 /// Keyed by provider *and* option, not by option alone: two adapters may spell
 /// the same key and mean different credentials.
-const PROMPTS: &[Words] = &[Words {
-    provider: "entra",
-    option: "sync_credential_file",
-    what: "The client secret of the Entra app registration for synchronization,\n\
-           usually named \"KerBridge sync\". Entra shows it once, when it is created:\n\
-           Certificates & secrets -> Client secrets on that app's blade.",
-    caution: Some(
-        "Copy the secret's Value, not the Secret ID beside it. The Secret ID is a GUID,\n\
-         and it is the one still readable after the Value has been masked.",
-    ),
-}];
+const PROMPTS: &[Words] = &[
+    Words {
+        provider: "entra",
+        option: "sync_credential_file",
+        what: "The client secret of the Entra app registration for synchronization,\n\
+               usually named \"KerBridge sync\". Entra shows it once, when it is created:\n\
+               Certificates & secrets -> Client secrets on that app's blade.",
+        caution: Some(
+            "Copy the secret's Value, not the Secret ID beside it. The Secret ID is a GUID,\n\
+             and it is the one still readable after the Value has been masked.",
+        ),
+    },
+    // An authentik API token has no local shape check. The prompt must prevent
+    // confusion with an app password or a personal token.
+    Words {
+        provider: "authentik",
+        option: "sync_credential_file",
+        what: "The API token of the read-only service account that reads users and groups,\n\
+               from Directory -> Tokens and App passwords in authentik. It is shown once,\n\
+               behind the copy button on the row, when it is created.",
+        caution: Some(
+            "Its Intent must be API, not App password: an App password token authenticates\n\
+             nothing here and fails exactly the way a wrong token does. Take the token of the\n\
+             service account, never your own -- a personal one stops working the day the\n\
+             account does.",
+        ),
+    },
+];
 
 struct Words {
     provider: &'static str,

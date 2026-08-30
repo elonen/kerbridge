@@ -1,7 +1,9 @@
-# Design » Identity and directory
+# Design » Identity and directories
 
 What a cloud identity is, how a token becomes one, and who owns which object in
-Samba AD. [`DESIGN.md`](../../DESIGN.md) is the index.
+the directory (realm). This document uses *directory (IdP)* for the users and
+groups that a cloud IdP exposes. It uses *directory (realm)* for the Samba AD
+data store. [`DESIGN.md`](../../DESIGN.md) is the index.
 
 ## External identity model
 
@@ -31,36 +33,34 @@ deliberately not the issuer URL.
 `subject` is **adapter-owned and opaque**. Only the IdP module that made it may
 construct or interpret it. `kerbridge-core` checks the field count, the version
 tag, the escaping, the length, and that the value is not empty. It checks
-nothing else. The Entra adapter uses the bare `oid`.
+nothing else. The Entra adapter uses the bare `oid`. The authentik adapter uses
+the user's canonical, lowercase `uuid`.
 
 Both fields are frozen for the life of the deployment. A change to either
 rewrites each stored identity. That orphans each synchronized object, and
 detaches each file whose owner `idmap_rid` derived from that object's SID. The
-damage is silent, and only a directory restore recovers from it.
+damage is silent. Only a directory (realm) restore recovers from it.
 
 Each provider-specific part lives in `crates/kerbridge-idp`, which **both** the
 broker and sync link. This is not tidiness. The broker builds an identity from a
-verified token, and sync builds one from directory data, in separate processes
+verified token, and sync builds one from directory (IdP) data, in separate processes
 with no channel between them. The value is also the join key of sync's
 reconciliation loop. Thus there is one encoder, reached from both sides.
 
 **How sync gets a desired state** is behind a second interface,
-`DirectorySource`. It sits in the same crate as the encoder, behind a `sync`
-feature that only the mirror turns on, so an adapter is one directory to add and
-the broker compiles no reader at all. It encloses incrementality itself, because Graph's failure
-semantics are meaningless to a second adapter: a 400 means that a stored cursor
-was refused and a 410 means that it expired, each resetting the shadow and
-resynchronizing from a full read, while Google's Admin SDK Directory API has no
-delta query for a user list at all — no cursors to expire, nothing to
-resynchronize from.
+`DirectorySource`. It is in the same crate as the encoder. A `sync` feature
+enables this interface only for the mirror. The broker compiles no directory
+(IdP) reader. The adapter owns its read method. Entra keeps delta cursors and a
+shadow. A `400` rejects a stored cursor. A `410` means that a cursor expired.
+Both failures cause a full read. authentik has no delta API, so its adapter reads
+all user and group pages in each cycle.
 
-So an adapter **owns its loop rather than adding a branch to a shared one**. It
-advances as far as its IdP permits in one cycle and yields a source snapshot
-when it has a whole enumeration, or says why it could not; the cursors, the
-resynchronization rules and `Shadow` are the Entra adapter's own, and sync holds
-none of them. The adapter is polled: sync calls `advance` once a cycle. Whether
-an IdP that delivers events instead — authentik can — fits that shape or needs a
-second one is open, and belongs to the adapter that first needs it.
+An adapter **owns its loop rather than adding a branch to a shared loop**. Sync
+calls `advance` one time in each cycle. The adapter advances as far as its IdP
+permits. It yields a source snapshot only after a complete enumeration. The
+Entra adapter owns its cursors, resynchronization rules, and `Shadow`. The
+authentik adapter rejects a torn or incomplete full read. Sync holds none of
+this provider-specific state.
 
 **Login names are split across that seam too.** The adapter offers an ordered
 list of name candidates and nothing else — no mail address, no UPN, no attribute
@@ -90,10 +90,11 @@ moves the answer.
   The attribute has `rangeUpper: 256` ([MS-ADA2]), and the encoder applies that
   ceiling at construction. Lookups use an escaped LDAP equality filter
   (research spike `samba-ad-identity-attribute`).
-- Role marker: `extensionName = kbrole1|realm-admission` on the synchronized
-  Entra admission group. It lets sync and the broker recover the group's
-  immutable Entra identity from Samba, after a group rename or a loss of sync
-  cursor state. It is policy metadata, and not a second identity mapping.
+- Role marker: `extensionName = kbrole1|realm-admission` on each source's
+  synchronized admission group. It lets sync and the broker recover the
+  group's immutable identity from the directory (realm) after a group rename
+  or a loss of adapter state. It is policy metadata, not a second identity
+  mapping.
 - The broker fails closed if no object matches, or if more than one matches.
 
 Two constraints follow from the selection of the attribute:
@@ -228,9 +229,38 @@ The locked contract, live-verified
 Every claim the verifier reads, what Entra puts in it, and the order of the
 checks: [`crates/kerbridge-idp/entra.md`](../../crates/kerbridge-idp/entra.md).
 
-## Directory ownership and synchronization
+## authentik validation
 
-Recommended directory layout:
+The authentik adapter accepts access tokens from one configured OAuth2
+application. The [application
+slug](../../crates/kerbridge-idp/GLOSSARY.md#application-slug) identifies that
+application in its issuer, authority, and JWKS URLs. The issuer has this form:
+`https://<host>/application/o/<slug>/`. The final slash is part of the issuer.
+
+The adapter validates these values:
+
+- The signature, with the same asymmetric-only algorithm rule as Entra.
+- `exp`, and `nbf` when the token contains it, with bounded clock skew.
+- The exact issuer and audience.
+- `azp`, which must equal the configured client ID. authentik adds this claim
+  after scope mappings run, so a mapping cannot replace it.
+- `sub`, which must be the canonical lowercase UUID of the user.
+
+authentik must use `sub_mode: user_uuid`. The REST API can filter users by this
+UUID. Thus, the token face and the directory (IdP) face use the same subject.
+The default hashed subject cannot provide this property. The adapter does not
+normalize a subject. It rejects a noncanonical value.
+
+The adapter does not require `nbf`, because authentik does not emit it. It does
+not use an OAuth scope as an authorization decision. Admission comes from the
+group closure that sync writes to the directory (realm). `kbconfig check
+--online` verifies the issuer, asymmetric signing key, and attached
+`offline_access` scope mapping. It separately checks that the sync credential
+authenticates, can read the directory (IdP), and has a usable expiry.
+
+## Directory (realm) ownership and synchronization
+
+Recommended directory (realm) layout:
 
 ```text
 OU=CloudIdP,DC=example,DC=site              the IdP parent OU
@@ -247,8 +277,8 @@ OU=Resources,DC=example,DC=site
   external identity attributes, the mutable display attributes, the account
   state, and the IdP-derived direct memberships.
 - Sync does not own `OU=Resources`. It must not remove a synchronized group from
-  a locally managed group. That membership belongs to Samba AD, and not to
-  Entra.
+  a locally managed group. That membership belongs to the directory (realm),
+  not to a cloud IdP.
 
 ### One realm, several cloud IdPs
 
@@ -259,7 +289,7 @@ A realm can take identities from more than one cloud IdP. Each one is a separate
 - IdP-specific OU, under the shared parent
 - `svc-kerbridge-sync-<source>` account
 - `configs/idp_<source>.toml`
-- `secrets/idp/<name>/`, which holds the sync `credential`
+- `secrets/idp/<name>/`, which holds the sync credential
 - `secrets/generated/idp/<name>/`, which holds the LDAP `bind_password`
 
 The processes do not multiply with the sources. One `broker` and one `sync`
@@ -315,19 +345,19 @@ Admission group:
 - If the admission group is deleted or is absent from the read, ticket issuance
   fails closed: freeze and alert, and never recreate the group automatically.
   Only the operator restores it, because a recreated group loses its SID.
-- A failed or incomplete directory read never starts a destructive change.
+- A failed or incomplete directory (IdP) read never starts a destructive change.
 
 Deletion is conservative, because Samba SIDs can appear in durable ACLs:
 
 ```mermaid
 stateDiagram-v2
     [*] --> ACTIVE
-    ACTIVE --> RETIRED: gone from the IdP — disabled, marked, renamed into _retired-
+    ACTIVE --> RETIRED: gone from the directory (IdP) — disabled, marked, renamed into _retired-
     RETIRED --> ACTIVE: reappears, same SID
     RETIRED --> [*]: operator deletes, at any age
 ```
 
-- Users: one cycle takes a user who has left the IdP to disabled, marks the user
+- Users: one cycle takes a user who has left the directory (IdP) to disabled, marks the user
   `kbstate1|retired|<timestamp>`, and renames the user into the `_retired-`
   namespace. Sync itself deletes nothing.
 - Groups cannot be disabled as users can. Sync clears their IdP-owned direct
@@ -365,8 +395,8 @@ failed on each cycle, until a human intervened.
 
 </details>
 
-Semantics selected and live-verified by the
-Research spike `entra-directory-sync`:
+The Entra directory (IdP) behavior was measured in research spike
+`entra-directory-sync`:
 
 - Graph access is app-only `User.Read.All` and `Group.Read.All`: a full read
   first, then per-stream delta cursors. Graph accepts a cursor from the wrong
@@ -436,7 +466,7 @@ Thus a stolen sync credential gives its holder access to each Kerberos-protected
 service, under either scheme, and to confine write-property does not touch that
 attack. To tighten the ACEs would additionally deny only the attributes that sync
 never uses — `servicePrincipalName`, `msDS-KeyCredentialLink` and similar. Those
-are escalation primitives *within* a directory whose whole population this
+are escalation primitives *within* a directory (realm) whose whole population this
 credential already owns, and whose only purpose is to have tickets issued from
 it.
 
@@ -445,7 +475,7 @@ each time that sync learns to write another attribute, and each mismatch aborts
 `make up`.
 
 The confinement that carries the weight is the scope of the IdP-specific OU
-itself. `OU=Resources` and the rest of the directory stay unreachable, and that
+itself. `OU=Resources` and the rest of the directory (realm) stay unreachable, and that
 is what stops a compromised sync from authorizing anything against a share.
 
 </details>
@@ -456,6 +486,44 @@ object, and not enough to alter one. Thus the operator CLI cannot race the
 reconciliation loop. It was measured on the bench (2026-07-28): sufficient for
 deletes, and insufficient for writes.
 
+### authentik directory (IdP) read
+
+authentik has no delta API for this use. The adapter reads all pages of
+`/core/users/` and `/core/groups/` in each cycle. It requests `?ordering=pk`:
+that key is an increasing integer for users and a UUID ordered lexicographically
+for groups. It constructs page URLs from the configured instance URL and does
+not follow a server-supplied URL with the sync credential.
+
+The two sort differently, and that is why an insert mid-read is a hazard on one
+collection only. The user stream is append-only, so a user created mid-read
+lands after everything already returned and disturbs nothing. A group's UUID can
+sort anywhere, including before a page the reader has passed, which pushes a
+group into a later page and repeats it. The pk-ordering check catches that
+repeat; the rising `count` alone does not, because an insert raises it.
+
+The two collections must form one complete enumeration. The adapter rejects a
+torn read, a repeated or missing row, and a membership edge that names an
+unknown object. A failed read yields no source snapshot. authentik can return a
+complete but silently filtered collection for an object-scoped permission. A
+global `view_user` and `view_group` grant is mandatory. The setup blueprint
+maintains that grant.
+
+The adapter cannot verify the grant, so it checks the outcome instead. The
+dangling-id check catches a permissions cut that runs through a visible
+membership edge. It cannot catch a closure root the configuration names — an
+allowlist entry, or the device-grant group — hidden together with everything it
+reaches: what comes back is a smaller directory (IdP) that is self-consistent and
+has no dangling edge. Publishing it would retire every object behind the hidden
+root. So a named closure root that is absent from the read yields **no
+snapshot**, and the failure names the roots it did not see. The admission group needs no rule
+of its own here: the planner already freezes a cycle whose read describes no users
+while Samba holds synchronized ones.
+
+The adapter applies the same admission closure, extra-group allowlist, held
+narrowing, and planner as Entra. It offers the username, display name and email
+address as login-name candidates, in that order. The planner decides which
+candidate is safe in the directory (realm).
+
 ### Sync credential lifetime
 
 - Entra application credentials never renew themselves. A client secret and a
@@ -464,7 +532,7 @@ deletes, and insufficient for writes.
   can forbid secrets completely.
 - At expiry the client-credentials request fails (`AADSTS7000222`), and *each*
   Graph read stops at once. If nothing handles this, synchronization freezes in
-  silence and the directory drifts, until somebody notices a stale user.
+  silence and the directory (realm) drifts, until somebody notices a stale user.
 - Entra mails the application's owners before expiry. That needs an owner
   mailbox in the customer's tenant, which is not a control that this deployment
   owns.
@@ -473,6 +541,12 @@ deletes, and insufficient for writes.
   endpoint that belongs to the workload, and nothing must have to reach KerBridge
   from the Internet. ACME defaults to DNS-01 for the same reason. Thus v1 keeps a
   credential file, and makes its expiry a first-class operational input.
+
+authentik uses an API token on a dedicated service account. The token reports
+its own expiry to its bearer through a self-scoped API read. The adapter measures
+this value in each cycle. A rotated token supplies its new deadline without an
+operator setting or a restart. A non-expiring token has no countdown. The setup
+guide keeps expiration enabled so that the operator receives advance warning.
 
 **A certificate credential is the intended default, and a client secret is the
 degraded fallback.** A certificate is self-describing: sync would read `notAfter`
@@ -513,11 +587,12 @@ it is refused for the same least-privilege reason as `Directory.Read.All`.
   `sync-credential-expiring` event that
   [Operator notification](operations.md#operator-notification) describes, which
   delivers the event as a countdown and not on a repeat interval.
-- An expired or refused credential is its own categorized failure, separate from
-  a transient Graph error. Like each failed read, it never starts a destructive
-  reconciliation. `AADSTS7000222` from the token endpoint is the authoritative
-  signal that the credential is gone, and it costs no permission to observe. The
-  configured date is only ever an early warning.
+- An expired or refused credential is its own categorized failure. It is
+  separate from a transient directory (IdP) read error. The failure never
+  starts a destructive reconciliation. For Entra, `AADSTS7000222` from the
+  token endpoint is the authoritative signal. The configured date is only an
+  early warning. For authentik, `403 "Token invalid/expired"` is the
+  authoritative signal.
 - **A credential file whose contents are a GUID is refused at startup.** The
   portal shows *Value* and *Secret ID* beside each other. The GUID *Secret ID*
   reads like a credential and stays visible after *Value* is masked, and thus it
@@ -526,9 +601,10 @@ it is refused for the same least-privilege reason as `Directory.Read.All`.
   received an identifier. The mistake costs hours. A secret *Value* never has the
   shape of a GUID, and thus the check has no false positives and turns a
   debugging session into a startup error that names the actual mistake.
-- To rotate the credential: replace the credential file, update the expiry date
-  if the deployment uses a secret, and restart sync. The cursors, the directory
-  mapping and the quarantine state are durable and are not affected. No
+- To rotate the credential, replace the credential file. If an Entra source uses
+  a secret, update its expiry date. The adapter reads the replacement on the next
+  cycle. authentik also measures the new token's expiry. The adapter state, the
+  directory (realm) mapping, and the quarantine state are not affected. No
   resynchronization is necessary.
 
 The same failure class exists on the Samba side. The delegated sync account and

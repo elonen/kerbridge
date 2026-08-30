@@ -1,0 +1,12 @@
+# Everything a run against a live tenant leaves here. `secrets/` holds a
+# delegated admin token and the generated user passwords; `config.json` holds
+# the real tenant id and its domain; `directory.json` holds the object ids
+# `setup_directory.py` made. CLAUDE.md forbids committing any of them.
+#
+# Ignored rather than merely untracked, because `prepare-ci-tree.py` stages a
+# tier from `git ls-files --cached --others --exclude-standard`. An untracked
+# file that no rule excludes is copied into `.local-tmp/ci-*-tree` by the next
+# `make test-stack` or `make test-authentik`.
+config.json
+directory.json
+secrets/

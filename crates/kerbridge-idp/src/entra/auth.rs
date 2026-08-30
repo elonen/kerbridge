@@ -4,12 +4,9 @@
 //! `entra-token-validation`, whose ordering of the checks below is the one this
 //! reproduces.
 //!
-//! Two properties are structural rather than checked. The algorithm is never
-//! chosen by the token -- `alg` is resolved against the allowlist before any key
-//! is loaded, and the only verification routine in this file is RSA, so the
-//! classic confusions have no code path to reach rather than merely a guard in
-//! front of them; see the crate doc for why that rule is asymmetric-only rather
-//! than RS256-only. And the clock is a parameter, not configuration.
+//! `crate::jwt` enforces two structural properties. It allowlists `alg` before
+//! key lookup, and RSA is its only verification routine. Symmetric algorithm
+//! confusion has no code path. The clock is a parameter, not configuration.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,8 +17,9 @@ use kerbridge_notify::Notifier;
 use serde::Deserialize;
 
 use super::{DEFAULT_LEEWAY_SECONDS, Settings, identity};
-use crate::jwks::{self, Jwks, RsaKey};
-use crate::{IdentityProvider, OidcDiscovery, Reject, b64url, reject};
+use crate::jwks::{Jwks, STARTUP_RETRY_BUDGET};
+use crate::jwt::{self, Audience};
+use crate::{IdentityProvider, OidcDiscovery, Reject, reject};
 
 /// Everything about a configured Entra tenant that verification compares
 /// against.
@@ -57,9 +55,10 @@ impl Entra {
         notifier: Arc<Notifier>,
         timeout: Duration,
     ) -> Result<Self> {
-        let jwks = Jwks::load(settings.jwks.clone(), timeout, notifier)
-            .await
-            .context("loading signing keys")?;
+        let jwks =
+            Jwks::load(settings.jwks.clone(), source, timeout, STARTUP_RETRY_BUDGET, notifier)
+                .await
+                .context("loading signing keys")?;
         Ok(Self {
             source: source.clone(),
             jwks,
@@ -103,28 +102,6 @@ impl IdentityProvider for Entra {
 }
 
 #[derive(Deserialize)]
-struct Header {
-    alg: String,
-    kid: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Audience {
-    One(String),
-    Many(Vec<String>),
-}
-
-impl Audience {
-    fn accepts(&self, want: &str) -> bool {
-        match self {
-            Self::One(a) => a == want,
-            Self::Many(all) => all.iter().any(|a| a == want),
-        }
-    }
-}
-
-#[derive(Deserialize)]
 struct Claims {
     iss: Option<String>,
     aud: Option<Audience>,
@@ -150,51 +127,8 @@ async fn verify(
     jwks: &Jwks,
     now: i64,
 ) -> Result<ExternalIdentity, Reject> {
-    // 1. Structure, before anything is decoded or fetched.
-    let mut parts = token.split('.');
-    let (Some(header_b64), Some(claims_b64), Some(sig_b64), None) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
-        return Err(reject("not a three-part JWT"));
-    };
-
-    let header: Header =
-        serde_json::from_slice(&b64url(header_b64).map_err(|_| reject("header is not base64url"))?)
-            .map_err(|_| reject("header is not JSON"))?;
-
-    // 2. Algorithm allowlist, before a key is selected. Entra signs v2 access
-    //    tokens with RS256; the rest of the list is crate-wide.
-    let Some(primitive) = jwks::algorithm(&header.alg) else {
-        return Err(reject(format!("disallowed alg {:?}", header.alg)));
-    };
-    let kid = header.kid.ok_or_else(|| reject("header carries no kid"))?;
-
-    // 3. Signature over the exact bytes presented, not over anything re-encoded.
-    let signature = b64url(sig_b64).map_err(|_| reject("signature is not base64url"))?;
-    let signed_len = header_b64.len() + 1 + claims_b64.len();
-    let signed = &token.as_bytes()[..signed_len];
-    let outcome = jwks
-        .with_key(&kid, |key| {
-            // Refused on the key's published `alg` before the signature is
-            // computed at all, so a correct signature does not reach a key the
-            // IdP published for something else.
-            (!key.pins(&header.alg)).then(|| verify_rsa(key, primitive, signed, &signature))
-        })
-        .await
-        .ok_or_else(|| reject(format!("unknown kid {kid:?}")))?;
-    let Some(verified) = outcome else {
-        return Err(reject(format!("key {kid:?} is not published for alg {:?}", header.alg)));
-    };
-    if !verified {
-        return Err(reject("signature does not verify"));
-    }
-
-    // 4. Claims. Everything from here is policy against a payload whose
-    //    authenticity is already established.
-    let claims: Claims = serde_json::from_slice(
-        &b64url(claims_b64).map_err(|_| reject("claims are not base64url"))?,
-    )
-    .map_err(|_| reject("claims are not JSON"))?;
+    // Do not read claims before `jwt::verify` authenticates the payload.
+    let claims: Claims = jwt::verified_claims(token, jwks).await?;
 
     let iss = claims.iss.ok_or_else(|| reject("no iss"))?;
     let aud = claims.aud.ok_or_else(|| reject("no aud"))?;
@@ -258,34 +192,6 @@ async fn verify(
     identity(source, &oid).map_err(|e| reject(format!("oid is not a usable subject: {e}")))
 }
 
-/// The one verification routine in this file, and it is RSA. `primitive` came
-/// from [`jwks::algorithm`], so it is an allowlisted algorithm by construction
-/// rather than by a check somewhere above.
-///
-/// ring takes the two components as JWKS states them, so no key encoding is
-/// written here. Do not reintroduce one: hand-built ASN.1 in this routine is
-/// the single defect that would forge any identity.
-fn verify_rsa(
-    key: &RsaKey,
-    primitive: &'static ring::signature::RsaParameters,
-    signed: &[u8],
-    signature: &[u8],
-) -> bool {
-    ring::signature::RsaPublicKeyComponents {
-        n: trim_leading_zeros(&key.modulus),
-        e: trim_leading_zeros(&key.exponent),
-    }
-    .verify(primitive, signed, signature)
-    .is_ok()
-}
-
-/// ring wants each component big-endian with no leading zero. RFC 7517 does not
-/// forbid an IdP from publishing one, so this does not assume it away.
-fn trim_leading_zeros(bytes: &[u8]) -> &[u8] {
-    let first_significant = bytes.iter().position(|&b| b != 0).unwrap_or(bytes.len());
-    &bytes[first_significant..]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -319,7 +225,9 @@ mod tests {
         // The timeout is the network fetch's; a file source never reaches it.
         Jwks::load(
             JwksSource::File(fixture_dir().join("jwks.json")),
+            &source(),
             std::time::Duration::from_secs(30),
+            std::time::Duration::ZERO,
             std::sync::Arc::new(kerbridge_notify::Notifier::disabled("broker")),
         )
         .await
@@ -370,7 +278,7 @@ mod tests {
     /// The rest of the allowlist. Entra signs RS256, so nothing else in the
     /// suite would ever reach the other primitives -- and an algorithm nobody
     /// verifies a real signature with is an algorithm whose padding and digest
-    /// pairing nobody has checked.
+    /// pairing nobody has checked. This covers the workspace-wide allowlist.
     #[tokio::test]
     async fn accepts_every_allowlisted_algorithm() {
         for name in [
@@ -424,7 +332,7 @@ mod tests {
     fn tampered_positive() -> String {
         let original = token("positive_delegated.jwt");
         let mut parts: Vec<&str> = original.split('.').collect();
-        let claims = String::from_utf8(b64url(parts[1]).unwrap()).unwrap();
+        let claims = String::from_utf8(crate::b64url(parts[1]).unwrap()).unwrap();
         let swapped = claims.replace(USER_OID, "00000000-0000-0000-0000-000000000000");
         assert_ne!(swapped, claims, "the oid must actually have been substituted");
         use base64::Engine as _;
@@ -433,39 +341,80 @@ mod tests {
         parts.join(".")
     }
 
-    /// Every negative in the corpus, each with the rejection it must produce.
-    /// Named individually rather than globbed so that a fixture appearing
-    /// without a matching expectation fails the suite instead of being skipped.
+    /// Every negative in the corpus, each with the rejection it must produce and
+    /// the dimensions it may differ from the positive in. Named individually
+    /// rather than globbed so that a fixture appearing without a matching
+    /// expectation fails the suite instead of being skipped.
+    ///
+    /// `None` is for a fixture that is not a JWT at all, which is what its own
+    /// expectation already says.
     #[tokio::test]
     async fn rejects_every_negative_fixture() {
-        let cases = [
-            ("neg_alg_none.jwt", "disallowed alg"),
-            ("neg_alg_none_unknown_kid.jwt", "disallowed alg"),
-            ("neg_alg_hs256.jwt", "disallowed alg"),
-            ("neg_alg_confusion.jwt", "disallowed alg"),
-            ("neg_alg_unknown.jwt", "disallowed alg"),
-            ("neg_unknown_kid.jwt", "unknown kid"),
+        let cases: [(&str, &str, Option<&[&str]>); 20] = [
+            ("neg_alg_none.jwt", "disallowed alg", Some(&["alg"])),
+            ("neg_alg_none_unknown_kid.jwt", "disallowed alg", Some(&["alg", "kid"])),
+            ("neg_alg_hs256.jwt", "disallowed alg", Some(&["alg"])),
+            // The `oid` moves with the algorithm on purpose: the attack is worth
+            // nothing unless the forged token asserts somebody else.
+            ("neg_alg_confusion.jwt", "disallowed alg", Some(&["alg", "oid"])),
+            ("neg_alg_unknown.jwt", "disallowed alg", Some(&["alg"])),
+            ("neg_unknown_kid.jwt", "unknown kid", Some(&["kid"])),
             // Correctly signed with the right key material: only the key's
             // published `alg` refuses it.
-            ("neg_alg_not_published_for_key.jwt", "is not published for alg"),
-            ("neg_garbage.jwt", "not a three-part JWT"),
-            ("neg_expired.jwt", "token has expired"),
-            ("neg_future_nbf.jwt", "token is not valid yet"),
-            ("neg_wrong_audience.jwt", "aud is not this broker"),
-            ("neg_wrong_tenant.jwt", "tid is not the configured tenant"),
+            ("neg_alg_not_published_for_key.jwt", "is not published for alg", Some(&["alg"])),
+            ("neg_garbage.jwt", "not a three-part JWT", None),
+            // The whole window moves together. A token issued in the past or in
+            // the future carries a coherent `iat`/`nbf`/`exp`, and one with only
+            // `exp` moved would be a shape Entra never mints.
+            ("neg_expired.jwt", "token has expired", Some(&["exp", "iat", "nbf"])),
+            ("neg_future_nbf.jwt", "token is not valid yet", Some(&["exp", "iat", "nbf"])),
+            ("neg_wrong_audience.jwt", "aud is not this broker", Some(&["aud"])),
+            // The issuer embeds the tenant, so the two claims cannot disagree
+            // here -- that case is `neg_iss_tid_mismatch` below.
+            ("neg_wrong_tenant.jwt", "tid is not the configured tenant", Some(&["iss", "tid"])),
             // A v1 token addresses the API by its App ID URI rather than the
             // client GUID, so it fails on audience before version is reached.
             // That is the deployment symptom of `requestedAccessTokenVersion`
-            // left at its null default.
-            ("neg_v1_token.jwt", "aud is not this broker"),
+            // left at its null default. A whole different token shape, so the
+            // list below is long by nature.
+            (
+                "neg_v1_token.jwt",
+                "aud is not this broker",
+                Some(&[
+                    "appid",
+                    "appidacr",
+                    "aud",
+                    "azp",
+                    "azpacr",
+                    "iss",
+                    "preferred_username",
+                    "unique_name",
+                    "ver",
+                    "x5t",
+                ]),
+            ),
             // Correct issuer, foreign tid: the tenant claims disagree.
-            ("neg_iss_tid_mismatch.jwt", "tid is not the configured tenant"),
-            ("neg_malformed_tid.jwt", "tid is not a GUID"),
-            ("neg_app_only.jwt", "app-only token"),
-            ("neg_missing_scope.jwt", "no scp"),
-            ("neg_wrong_scope_value.jwt", "required delegated scope missing"),
-            ("neg_wrong_azp.jwt", "azp is not the authorized public client"),
-            ("neg_missing_oid.jwt", "no oid"),
+            ("neg_iss_tid_mismatch.jwt", "tid is not the configured tenant", Some(&["tid"])),
+            ("neg_malformed_tid.jwt", "tid is not a GUID", Some(&["tid"])),
+            // Also a whole shape: client credentials mint no delegated claims.
+            (
+                "neg_app_only.jwt",
+                "app-only token",
+                Some(&[
+                    "azpacr",
+                    "idtyp",
+                    "name",
+                    "oid",
+                    "preferred_username",
+                    "roles",
+                    "scp",
+                    "sub",
+                ]),
+            ),
+            ("neg_missing_scope.jwt", "no scp", Some(&["scp"])),
+            ("neg_wrong_scope_value.jwt", "required delegated scope missing", Some(&["scp"])),
+            ("neg_wrong_azp.jwt", "azp is not the authorized public client", Some(&["azp"])),
+            ("neg_missing_oid.jwt", "no oid", Some(&["oid"])),
         ];
         let mut present: Vec<String> = std::fs::read_dir(fixture_dir())
             .unwrap()
@@ -475,17 +424,27 @@ mod tests {
             })
             .collect();
         present.sort();
-        let mut covered: Vec<String> = cases.iter().map(|(n, _)| (*n).to_owned()).collect();
+        let mut covered: Vec<String> = cases.iter().map(|(n, _, _)| (*n).to_owned()).collect();
         covered.sort();
         assert_eq!(present, covered, "every negative fixture must have an expectation");
 
-        for (name, expected) in cases {
+        let positive = token("positive_delegated.jwt");
+        for (name, expected, dimensions) in cases {
             match check(name, VALID_AT).await {
                 Ok(id) => panic!("{name} was accepted, yielding {id:?}"),
                 Err(Reject(why)) => assert!(
                     why.contains(expected),
                     "{name}: expected a rejection mentioning {expected:?}, got {why:?}"
                 ),
+            }
+            if let Some(dimensions) = dimensions {
+                conformance::differs_only_where_named(
+                    &positive,
+                    "uti",
+                    name,
+                    &token(name),
+                    dimensions,
+                );
             }
         }
     }
@@ -498,9 +457,25 @@ mod tests {
         let future = VALID_AT + 10_000;
         assert!(check("positive_delegated.jwt", past).await.is_err());
         assert!(check("positive_delegated.jwt", future).await.is_err());
-        // Inside the 300 s skew allowance on either side.
-        assert!(check("positive_delegated.jwt", FIXTURE_EXP + 299).await.is_ok());
-        assert!(check("positive_delegated.jwt", FIXTURE_NBF - 299).await.is_ok());
+
+        // The boundary is inside the window: expiry is `now > exp + leeway` and
+        // validity `now + leeway < nbf`, so a clock exactly `leeway` out is
+        // accepted. Refusing there would cost the allowance its last second on
+        // a deployment whose clocks are as far apart as the allowance admits.
+        for inside in [FIXTURE_EXP + 299, FIXTURE_EXP + 300, FIXTURE_NBF - 299, FIXTURE_NBF - 300] {
+            assert!(check("positive_delegated.jwt", inside).await.is_ok(), "at {inside}");
+        }
+        for (outside, why) in [
+            (FIXTURE_EXP + 301, "token has expired"),
+            (FIXTURE_NBF - 301, "token is not valid yet"),
+        ] {
+            // Named rather than merely refused: only one of the two checks
+            // may be what refuses each side.
+            match check("positive_delegated.jwt", outside).await {
+                Ok(id) => panic!("accepted at {outside}, yielding {id:?}"),
+                Err(Reject(got)) => assert!(got.contains(why), "at {outside}: {got:?}"),
+            }
+        }
     }
 
     /// The discovery document names Entra's scope syntax, which nothing outside
@@ -518,31 +493,5 @@ mod tests {
         // Entra asks for a refresh token by scope, so it needs no request
         // parameters -- and an empty map is omitted from `GET /config`.
         assert!(oidc.extra_auth_params.is_empty());
-    }
-
-    #[test]
-    fn a_component_is_trimmed_to_what_ring_accepts() {
-        assert_eq!(trim_leading_zeros(&[0x00, 0x00, 0x7f]), &[0x7f]);
-        assert_eq!(trim_leading_zeros(&[0x01, 0x00, 0x01]), &[0x01, 0x00, 0x01]);
-        // No significant byte at all: an empty slice, not a panic.
-        assert_eq!(trim_leading_zeros(&[0x00, 0x00]), &[] as &[u8]);
-        assert_eq!(trim_leading_zeros(&[]), &[] as &[u8]);
-    }
-
-    /// The same key and signature, with the modulus stated both ways: bare, and
-    /// with the leading zero RFC 7517 permits. A verifier that handed the padded
-    /// form straight to ring would refuse a token the IdP signed correctly.
-    #[test]
-    fn a_modulus_published_with_a_leading_zero_still_verifies() {
-        let body = std::fs::read_to_string(fixture_dir().join("jwks.json")).unwrap();
-        let mut key = crate::jwks::parse(&body).unwrap().remove("fixture-key-2026-07").unwrap();
-        let jwt = token("positive_delegated.jwt");
-        let (signed, sig) = jwt.rsplit_once('.').unwrap();
-        let signature = crate::b64url(sig).unwrap();
-        let primitive = crate::jwks::algorithm("RS256").unwrap();
-
-        assert!(verify_rsa(&key, primitive, signed.as_bytes(), &signature), "bare modulus");
-        key.modulus.insert(0, 0x00);
-        assert!(verify_rsa(&key, primitive, signed.as_bytes(), &signature), "padded modulus");
     }
 }

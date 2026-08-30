@@ -1,8 +1,8 @@
 # Security
 
-KerBridge gives cloud identities, such as Entra ID, access to an on-premises
-Kerberos realm. That realm usually controls access to a file server (NAS).
-It replaces an open or a password-protected Samba domain.
+KerBridge gives cloud identities, from Entra ID or authentik, access to an
+on-premises Kerberos realm. That realm usually controls access to a file server
+(NAS). It replaces an open or a password-protected Samba domain.
 
 All security software has risks as well as benefits. This document is for the
 person who must decide if the risks are acceptable.
@@ -45,8 +45,8 @@ The design is conservative where it matters. The implementation is young.
 Two properties limit every risk in this document:
 
 - KerBridge holds **no write authority in your cloud IdP**. Authority moves one
-  way: from Entra to KerBridge. An attacker who owns the KerBridge host gets
-  read access to your Entra users and groups. The attacker gets nothing more.
+  way: from the IdP to KerBridge. An attacker who owns the KerBridge host gets
+  read access to your IdP's users and groups. The attacker gets nothing more.
 - The broker holds **no signing key**. It cannot forge a cloud
   [identity proof](GLOSSARY.md#identity-proof), and it cannot invent a new
   identity. An attacker who owns the broker is confined to the accounts that
@@ -58,18 +58,18 @@ Two properties limit every risk in this document:
 
 KerBridge touches two systems:
 
-- **Entra ID**, your IdP. KerBridge only reads it.
+- **Your cloud IdP** — Entra ID or authentik. KerBridge only reads it.
 - **A Samba domain controller** that you install for KerBridge. It controls the
   file server and the other services that you join to it. It controls nothing
   else.
 
 Assume that you run a correct KerBridge on an otherwise secure LAN, and that you
-give an Entra group access to a local file server. A defect in KerBridge can
+give an IdP group access to a local file server. A defect in KerBridge can
 then do two things:
 
 - Give a person on your LAN administrator access to the file server, and to
   every other service that KerBridge protects.
-- Show a person on your LAN the Entra users in the
+- Show a person on your LAN the IdP users in the
   [admission group](GLOSSARY.md#admission-group). That group controls who can
   use KerBridge to reach the file server.
 
@@ -81,7 +81,7 @@ The table shows what each part protects. Each row links to the full risk.
 | [The broker](#2-a-broker-compromise-issues-tickets-for-any-synchronized-user) | A Kerberos ticket for any synchronized user, on demand. |
 | [The token verifier](#3-the-token-verifier-is-hand-written) | The same, from the internet, with no host access. |
 | [The TLS certificate chain](#4-the-reply-carries-the-session-key) | Every ticket that passes over the wire, for one ticket lifetime. |
-| [The sync credential](#6-the-sync-credential) | Read access to your whole Entra directory, plus a way to admit an account into the realm. |
+| [The sync credential](#6-the-sync-credential) | Read access to your whole directory (IdP), plus a way to admit an account into the realm. |
 | [The `kbmanage` credential](#7-the-kbmanage-credential-is-impersonation-grade) | The ability to act as any user in the device-grant group. |
 | [A device grant, on Windows](#8-device-grants-remove-the-browser-from-the-loop) | Tickets as one account, from that machine, until the grant expires. |
 | [A backup tarball](#10-one-backup-file-holds-the-whole-deployment) | All of the above, in one file. |
@@ -130,8 +130,8 @@ These parts hold something an attacker wants:
 |---|---|
 | `issuerd` and the realm | Complete Samba domain and KDC authority. |
 | Caddy | The public TLS private key, and the DNS update credential. |
-| Broker | The power to ask `issuerd` for a ticket. Read-only directory access. |
-| Sync | Read authority on the cloud directory, and write authority inside one directory OU. |
+| Broker | The power to ask `issuerd` for a ticket. Read-only directory (realm) access. |
+| Sync | Read authority on the directory (IdP), and write authority inside one IdP-specific OU in the directory (realm). |
 | `svc-kerbridge-manage` | Delete authority in the IdP parent OU, and full authority in the resource OU. |
 
 The parts are separate on purpose. The broker faces the internet and holds no
@@ -151,7 +151,7 @@ Some quality principles:
   [`docs/research/INDEX.md`](docs/research/INDEX.md). **So: if you like the idea but don't trust the implementation, feel free to reimplement based on the research**.
 - **Extensive unit and integration tests** across the workspaces.
 - **One end-to-end test that proves the whole chain.** `make test-stack`
-  provisions an empty realm and syncs a directory. It then issues an OIDC token
+  provisions an empty realm and populates the directory (realm). It then issues an OIDC token
   and exchanges it for a KDC-signed TGT. With that ticket, and with no password,
   it reads a file over SMB. It also asserts refusals: a replayed device
   assertion gets a 401, and a user who is not a delegate cannot get a service
@@ -213,7 +213,7 @@ they want.
 **What limits it.** `issuerd` applies its own eligibility gate, and that gate is
 an **allowlist, not a deny list**:
 
-- Exactly one directory object must match the SID.
+- Exactly one directory (realm) object must match the SID.
 - The `objectClass` set must be exactly `{top, person, organizationalPerson, user}`.
 - The account must not be disabled, and must carry no machine-account bit.
 - The object must carry a decodable KerBridge external identity marker.
@@ -223,11 +223,27 @@ Machine accounts fail the second and third.
 
 **Worst case.** An attacker who controls the broker process gets a Kerberos TGT
 for **any human account that sync created**. They get it at any time, with no
-token and with no Entra involvement.
+token and with no IdP involvement.
 
 They can also plant a device grant on any such account, up to
 `device_grant_max_per_user` (default 10). That grant keeps their access after
 you close the original hole.
+
+The broker also writes the client's sign-in instructions. Its TLS-authenticated
+`/config` reply chooses the OIDC authority, public client, scopes and any extra
+authorization parameters, as well as the realm and KDCs. Resource- or
+audience-style parameters can change what the returned access token is for, and
+the client sends that token to the broker. This is one trust decision, not a set
+of untrusted hints: controlling the broker can therefore obtain a token for any
+purpose that the chosen IdP, tenant policy and user consent permit. The current
+Entra and authentik adapters send no extra authorization parameters, but the
+authority, client and scopes already carry this power.
+
+PKCE and `state` still protect the mechanics of the browser flow. A displaced
+reserved parameter makes sign-in fail rather than bypassing those checks, and a
+stolen authorization code cannot be redeemed without the verifier. They do not
+constrain which OAuth client, resource, audience or scopes the trusted broker
+asked for.
 
 They cannot get a ticket for `Administrator`, for a machine account, or for a
 locally-created account.
@@ -238,10 +254,12 @@ every device grant you did not create.
 ### 3. The token verifier is hand-written
 
 **Risk.** KerBridge uses **no JWT library**.
-`crates/kerbridge-idp/src/entra/auth.rs` splits the token, resolves the algorithm,
-and applies every claim rule itself, calling `ring` for the signature. This is
-the single most security-critical routine in the project, and it is bespoke
-code in a project whose code is mostly agent-written.
+`crates/kerbridge-idp/src/jwt.rs` splits the token, resolves the algorithm and
+checks the signature by calling `ring`; each adapter's own `auth.rs` then
+applies its IdP's claim rules. That first half is shared rather than written
+once per adapter, because it is the single most security-critical routine in the
+project — bespoke code in a project whose code is mostly agent-written — and a
+second copy would be a second one to get right.
 
 **What limits it.**
 
@@ -261,7 +279,10 @@ code in a project whose code is mostly agent-written.
   the audience, the lifetime, the tenant, the token version, the token type, the
   delegated scope, the authorized client and the shape of the subject. It
   refuses the token if one fails. Each check, claim by claim, is in
-  [`crates/kerbridge-idp/entra.md`](crates/kerbridge-idp/entra.md).
+  [`crates/kerbridge-idp/entra.md`](crates/kerbridge-idp/entra.md). Which claims
+  those are is the adapter's: authentik has no token version, no token type and
+  no scope to check, and its authorized-client claim is the one its scope
+  mappings cannot rewrite.
 - The `scp` and `idtyp` checks are the real access control, not defence in
   depth. Entra issues app-only tokens with the broker audience to **any**
   confidential client in the tenant. The spike `entra-token-validation` measured
@@ -320,8 +341,9 @@ the client's trust store, a corporate TLS interception proxy, and a compromised
 Caddy. A rotation of the user's key does **not** stop this. See risk 5.
 
 `DESIGN.md` records the construction that would remove the risk: a
-sender-constrained token plus a PKINIT hand-off. Entra implements neither DPoP
-nor mTLS-bound tokens as of 2026-07, so it is not buildable today.
+sender-constrained token plus a PKINIT hand-off. It needs the IdP to issue one,
+and Entra implements neither DPoP nor mTLS-bound tokens as of 2026-07, so it is
+not buildable there today.
 
 ### 5. Revocation is slow, and one lever does nothing
 
@@ -353,29 +375,46 @@ nothing. Do not use it as a kill switch.
 
 ### 6. The sync credential
 
-**Risk.** Sync holds two credentials: a Microsoft Graph application credential,
-and an LDAPS bind password for its own Samba account.
+**Risk.** Sync holds two credentials: a read credential for the directory (IdP),
+and an LDAPS bind password for its own Samba account. The IdP
+credential is a Microsoft Graph application credential for Entra, or an API
+token on a dedicated service account for authentik.
 
-**What limits it, on the Graph side.**
+**What limits it, on the IdP side.** Both adapters ask for read permissions
+only, but those permissions deliberately cover the provider's whole directory
+(IdP). Sync requires a complete read; a silently filtered one can look complete.
 
-- Exactly two application permissions: `User.Read.All` and `Group.Read.All`.
-  Both are read-only. `Directory.Read.All` was rejected on least-privilege
-  grounds.
-- The app registration has no redirect URI and no exposed API scope. It cannot
-  be used interactively.
+- Entra uses exactly `User.Read.All` and `Group.Read.All`; the broader
+  `Directory.Read.All` is not granted. Its app registration has no redirect URI
+  or exposed API scope and cannot be used interactively.
+- authentik uses only `view_user` and `view_group`, granted globally to its
+  service account. An object-level grant is not a safer equivalent: authentik
+  returns `200` and a silently shortened collection, so sync cannot know what
+  the credential hid.
 
 **What limits it, on the Samba side.** Each source's bind account holds one ACE,
 `(A;CI;CCDCWP;...)`, on its own IdP-specific OU and nowhere else. The AD ACL
 enforces the boundary at the protocol level. A stolen credential for one source
 cannot touch another source's OU, cannot touch `OU=Resources`, and cannot touch
-`Domain Admins` or anything else in the directory.
+`Domain Admins` or anything else in the directory (realm).
 
 **Sync's own planner cannot delete.** The plan type has no delete operation, so
 no plan — however wrong — destroys an object. Leavers are disabled, renamed with
 a `_retired-` prefix, and keep their SID. Removed groups are quarantined, not
-deleted. A directory read that does not finish produces no plan at all. A whole read
+deleted. A directory (IdP) read that does not finish produces no plan at all. A whole read
 that describes zero users, while Samba holds synchronized users, freezes the
 cycle and raises an alert.
+
+**A configured group the read does not return also freezes the cycle**, on
+authentik. If the extra-group allowlist or the device-grant group names a group
+that is missing from the read, sync publishes nothing and names that group. A
+narrowed credential is the usual cause: authentik answers `200` for what the
+credential may see, so the result is a smaller directory (IdP) that is coherent
+on its own, with every trace of the hidden group gone with it. This is a stop,
+not an outage to route around — do not make the cycle succeed by removing the
+group from the configuration, because that retires every account the group
+admitted. Restore the global `view_user` and `view_group` grant, or correct the
+group ID.
 
 **Precision worth stating.** "Sync cannot delete" is a property of the
 **program**, not of the **credential**. The ACE grants delete-child. A person who
@@ -383,21 +422,24 @@ steals the bind password file and uses a raw LDAP client can delete any user or
 group object inside that source's OU. The planner is not in the path.
 
 **There is no percentage brake.** Only a complete wipe to zero triggers the
-freeze. If 40 % of your admitted users disappear from a *complete* directory read in
-one cycle, sync retires 40 % of your directory that cycle.
+freeze. If 40 % of your admitted users disappear from a *complete* directory
+(IdP) read in one cycle, sync retires that 40 % of the synchronized accounts.
 
-**Worst case.** A stolen sync credential reads every user and every group in
-your tenant, including the ones that KerBridge never syncs. It writes nothing.
+**Worst case, on the IdP side.** A stolen credential reads every user and every
+group in the configured directory (IdP), including the ones that KerBridge never
+syncs. It writes nothing.
 
-A stolen Samba bind password is worse. An attacker creates an account inside the
-source OU. They stamp any external identity on it. They add it to the local
-admission group mirror. That admits them to every Kerberos-protected service in
-the realm. `DESIGN.md` names this accepted risk directly.
+**Worst case, on the Samba side.** A stolen bind password is worse. An attacker
+creates an account inside the source OU. They stamp any external identity on it.
+They add it to the local admission group mirror. That admits them to every
+Kerberos-protected service in the realm. `DESIGN.md` names this accepted risk
+directly.
 
-The sync credential is a **client secret**, not a certificate. A certificate
-credential is the intended default and is not built. Set
-`sync_credential_expires` so that sync warns you before the secret lapses, and
-update the value each time you rotate.
+**Credential lifetime.** Entra uses a client secret; certificate credentials are
+not built. The operator states its expiry in `sync_credential_expires` and must
+update that value on rotation. authentik reports an API token's own expiry to
+its bearer, so the adapter measures it directly. There is deliberately no
+`sync_credential_expires` setting for authentik.
 
 ### 7. The `kbmanage` credential is impersonation-grade
 
@@ -430,12 +472,12 @@ Device grants are **off by default** (`device_grant_days = 0`). Read
 on.
 
 **Risk.** A grant lets a machine obtain Kerberos tickets with no browser and no
-Entra sign-in, for a bounded number of days. The authorization is an ECDSA P-256
+cloud sign-in, for a bounded number of days. The authorization is an ECDSA P-256
 key held in the machine's TPM.
 
 **What limits it.**
 
-- The Entra sign-in *is* the authorization. No second admission decision is
+- The cloud sign-in *is* the authorization. No second admission decision is
   invented. The broker validates the token exactly as for a ticket, and
   additionally requires device-grant group membership.
 - The assertion binds a server-issued nonce, an audience, an expiry and the
@@ -472,7 +514,7 @@ tell a TPM key from a software key, and deliberately does not try.
 
 **Worst case.** Malware runs as the user on a granted Windows machine. It gets
 Kerberos tickets as the grant's target account, for as long as it stays
-resident, with no browser and no Entra. With delegation, that account may not be
+resident, with no browser and no cloud sign-in. With delegation, that account may not be
 the logged-in user. The malware cannot take the key anywhere.
 
 A software key would be worse. An attacker copies it off the machine. They then
@@ -632,7 +674,13 @@ artifact builds in Docker with `make`.
 The repository states this itself, and it is worth repeating in one place:
 
 - **The live Entra tenant.** No automated test reaches Graph, delta sync, or
-  real token issuance. `make test-stack` uses a mock IdP with a throwaway key.
+  real token issuance; `make test-stack` uses a mock IdP with a throwaway key.
+  Nor can one: a tier has to sign a user in without a browser, and Entra offers
+  no supported way to do that. `make test-authentik` reaches that far against
+  authentik, which exposes its sign-in as an API. On the Entra side the Graph
+  read shapes are checked by hand instead, by
+  [`testbench/entra-tenant/conformance.py`](testbench/entra-tenant/conformance.py)
+  against a live tenant.
 - **The ACME TLS strategies.** Neither DNS-01 nor HTTP-01 is exercised.
 - **What Windows does with a ticket after it holds one.** The LSA injection path
   has no automated coverage.
@@ -644,25 +692,32 @@ The repository states this itself, and it is worth repeating in one place:
 - **Operator notification against a real event.** A synthetic test message
   reached a real channel. A real event, a real recovery, and real suppression
   over time did not.
-- **Most hostile input.** The 543 tests cover correct behaviour far more than
-  they cover attacks. Tests for injection and malformed input exist in
+- **The corpora are not all evidence.** The fixtures `cargo test` reads have
+  several origins, and only one of them is a provider. `graph-sync/` is written
+  from Microsoft's documentation and no tenant produced a byte of it;
+  the token corpora are signed by a key this repository owns; the authentik
+  directory corpus is derived from a recording of a live authentik.
+  [`testbench/README.md`](testbench/README.md) states each origin and what a
+  green test therefore proves.
+- **Most hostile input.** The automated tests cover correct behaviour far more
+  than they cover attacks. Tests for injection and malformed input exist in
   `issuerd` and `kerbridge-core`. They are thinner elsewhere.
 
 Three further scope limits:
 
 - **The bearer path has no replay defence in the broker.** A captured, still-valid
-  Entra access token works against `/ticket` until it expires. This is the
+  access token works against `/ticket` until it expires. This is the
   ordinary OAuth bearer model. TLS and the token lifetime are the protection.
   Device-grant assertions, which *do* have nonce protection, are the exception.
 - **The nonce store is per process and in memory.** A broker restart invalidates
   every outstanding nonce, by design. Two broker replicas do not share one, and
   a multi-replica deployment is not supported.
 - **Only `POST /ticket` is concurrency-capped.** `max_inflight` protects the
-  directory and `issuerd`. The `/nonce` and `/devices` routes are not under that
-  cap. They are gated instead: `/nonce` touches no directory and self-bounds at
+  directory (realm) and `issuerd`. The `/nonce` and `/devices` routes are not under that
+  cap. They are gated instead: `/nonce` touches no directory (realm) and self-bounds at
   4096; the `/devices` routes require a valid credential before any LDAP work.
   A caller who holds one valid token can still drive uncapped concurrent
-  directory reads through them.
+  directory (realm) reads through them.
 
 ## Deliberate limits
 

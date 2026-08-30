@@ -12,11 +12,11 @@ license.workspace = true
 # block needs core's renderer too.
 schema = ["dep:schemars", "kerbridge-core/schema"]
 
-# The directory face -- the seam, the desired state, and every adapter's reader.
+# The directory (IdP) face -- the seam, the desired state, and every adapter's reader.
 # Off by default so the broker, `kbconfig` and `kbsetup` compile none of it: they
 # link this crate for the token face alone. `kerbridge-sync` is the one consumer
-# and turns it on, and `url` and `unicode-normalization` ride with it.
-sync = ["dep:url", "dep:unicode-normalization"]
+# and turns it on, and `unicode-normalization` rides with it.
+sync = ["dep:unicode-normalization"]
 
 [dependencies]
 kerbridge-core.workspace = true
@@ -43,13 +43,15 @@ async-trait = "0.1"
 ring.workspace = true
 base64.workspace = true
 
-# Graph URLs are parsed rather than pattern-matched: every one after the first is
-# a string the *server* chose.
-url = { workspace = true, optional = true }
+# URLs are parsed rather than pattern-matched, on both faces: every Graph URL
+# after the first is a string the *server* chose, and an authentik source states
+# the first operator-supplied host in a broker configuration. Unconditional
+# because reqwest already brings it to every build here.
+url.workspace = true
 
-# `name_candidate` composes before it derives a login name, so the directory
+# `name_candidate` composes before it derives a login name, so the directory (realm)
 # never holds two accounts spelled differently and rendered alike. Only the
-# directory face needs it, so it rides with `sync`.
+# directory (IdP) face needs it, so it rides with `sync`.
 unicode-normalization = { workspace = true, optional = true }
 
 [dev-dependencies]

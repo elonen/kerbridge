@@ -7,8 +7,11 @@
 //! authority yields the authorize and token endpoints.
 //!
 //! TLS is mandatory (`client/DESIGN.md` @ security model): the broker is trusted
-//! to name the realm's KDCs, which is a decision about who may authenticate this
-//! machine, so a plaintext answer is refused outright rather than warned about.
+//! to name the realm's KDCs and to choose the OAuth authority, public client,
+//! scopes, resource/audience parameters and therefore the returned token's
+//! purpose. A plaintext answer is refused outright rather than warned about.
+
+use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, anyhow, bail};
 use url::Url;
@@ -28,6 +31,11 @@ pub struct OidcConfig {
     /// authority itself, not for an endpoint.
     pub authority: String,
     pub scopes: Vec<String>,
+    /// Extra query parameters the broker's IdP wants on the authorization
+    /// request, verbatim. These can select an OAuth resource or audience and
+    /// therefore share the broker trust boundary documented above. Empty on
+    /// every current Entra and authentik deployment.
+    pub extra_auth_params: BTreeMap<String, String>,
     pub authorization_endpoint: String,
     pub token_endpoint: String,
     /// The authority's RP-initiated logout endpoint, when it advertises one. Used
@@ -164,6 +172,10 @@ pub fn discover(broker_url: &str) -> Result<BrokerConfig> {
     if scopes.is_empty() {
         return Err(anyhow!("/config oidc.scopes is empty"));
     }
+    // Unlike `kdcs`/`services` below, a malformed value is an error, not "none":
+    // an IdP that needs a parameter to issue a refresh token gets no login at all
+    // without it.
+    let extra_auth_params = str_map(oidc_block, "extra_auth_params").context("/config oidc")?;
 
     let krb_block =
         config.get("kerberos").ok_or_else(|| anyhow!("/config has no `kerberos` block"))?;
@@ -249,6 +261,7 @@ pub fn discover(broker_url: &str) -> Result<BrokerConfig> {
             display_name,
             authority,
             scopes,
+            extra_auth_params,
             authorization_endpoint,
             token_endpoint,
             end_session_endpoint,
@@ -385,6 +398,24 @@ fn bool_field(value: &serde_json::Value, key: &str) -> Option<bool> {
     value.get(key).and_then(serde_json::Value::as_bool)
 }
 
+/// An optional object of strings. Absent is an empty map, not an error; present
+/// and not an object of strings is an error.
+fn str_map(value: &serde_json::Value, key: &str) -> Result<BTreeMap<String, String>> {
+    let Some(found) = value.get(key) else {
+        return Ok(BTreeMap::new());
+    };
+    let object =
+        found.as_object().ok_or_else(|| anyhow!("`{key}` is present and not an object"))?;
+    object
+        .iter()
+        .map(|(name, v)| {
+            v.as_str()
+                .map(|s| (name.clone(), s.to_owned()))
+                .ok_or_else(|| anyhow!("`{key}.{name}` is not a string"))
+        })
+        .collect()
+}
+
 fn str_array(value: &serde_json::Value, key: &str) -> Result<Vec<String>> {
     value
         .get(key)
@@ -442,6 +473,30 @@ mod tests {
             ["https://kerbridge.example.site", "https://kerbridge.example.site/", "nonsense"]
         {
             assert_eq!(source_name(none), "", "{none} names no source");
+        }
+    }
+
+    /// Absent-safe and unforgiving at once: every Entra broker omits the key, and
+    /// a malformed one that read as "none" would cost an IdP that needs it.
+    #[test]
+    fn extra_auth_params_are_optional_but_not_forgiving() {
+        let extras = |v: serde_json::Value| str_map(&v, "extra_auth_params");
+
+        let carried = extras(json!({"extra_auth_params": {"access_type": "offline"}})).unwrap();
+        assert_eq!(carried.get("access_type").map(String::as_str), Some("offline"));
+
+        // Omitted entirely, which is what the broker sends for an empty map.
+        assert!(extras(json!({"scopes": ["openid"]})).unwrap().is_empty());
+        assert!(extras(json!({"extra_auth_params": {}})).unwrap().is_empty());
+
+        for bad in [
+            json!({"extra_auth_params": []}),
+            json!({"extra_auth_params": "access_type=offline"}),
+            json!({"extra_auth_params": null}),
+            json!({"extra_auth_params": {"prompt": ["consent"]}}),
+            json!({"extra_auth_params": {"max_age": 300}}),
+        ] {
+            assert!(extras(bad.clone()).is_err(), "{bad} must be refused");
         }
     }
 

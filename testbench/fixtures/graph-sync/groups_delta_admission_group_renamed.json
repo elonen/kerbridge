@@ -17,10 +17,7 @@
           "displayName": "corp-realm-gate",
           "securityEnabled": true,
           "mailEnabled": false,
-          "groupTypes": [],
-          "membershipRule": null,
-          "membershipRuleProcessingState": null,
-          "onPremisesSyncEnabled": null
+          "groupTypes": []
         }
       ]
     }

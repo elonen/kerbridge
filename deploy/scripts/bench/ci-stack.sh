@@ -15,7 +15,7 @@
 #   3. The public endpoint terminates TLS on a certificate this script creates, and
 #      the broker answers GET /config behind it.
 #   4. POST /ticket with a freshly issued token returns a real KDC-signed TGT:
-#      verify -> resolve the external identity in the directory -> issue.
+#      verify -> resolve the external identity in the directory (realm) -> issue.
 #   5. One engineer's sign-in authorizes a machine to obtain tickets as a service
 #      account they hold no credential for, and the ticket that machine gets is
 #      the service account's. An admitted user outside the delegate group cannot
@@ -55,12 +55,12 @@ export COMPOSE_FILE=compose.yaml:compose.nas.yaml:compose.mockidp.yaml:compose.c
 
 # Generate the corpus in a scratch directory so positive tokens are current.
 # The committed corpus is intentionally expired, and tests pin its time window.
+# make_fixtures.py defaults to the corpus it lives in, so --out is not optional.
 idp_prepare() {
   local fixtures=testbench/fixtures/entra-token
   say "generating a token corpus"
   FIXDIR=$ROOT/.local-tmp/ci-fixtures
   rm -rf "$FIXDIR"; mkdir -p "$FIXDIR"
-  cp "$ROOT/$fixtures/make_fixtures.py" "$FIXDIR/"
   # Cache the virtual environment in the source checkout. The disposable copy is
   # replaced for each run, and reinstalling dependencies adds a network dependency.
   local venv=${KB_CI_SRC:-$ROOT}/.local-tmp/ci-venv
@@ -68,8 +68,7 @@ idp_prepare() {
     python3 -m venv "$venv"
     "$venv/bin/pip" install --quiet --disable-pip-version-check pyjwt cryptography
   fi
-  # make_fixtures.py writes output beside its own copy.
-  (cd "$FIXDIR" && "$venv/bin/python" make_fixtures.py >/dev/null)
+  "$venv/bin/python" "$ROOT/$fixtures/make_fixtures.py" --out "$FIXDIR" >/dev/null
   [ -s "$FIXDIR/jwks.json" ] && [ -s "$FIXDIR/positive_delegated.jwt" ] &&
     [ -s "$FIXDIR/positive_other_user.jwt" ] ||
     die "fixture generation produced nothing"
@@ -129,7 +128,7 @@ EOF
 # ---------------------------------------------------------------------------
 tok() { printf 'Authorization: Bearer %s' "$(cat "$FIXDIR/$1.jwt")"; }
 
-say "seeding the demo directory"
+say "seeding the demo directory (realm)"
 scripts/bench/seed-demo.sh
 
 say "POST /ticket with a token issued three minutes ago"
@@ -149,7 +148,8 @@ echo "an expired token from the same key is refused 401"
 
 # ---------------------------------------------------------------------------
 # Device grants do not require TPM attestation. A software key therefore tests
-# the assertion format, single-use nonce, grant-group gate, and directory value.
+# the assertion format, single-use nonce, grant-group gate, and grant value stored
+# in the directory (realm).
 # The Windows bench tests the CNG client path.
 # ---------------------------------------------------------------------------
 say "authorizing a device with the same token"

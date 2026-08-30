@@ -1,0 +1,130 @@
+{
+  "note": "RECORDED. Page 2 after user 46 (frank.filler) was deleted between the two requests. `count` is 12 against page 1's 13, and rows [51] are in NEITHER page the reader holds: every row after the deleted one shifted back by one index, so the boundary moved past them. This is the whole of #7 s9's mitigation -- the lower count is the detectable half, and the skipped row is what it protects against. Expect SourceError::NotWhole, never a snapshot missing a user.",
+  "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9000/api/v3/core/users/?ordering=pk&include_groups=false&include_roles=false&page_size=10&page=2"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "date": "Thu, 27 Aug 2026 21:55:39 GMT",
+      "server": "uvicorn",
+      "content-type": "application/json; charset=utf-8",
+      "allow": "GET, POST, HEAD, OPTIONS",
+      "x-frame-options": "DENY",
+      "content-length": "1777",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      "x-authentik-id": "bf950093d0b642eca75a28fd50a1786e",
+      "vary": "Accept-Language, Cookie",
+      "content-language": "en",
+      "connection": "close",
+      "x-powered-by": "authentik"
+    },
+    "body": {
+      "pagination": {
+        "next": 0,
+        "previous": 1,
+        "count": 12,
+        "current": 2,
+        "total_pages": 2,
+        "start_index": 11,
+        "end_index": 12
+      },
+      "results": [
+        {
+          "pk": 52,
+          "username": "nomad",
+          "name": "",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.480496Z",
+          "is_superuser": false,
+          "groups": [],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "b6b2c8a171bef225a3294e6bd450e4ea5e9636c4d3cc6646541d819820e1703b",
+          "path": "users",
+          "type": "internal",
+          "uuid": "e4233883-25a1-4b48-907f-b6c16b2222c7",
+          "password_change_date": "2026-08-27T21:55:37.480663Z",
+          "last_updated": "2026-08-27T21:55:37.499057Z"
+        },
+        {
+          "pk": 53,
+          "username": "...",
+          "name": "...",
+          "is_active": true,
+          "last_login": null,
+          "date_joined": "2026-08-27T21:55:37.547507Z",
+          "is_superuser": false,
+          "groups": [],
+          "groups_obj": null,
+          "roles": [],
+          "roles_obj": null,
+          "email": "",
+          "avatar": "/static/dist/assets/images/user_default.png",
+          "attributes": {},
+          "uid": "2ed777e0dd71f14f8b1f7b7e692b47222015a263e28d6109dbcfb982cfd3398b",
+          "path": "users",
+          "type": "internal",
+          "uuid": "082c0217-f362-4b8d-a043-159119acfc00",
+          "password_change_date": "2026-08-27T21:55:37.547662Z",
+          "last_updated": "2026-08-27T21:55:37.566697Z"
+        }
+      ],
+      "autocomplete": {
+        "current_model": "authentik_core.user",
+        "models": {
+          "authentik_core.user": {
+            "username": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "name": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "email": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "path": {
+              "type": "str",
+              "nullable": false,
+              "options": null
+            },
+            "is_active": {
+              "type": "bool",
+              "nullable": true,
+              "options": null
+            },
+            "type": {
+              "type": "str",
+              "nullable": false,
+              "options": [
+                "internal",
+                "external",
+                "service_account",
+                "internal_service_account"
+              ]
+            },
+            "attributes": {
+              "type": "relation",
+              "nullable": false,
+              "options": null,
+              "relation": "authentik_core.user_attributes"
+            }
+          }
+        }
+      }
+    }
+  }
+}

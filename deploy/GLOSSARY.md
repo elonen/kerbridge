@@ -52,7 +52,7 @@ port. It tests provisioning, bootstrap scripts, the LDAPS bind, the issuer
 socket, the KDC, and a member's PAC. It is not a deployment method.
 `scripts/bench/provision.sh` creates the stack and waits for `/config`; each
 [stack tier](#stack-tier) sources it.
-<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/provision.sh`, project `kerbridge-ci` -->
+<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/provision.sh`, project `${CI_PROJECT}` -->
 <!-- avoid: the test stack -->
 
 ### config set
@@ -123,7 +123,7 @@ broker.
 The deployment-shape file, holding what compose itself interpolates and what the
 deploy scripts source as shell. Its keys are classified by **where the operator
 gets the value** — the realm being created, the portal,
-the directory, or nowhere but the operator's own decision, which is unprefixed.
+the directory (realm), or nowhere but the operator's own decision, which is unprefixed.
 It carries no secrets; those are one-value files under `secrets/`.
 
 Read last, after [`bench.env`](#benchenv), by compose and by the scripts alike:
@@ -150,7 +150,7 @@ bench file server, the mock IdP, and the accounts and identifiers
 
 The subdirectory of `secrets/` holding machine-generated
 values, never to be opened or edited: the same value also lives in the
-directory, so editing one desynchronizes a password rather than changing it.
+directory (realm), so editing one desynchronizes a password rather than changing it.
 It is the whole of what [`kbsetup`](../GLOSSARY.md#kbsetup) writes and the only
 part of `secrets/` the [setup service](#setup-service) is given, which is why a
 per-source `bind_password` lives at `generated/idp/<name>/` rather than beside
@@ -205,10 +205,11 @@ external file server can join.
 A `compose.*.yaml` file applied to the base Compose file through the compose-file
 environment variable. The repository has file-server, mock-IdP, CI isolation,
 and stack-tier overlays. Order is significant because a later overlay narrows an
-earlier one. Each [stack tier](#stack-tier) states its complete list. Scripts do
-not use `-f`; they call plain `docker compose`, so only the environment variable
-selects overlays.
-<!-- refs: `COMPOSE_FILE`, `compose.nas.yaml`, `compose.mockidp.yaml`, `compose.ci.yaml`, `compose.ci-entra.yaml` -->
+earlier one. Each [stack tier](#stack-tier) states its complete list -- the Entra
+tier layers `compose.ci-entra.yaml` over the mock IdP, the authentik tier layers
+`compose.authentik.yaml` in its place. Scripts do not use `-f`; they call plain
+`docker compose`, so only the environment variable selects overlays.
+<!-- refs: `COMPOSE_FILE`, `compose.nas.yaml`, `compose.mockidp.yaml`, `compose.ci.yaml`, `compose.ci-entra.yaml`, `compose.authentik.yaml` -->
 <!-- avoid: compose file, extension file, fragment, profile -->
 
 ### provisioning
@@ -283,7 +284,7 @@ memberships, file ownership — with nothing reporting it.
 
 It is also the enable switch. Drop a name and keep the file and that source stops
 being mirrored and stops being served, with nothing in the
-[directory](../GLOSSARY.md#directory) touched; there is no `enabled` field. A
+[directory (realm)](../GLOSSARY.md#directory-realm) touched; there is no `enabled` field. A
 listed name with no file refuses to start, and a file no name lists is ignored
 with a line saying so.
 <!-- refs: `main.sources`, `kbconfig sources` -->
@@ -302,10 +303,11 @@ the readiness script reports "Stack is up."
 A script that sources `scripts/bench/provision.sh` for one identity source and
 then runs source-specific assertions. A stack tier provides the prerequisites,
 the `.env` fragment, the `idp_<source>.toml` body, and the final Compose overlay.
-`ci-stack.sh`, which implements `make test-stack`, is the Entra stack tier.
+`ci-stack.sh`, which implements `make test-stack`, is the Entra stack tier;
+`ci-authentik.sh`, which implements `make test-authentik`, is the authentik one.
 Stack tiers use vendor names because the supported source types form a closed
 set.
-<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/provision.sh`, `idp_prepare`, `idp_env_lines`, `idp_source_toml` -->
+<!-- refs: `deploy/scripts/bench/ci-stack.sh`, `deploy/scripts/bench/ci-authentik.sh`, `deploy/scripts/bench/provision.sh`, `idp_prepare`, `idp_env_lines`, `idp_source_toml` -->
 <!-- avoid: the CI profile, the idp profile, the test driver -->
 
 ### `state/`
