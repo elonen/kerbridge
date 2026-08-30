@@ -191,6 +191,9 @@ test-fast:
 	@stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT; \
 		python3 testbench/fixtures/graph-sync/make_fixtures.py --out "$$stage" >/dev/null; \
 		diff -ru --exclude=make_fixtures.py --exclude=__pycache__ testbench/fixtures/graph-sync "$$stage"
+	@# The authentik corpus has no generator -- it is hand-derived from the
+	@# recordings, so it is held to the derivation instead of regenerated.
+	python3 testbench/fixtures/authentik-directory/check_derivation.py
 	cargo test --workspace
 	cargo clippy --workspace --all-targets -- -D warnings
 	@# Run the client core on Darwin or Linux. Darwin links Kerberos.framework;

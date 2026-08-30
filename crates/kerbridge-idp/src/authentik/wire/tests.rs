@@ -142,6 +142,43 @@ fn a_dangling_member_id_refuses_the_read() {
     assert!(why.contains("member user pk 900"), "{why}");
 }
 
+/// The same rule against the bytes a real partial grant returned, rather than
+/// against a hand-made row.
+///
+/// This is the one case asserted on a recording instead of on the derived
+/// corpus, because being recorded is its whole content: it settles what an
+/// object-permission grant *does* to a read. authentik's object filter narrows
+/// the user list and `pagination.count` with it -- the envelope is internally
+/// perfect and a count cross-check sees nothing -- but it does not touch a
+/// group's `users` array, a group's `children`, or a visible user's own
+/// `groups`. Whatever the grant hides therefore survives as an id in at least
+/// one of those three, and the read is refused whole. This recording trips the
+/// user-side detector first, because users are resolved before groups.
+///
+/// The recording's ids change on every re-record, so only the refusal is
+/// asserted, never a pk.
+#[test]
+fn a_recorded_partial_grant_is_refused_as_a_dangling_id() {
+    let recording = |name: &str| {
+        let path = format!(
+            "{}/../../testbench/authentik/captured/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let v: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        v["response"]["body"].clone()
+    };
+    let users: Page<RawUser> =
+        serde_json::from_value(recording("users_partial_grant_page1")).unwrap();
+    let groups: Page<RawGroup> =
+        serde_json::from_value(recording("groups_partial_grant_page1")).unwrap();
+
+    let why = conformance::a_torn_read_yields_no_snapshot(match assemble(&[users], &[groups]) {
+        Ok(_) => conformance::Verdict::Snapshot,
+        Err(why) => conformance::Verdict::Refused(why),
+    });
+    assert!(why.contains("a complete read has no dangling ids"), "{why}");
+}
+
 /// The name rule, spelled out on the two accounts that exercise it. `username`
 /// leads; the dotted display name follows, cut to the budget; the three spellings
 /// deduplicate first-wins so an account whose spellings collapse keeps one.

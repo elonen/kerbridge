@@ -250,6 +250,12 @@ mod tests {
         assert!(why.contains(EXTRA), "{why}");
     }
 
+    /// A visible configured root that holds nobody publishes. An empty group is
+    /// legitimate, and it is not what a permission filter makes: the filter
+    /// narrows the user list but leaves the hidden member's id in the root's
+    /// `users`, so a *filtered* root is refused at `assemble` and never reaches
+    /// here. Recorded in `testbench/authentik/captured/groups_partial_grant_page1.json`
+    /// and pinned by `wire::tests::a_recorded_partial_grant_is_refused_as_a_dangling_id`.
     #[test]
     fn a_visible_configured_root_preserves_the_snapshot() {
         let mut read = coherent_filtered_read();

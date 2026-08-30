@@ -30,6 +30,15 @@ There is no generator. The corpus is hand-derived and edited in place, like
 `../planner/`; regenerating it would mean re-recording, which is
 `../../authentik/capture_directory.py`'s job, not this directory's.
 
+So the derivation cannot be replayed, and a byte comparison against a
+re-recording proves nothing: a re-record keeps the shapes and none of the
+identifiers. [`check_derivation.py`](check_derivation.py) checks the part that
+*is* invariant, and `make test` runs it — the trim above, the `*_obj` nulls, the
+status each recording returned, and that no row carries a field its recording
+never returned. It also holds a provenance table naming where every file here
+came from, so a fixture cannot enter the corpus without saying what it is
+derived from.
+
 ## The read pages
 
 Four pages, `?ordering=pk`, `page_size` forced to a two-page boundary. Together
