@@ -105,4 +105,4 @@ name no longer catches it.
 Day-2 usage, including where RSAT still fits:
 [`docs/rsat-and-kerbridge-management.md`](../../docs/rsat-and-kerbridge-management.md).
 Directory layout and the delegation model:
-`DESIGN.md` § [Directory (realm) ownership and synchronization](../../docs/design/identity-and-directory.md#directory-realm-ownership-and-synchronization).
+`DESIGN.md` § [Realm directory ownership and synchronization](../../docs/design/identity-and-directory.md#realm-directory-ownership-and-synchronization).

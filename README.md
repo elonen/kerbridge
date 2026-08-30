@@ -12,7 +12,7 @@ You get passwordless access to a local file server with your [cloud identity](GL
 You manage the users in a **[cloud IdP](GLOSSARY.md#cloud-idp)** (MS Entra ID). They authenticate, without
 password, to your **on-prem Kerberos services** — a Samba file server, an
 SPNEGO HTTP app, and so on. A local Samba AD DC syncs the users **from** cloud:
-the sync process is read-only and one-way. Your directory (IdP) is not modified.
+the sync process is read-only and one-way. Your IdP directory is not modified.
 
 ### [Sign-in](GLOSSARY.md#sign-in)
 
@@ -77,7 +77,7 @@ flowchart TB
   nas["file server<br/>Samba member, winbind + idmap_rid"]
 
   wh -->|"OIDC browser"| entra
-  entra -->|"directory (IdP) → directory (realm)"| sync
+  entra -->|"IdP directory → realm directory"| sync
   wh -->|"HTTPS"| caddy
   caddy -->|"reverse proxy"| broker
   broker -->|"Unix"| iss
@@ -151,7 +151,7 @@ make test-all
 
 `make test-stack` is the interesting one. It provisions a Samba AD
 [realm](GLOSSARY.md#realm) into an empty Docker volume and bootstraps the
-[directory (realm)](GLOSSARY.md#directory-realm). It issues an OIDC token against a throwaway
+[realm directory](GLOSSARY.md#realm-directory). It issues an OIDC token against a throwaway
 key, and exchanges the token at the [broker](GLOSSARY.md#broker) for a real
 KDC-signed [TGT](GLOSSARY.md#tgt). With that [ticket](GLOSSARY.md#ticket), it
 reads a file from the [file server's](GLOSSARY.md#file-server)

@@ -5,7 +5,7 @@
 #
 # This tier shares realm provisioning with ci-stack.sh. authentik runs behind
 # Caddy. The broker fetches its signing keys over TLS, and sync reads its live
-# directory (IdP).
+# IdP directory.
 #
 # authentik-specific assertions:
 #
@@ -13,7 +13,7 @@
 #      (kerbridge-idp/src/jwks.rs), so the broker answers `/config` only if it
 #      first fetched the application's keys from authentik, over TLS, trusting the
 #      bench CA. provision.sh waiting for `/config` is that proof.
-#   2. Sync mirrors the directory (IdP). Pointed at the admission group's live pk, one
+#   2. Sync mirrors the IdP directory. Pointed at the admission group's live pk, one
 #      cycle turns the blueprint's one user and one group into a realm account and
 #      a marked admission group. Asserted by OUTCOME, never an exit code: one user,
 #      one group, and the account's external identity byte-equal to the REST uuid.
@@ -46,7 +46,7 @@ export COMPOSE_FILE=compose.yaml:compose.nas.yaml:compose.ci.yaml:compose.authen
 : "${CI_HTTPS_PORT:=8444}"
 
 # The constant bench sync credential -- the API token that sync uses to read the
-# directory (IdP). The blueprint sets the same token on the read-only service
+# IdP directory. The blueprint sets the same token on the read-only service
 # account, so the two are one value. authentik makes an API token unreadable after creation,
 # so a constant is the only way both ends can hold it. bench- prefixed like the
 # blueprint's.
@@ -183,7 +183,7 @@ echo "benchuser uuid = $uuid; admission group pk = $gid"
 # carried the placeholder pk; re-run the source hook with the real one and recreate
 # sync so it reads the new file. The broker keeps running -- it never uses this key.
 # ---------------------------------------------------------------------------
-say "pointing sync at the admission group and mirroring the directory (IdP)"
+say "pointing sync at the admission group and mirroring the IdP directory"
 ADMISSION_GROUP_ID=$gid idp_source_toml > "configs/idp_$SOURCE.toml"
 docker compose up -d --force-recreate --no-deps sync
 
@@ -225,7 +225,7 @@ marker=$(lsearch -b "$IDP_OU" "(objectClass=group)" extensionName | attr1 extens
 echo "sync mirrored one user and one group ($admgrp), the admission group carrying the marker"
 
 # ---------------------------------------------------------------------------
-# Share authorization is operator-owned directory (realm) state. sync mirrors the
+# Share authorization is operator-owned realm directory state. sync mirrors the
 # admission group; the operator nests THAT group
 # into a domain-local resource group and grants it the share. The resource group
 # lives in OU=Resources, outside sync's OU, so no cycle retires it. This is the
@@ -310,4 +310,4 @@ case "$got" in
   *) die "SMB read returned: ${got:-<nothing>}" ;;
 esac
 
-say "PASS -- provisioned, mirrored the directory (IdP) with sync, signed in through authentik, and read over SMB"
+say "PASS -- provisioned, mirrored the IdP directory with sync, signed in through authentik, and read over SMB"

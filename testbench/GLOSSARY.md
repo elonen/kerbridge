@@ -64,7 +64,7 @@ none, their cases being hand-written or hand-derived golden files.
 
 The read-only run that points [`conformance.py`](entra-tenant/conformance.py) at
 a live Entra tenant and names each place where Graph and the `graph-sync`
-[corpus](#corpus) disagree. It states the directory (IdP) it expects, in the
+[corpus](#corpus) disagree. It states the IdP directory it expects, in the
 words the Entra portal uses, so the tenant is reproducible. It is run by hand
 and it gates nothing: it turns red when Microsoft changes something, not when a
 commit does.
@@ -147,6 +147,6 @@ instead.
 
 ### zoo
 
-A deliberately exhaustive cast of directory (IdP) objects assembled so that every
+A deliberately exhaustive cast of IdP directory objects assembled so that every
 claimed member type or name case appears at least once.
 <!-- avoid: object zoo, cast, menagerie -->

@@ -81,7 +81,7 @@ The table shows what each part protects. Each row links to the full risk.
 | [The broker](#2-a-broker-compromise-issues-tickets-for-any-synchronized-user) | A Kerberos ticket for any synchronized user, on demand. |
 | [The token verifier](#3-the-token-verifier-is-hand-written) | The same, from the internet, with no host access. |
 | [The TLS certificate chain](#4-the-reply-carries-the-session-key) | Every ticket that passes over the wire, for one ticket lifetime. |
-| [The sync credential](#6-the-sync-credential) | Read access to your whole directory (IdP), plus a way to admit an account into the realm. |
+| [The sync credential](#6-the-sync-credential) | Read access to your whole IdP directory, plus a way to admit an account into the realm. |
 | [The `kbmanage` credential](#7-the-kbmanage-credential-is-impersonation-grade) | The ability to act as any user in the device-grant group. |
 | [A device grant, on Windows](#8-device-grants-remove-the-browser-from-the-loop) | Tickets as one account, from that machine, until the grant expires. |
 | [A backup tarball](#10-one-backup-file-holds-the-whole-deployment) | All of the above, in one file. |
@@ -130,8 +130,8 @@ These parts hold something an attacker wants:
 |---|---|
 | `issuerd` and the realm | Complete Samba domain and KDC authority. |
 | Caddy | The public TLS private key, and the DNS update credential. |
-| Broker | The power to ask `issuerd` for a ticket. Read-only directory (realm) access. |
-| Sync | Read authority on the directory (IdP), and write authority inside one IdP-specific OU in the directory (realm). |
+| Broker | The power to ask `issuerd` for a ticket. Read-only realm directory access. |
+| Sync | Read authority on the IdP directory, and write authority inside one IdP-specific OU in the realm directory. |
 | `svc-kerbridge-manage` | Delete authority in the IdP parent OU, and full authority in the resource OU. |
 
 The parts are separate on purpose. The broker faces the internet and holds no
@@ -151,7 +151,7 @@ Some quality principles:
   [`docs/research/INDEX.md`](docs/research/INDEX.md). **So: if you like the idea but don't trust the implementation, feel free to reimplement based on the research**.
 - **Extensive unit and integration tests** across the workspaces.
 - **One end-to-end test that proves the whole chain.** `make test-stack`
-  provisions an empty realm and populates the directory (realm). It then issues an OIDC token
+  provisions an empty realm and populates the realm directory. It then issues an OIDC token
   and exchanges it for a KDC-signed TGT. With that ticket, and with no password,
   it reads a file over SMB. It also asserts refusals: a replayed device
   assertion gets a 401, and a user who is not a delegate cannot get a service
@@ -213,7 +213,7 @@ they want.
 **What limits it.** `issuerd` applies its own eligibility gate, and that gate is
 an **allowlist, not a deny list**:
 
-- Exactly one directory (realm) object must match the SID.
+- Exactly one realm directory object must match the SID.
 - The `objectClass` set must be exactly `{top, person, organizationalPerson, user}`.
 - The account must not be disabled, and must carry no machine-account bit.
 - The object must carry a decodable KerBridge external identity marker.
@@ -375,7 +375,7 @@ nothing. Do not use it as a kill switch.
 
 ### 6. The sync credential
 
-**Risk.** Sync holds two credentials: a read credential for the directory (IdP),
+**Risk.** Sync holds two credentials: a read credential for the IdP directory,
 and an LDAPS bind password for its own Samba account. The IdP
 credential is a Microsoft Graph application credential for Entra, or an API
 token on a dedicated service account for authentik.
@@ -396,12 +396,12 @@ only, but those permissions deliberately cover the provider's whole directory
 `(A;CI;CCDCWP;...)`, on its own IdP-specific OU and nowhere else. The AD ACL
 enforces the boundary at the protocol level. A stolen credential for one source
 cannot touch another source's OU, cannot touch `OU=Resources`, and cannot touch
-`Domain Admins` or anything else in the directory (realm).
+`Domain Admins` or anything else in the realm directory.
 
 **Sync's own planner cannot delete.** The plan type has no delete operation, so
 no plan — however wrong — destroys an object. Leavers are disabled, renamed with
 a `_retired-` prefix, and keep their SID. Removed groups are quarantined, not
-deleted. A directory (IdP) read that does not finish produces no plan at all. A whole read
+deleted. A IdP directory read that does not finish produces no plan at all. A whole read
 that describes zero users, while Samba holds synchronized users, freezes the
 cycle and raises an alert.
 
@@ -409,7 +409,7 @@ cycle and raises an alert.
 authentik. If the extra-group allowlist or the device-grant group names a group
 that is missing from the read, sync publishes nothing and names that group. A
 narrowed credential is the usual cause: authentik answers `200` for what the
-credential may see, so the result is a smaller directory (IdP) that is coherent
+credential may see, so the result is a smaller IdP directory that is coherent
 on its own, with every trace of the hidden group gone with it. This is a stop,
 not an outage to route around — do not make the cycle succeed by removing the
 group from the configuration, because that retires every account the group
@@ -426,7 +426,7 @@ freeze. If 40 % of your admitted users disappear from a *complete* directory
 (IdP) read in one cycle, sync retires that 40 % of the synchronized accounts.
 
 **Worst case, on the IdP side.** A stolen credential reads every user and every
-group in the configured directory (IdP), including the ones that KerBridge never
+group in the configured IdP directory, including the ones that KerBridge never
 syncs. It writes nothing.
 
 **Worst case, on the Samba side.** A stolen bind password is worse. An attacker
@@ -713,11 +713,11 @@ Three further scope limits:
   every outstanding nonce, by design. Two broker replicas do not share one, and
   a multi-replica deployment is not supported.
 - **Only `POST /ticket` is concurrency-capped.** `max_inflight` protects the
-  directory (realm) and `issuerd`. The `/nonce` and `/devices` routes are not under that
-  cap. They are gated instead: `/nonce` touches no directory (realm) and self-bounds at
+  realm directory and `issuerd`. The `/nonce` and `/devices` routes are not under that
+  cap. They are gated instead: `/nonce` touches no realm directory and self-bounds at
   4096; the `/devices` routes require a valid credential before any LDAP work.
   A caller who holds one valid token can still drive uncapped concurrent
-  directory (realm) reads through them.
+  realm directory reads through them.
 
 ## Deliberate limits
 

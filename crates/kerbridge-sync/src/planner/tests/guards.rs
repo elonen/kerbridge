@@ -103,7 +103,7 @@ fn an_empty_desired_state_freezes_rather_than_retiring_everyone() {
 }
 
 /// The guard must not fire on a first deployment, where an empty desired
-/// state and an empty directory (realm) are the same ordinary thing.
+/// state and an empty realm directory are the same ordinary thing.
 #[test]
 fn an_empty_realm_directory_is_not_frozen_by_the_same_guard() {
     let plan = plan_sync(&desired(vec![], vec![]), &current(vec![], vec![]), &ctx()).unwrap();

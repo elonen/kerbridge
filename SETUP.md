@@ -180,7 +180,7 @@ KerBridge asks two things of a cloud identity provider, and nothing more:
    user against the provider over OIDC and receives a signed token. The broker
    validates that token, and that is the only thing that admits a user.
 2. **It lets KerBridge read users and groups, one direction only.** Sync reads
-   the directory (IdP) on a read-only credential and mirrors the members of one
+   the IdP directory on a read-only credential and mirrors the members of one
    admission group into the realm. KerBridge writes nothing back to the
    provider.
 
@@ -365,7 +365,7 @@ misconfiguration:
 | Chain | Grants | Owned by |
 |---|---|---|
 | Membership of a source's admission group | A Kerberos ticket. Nothing else. | You, in that cloud IdP |
-| Synced cloud IdP group → resource group → filesystem ACL | Access to files | You, in the cloud IdP, directory (realm), and file server |
+| Synced cloud IdP group → resource group → filesystem ACL | Access to files | You, in the cloud IdP, realm directory, and file server |
 
 A user who is in the admission group, but in no resource group, signs in
 correctly and can open nothing. That is the design.

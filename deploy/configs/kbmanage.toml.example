@@ -14,7 +14,7 @@
 # means the value is yours to supply and nothing starts until you do.
 # main.toml gives the full rule.
 
-# Its own directory (realm) identity, created by `kbsetup directory`. Not the
+# Its own realm directory identity, created by `kbsetup directory`. Not the
 # broker's and not a source's sync account: this one may write in the resource
 # OU, which neither of those may, and may not write inside an IdP-specific OU,
 # which a sync account must.

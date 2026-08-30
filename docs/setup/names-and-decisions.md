@@ -67,12 +67,12 @@ The source name is `name` in `configs/idp_<source>.toml`, and it is listed in
 - A plain lowercase word is the whole of it.
 
 > **CAUTION: Do not change the source name after the first sync cycle. Do not
-> point an existing name at a different directory (IdP).** Both operations replace
+> point an existing name at a different IdP directory.** Both operations replace
 > every synchronized account with one that has a *different SID*, and every file
 > whose owner came from the old SID loses its owner. To recover, you must restore
-> the directory (realm).
+> the realm directory.
 
-A replacement directory (IdP) gets a new source name, its own `ou`, and its own
+A replacement IdP directory gets a new source name, its own `ou`, and its own
 `configs/idp_<source>.toml`. That is what a second source is.
 
 <details>
@@ -88,10 +88,10 @@ working, and the files show unresolved SIDs.
 Repointing an Entra source at another tenant is at least loud, because the new
 tenant's object ids share none of the old ones. But the bill is the same.
 
-Nothing in the directory (realm) records which cloud IdP a name means. The OU holds the
+Nothing in the realm directory records which cloud IdP a name means. The OU holds the
 objects, and the config set says what filled it. So a name that you repoint in
 `configs/idp_<source>.toml` is a name that changed meaning silently. The
-directory (realm) has no older answer to contradict it with.
+realm directory has no older answer to contradict it with.
 
 </details>
 
@@ -99,7 +99,7 @@ directory (realm) has no older answer to contradict it with.
 
 `group_suffix` in `configs/idp_<source>.toml` is what this source's group login
 names end with. With suffix `-entra`, `payroll` becomes `payroll-entra` in the
-directory (realm).
+realm directory.
 
 - Use up to 20 characters. Use no whitespace, and no character that AD refuses.
 - Use the literal `none` for no suffix.

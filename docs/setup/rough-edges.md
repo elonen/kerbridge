@@ -58,7 +58,7 @@ against all of the above. Use it when the derived name is legal but wrong.
 
 Windows shows the login name as the file owner and in the *Security* tab. If
 the files of a person who is now called Jane Doe show `EXAMPLE\jane.smith`,
-then the directory (realm) is stale.
+then the realm directory is stale.
 
 First surprise: if you change `sam_source` in `configs/idp_<source>.toml` while
 renames are on, one cycle renames *each* user of that source whose name derives
@@ -215,7 +215,7 @@ on, and pilot it on one machine.
 
 **The edge that remains:** the broker refuses a *revoke* while the feature is
 off. So a device that is given up in that window keeps its stale grant row in
-the directory (realm)
+the realm directory
 and one `device_grant_max_per_user` slot, until `kbmanage device revoke` clears
 them.
 
@@ -290,7 +290,7 @@ gets a new one instead of adopting it; a transport outage is reported as an
 outage, and the tray recovers when it re-injects from the grant, with no
 browser; a sign-out drops the tickets and does not change the grant; and *Give
 up* destroys the TPM key **and** revokes at the broker, so afterwards the grant
-is gone from the directory (realm), not only flagged.
+is gone from the realm directory, not only flagged.
 
 The two display faults have one shared cause: the tray shows a
 signed-in/signed-out binary for a machine whose state is at least four

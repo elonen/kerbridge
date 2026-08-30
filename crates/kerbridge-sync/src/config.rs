@@ -45,7 +45,7 @@ pub struct Config {
     /// The AD DNS domain, used as the UPN suffix for created users.
     pub upn_suffix: String,
     pub ldap_ca_file: PathBuf,
-    /// Where the record of what this process wrote to the directory (realm) is kept, or
+    /// Where the record of what this process wrote to the realm directory is kept, or
     /// `None` when the deployment said `none` and keeps the console copy alone.
     pub audit_log_file: Option<PathBuf>,
     /// Every source, in the order `main.toml` lists them. May be empty: a realm
@@ -149,7 +149,7 @@ impl SourceConfig {
 /// `sync.toml`'s `interval_seconds`, which is the pause between cycles.
 ///
 /// Zero is refused: it asks for no pause at all, which spends the IdP's request
-/// quota and the write capacity of the directory (realm) on a loop that never rests.
+/// quota and the write capacity of the realm directory on a loop that never rests.
 /// Nothing above zero is refused. Where a floor belongs is policy, and no
 /// measurement says where to put it.
 fn interval(seconds: u32) -> Result<Duration> {

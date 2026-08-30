@@ -1,5 +1,5 @@
 //! A name already taken. Every case here refuses the whole cycle rather than
-//! applying the rest, so a first deploy against a populated directory (realm) never
+//! applying the rest, so a first deploy against a populated realm directory never
 //! half-applies.
 
 use super::*;
@@ -9,7 +9,7 @@ const GROUP_A: &str = "aaaa0001-0000-0000-0000-000000000001";
 const GROUP_B: &str = "bbbb0002-0000-0000-0000-000000000002";
 
 /// One group's sAMAccountName colliding with an existing object refuses the
-/// *whole* cycle -- no partial sync -- so deploying against a directory (realm) that
+/// *whole* cycle -- no partial sync -- so deploying against a realm directory that
 /// already holds a same-named object never half-applies. Here the admission
 /// group itself collides; the name it collides on is this fixture's own, chosen
 /// to match what the bench seeds and standing for no documented default. A
@@ -55,7 +55,7 @@ fn a_group_sam_collision_refuses_the_whole_cycle() {
 
 /// A managed group's own `sAMAccountName` is part of the namespace a new
 /// group's name must avoid. Delete-and-recreate in Entra hits this: the old
-/// object is still in the directory (realm) holding the name for its retention window,
+/// object is still in the realm directory holding the name for its retention window,
 /// so the recreated group would be planned as an unappliable `CreateGroup` --
 /// AD rejects the duplicate name domain-wide, on every cycle, forever.
 #[test]
@@ -119,7 +119,7 @@ fn a_new_group_reusing_a_managed_group_sam_refuses_the_cycle() {
     }
 }
 
-/// Two Entra names that reduce to one directory (realm) name are a collision like any
+/// Two Entra names that reduce to one realm directory name are a collision like any
 /// other, and the pre-check must see the sanitized form -- comparing raw
 /// display names would let both through to fail at apply time instead.
 #[test]
@@ -148,7 +148,7 @@ fn group_names_that_sanitize_together_refuse_the_cycle() {
 }
 
 /// A group sam is the display name verbatim, so `Sales`/`sales` are two
-/// different `String`s and one directory (realm) name. Byte-exact, this planned both:
+/// different `String`s and one realm directory name. Byte-exact, this planned both:
 /// AD took the first, refused the second, and `apply` recorded the failure and
 /// carried on -- so the group never existed, silently, on every cycle forever.
 ///

@@ -285,7 +285,7 @@ mod tests {
 
     /// The two faces of the adapter, held against each other on a token this
     /// verifier actually accepted: the broker builds an identity from a verified
-    /// token, sync from a directory (IdP) `uuid`. `mod.rs` holds the same rule against
+    /// token, sync from a IdP directory `uuid`. `mod.rs` holds the same rule against
     /// itself on a bare string; this is it reached the way the broker reaches it.
     #[tokio::test]
     async fn the_token_face_and_the_directory_idp_face_agree_byte_for_byte() {

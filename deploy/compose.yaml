@@ -132,7 +132,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     read_only: true
     volumes:
-      - samba:/var/lib/samba      # durable: domain SID, KDC keys, directory (realm), SYSVOL, TLS
+      - samba:/var/lib/samba      # durable: domain SID, KDC keys, realm directory, SYSVOL, TLS
       - etc-samba:/etc/samba      # durable: smb.conf
       # Not only the issuer's. `kbsetup realm` publishes the realm CA to
       # realm.ldap_ca_file, which on Compose is /run/kerbridge/realm-ca.pem --
@@ -166,7 +166,7 @@ services:
       # nothing until someone needs it.
       - "${KDC_BIND:-0.0.0.0}:88:88/tcp"
       - "${KDC_BIND:-0.0.0.0}:88:88/udp"
-      # LDAPS, for host-run directory (realm) tooling (kbmanage) and remote
+      # LDAPS, for host-run realm directory tooling (kbmanage) and remote
       # administration. Loopback by default: a DC's LDAP on every interface is
       # not something to opt out of after the fact. Set LDAPS_BIND=0.0.0.0 to
       # administer the realm from another host, and firewall it there.
@@ -281,7 +281,7 @@ services:
     security_opt: ["no-new-privileges:true"]
     read_only: true
     volumes:
-      # The directory (realm), read and written through the local Samba tools. Writable
+      # The realm directory, read and written through the local Samba tools. Writable
       # because ldb takes a lock to read.
       - samba:/var/lib/samba
       # smb.conf, read-only: this container drives the tools, never configures
@@ -534,7 +534,7 @@ services:
       # mount. Its own directory, not one shared with the broker: the two run as
       # different uids and each owns its file.
       - ./state/sync:/var/lib/kerbridge/sync
-      # The audit file: what each cycle changed in the directory (realm), and the object
+      # The audit file: what each cycle changed in the realm directory, and the object
       # every write touched. Same bind-mount reasoning as the broker's, and its
       # own directory for the same reason -- an account created here owns files
       # and is a principal until somebody retires it, and nothing else in the

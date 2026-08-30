@@ -45,7 +45,7 @@ restart the redirector.
 | Every authentik sign-in is 401; the broker logs `disallowed alg "HS256"` or an empty JWKS | The OAuth2 provider has no Signing Key. [The Signing Key is mandatory (`authentik.md`)](authentik.md#the-signing-key-is-mandatory) |
 | `sync` stays `idle` | There is no credential file. [Enable synchronization (`broker-host.md`)](broker-host.md#enable-synchronization) |
 | Every sync write is denied; `kbmanage` group verbs say `insufficientAccessRights` | The `svc-kerbridge-sync-<source>` / `svc-kerbridge-manage` delegations are missing. A refusal during the bootstrap is fatal and names itself, so they were removed afterwards or never applied. Run the directory step again — it is idempotent |
-| Sync logs `reconciliation FROZEN` and applies nothing, every cycle | The directory (IdP) read returned no users, but the directory (realm) contains some. The usual cause is a provider API or permission fault: Graph or admin consent for Entra, or the global Role grant for authentik. Sometimes a person emptied the admission group intentionally. Sync will not empty the directory (realm) because of one empty read. Put a member back, or remove the accounts one at a time with `kbmanage cloud delete` |
+| Sync logs `reconciliation FROZEN` and applies nothing, every cycle | The IdP directory read returned no users, but the realm directory contains some. The usual cause is a provider API or permission fault: Graph or admin consent for Entra, or the global Role grant for authentik. Sometimes a person emptied the admission group intentionally. Sync will not empty the realm directory because of one empty read. Put a member back, or remove the accounts one at a time with `kbmanage cloud delete` |
 | `samba-ad-dc` dies at every start with `winbindd daemon died with exit status 1` | A standalone `winbind.service` (or `smbd`/`nmbd`) still runs. The DC runs both daemons itself, as children of `samba`, and the child cannot have the socket the old one holds. `systemctl disable --now winbind smbd nmbd`, then start `samba-ad-dc`. `kbsetup realm` does this for you; a unit re-enabled afterwards comes back |
 | `samba_dnsupdate` logs `WERR_DNS_ERROR_RECORD_ALREADY_EXISTS` every ten minutes, and `Failed DNS update with exit code 29` | The DC's own `/etc/resolv.conf` does not name the DC, so no record in the realm zone verifies and every one is rewritten. [`dns-and-firewall.md`](dns-and-firewall.md#the-dcs-own-resolver) |
 | A KerBridge unit is `failed` and `systemctl status` gives no reason for it | Five restarts fill the ten lines that `status` prints with systemd's own, and the daemon's last words are above them. `kbsetup status` quotes that line per failed unit; `journalctl _SYSTEMD_UNIT=<unit>.service -n 30` is the same thing by hand. `-u <unit>` is what puts systemd's messages back in |
@@ -103,7 +103,7 @@ checks that:
 - the resource group is nested;
 - the group is domain-local.
 
-With no arguments, `doctor` examines the directory (realm) for structural problems:
+With no arguments, `doctor` examines the realm directory for structural problems:
 
 - duplicate identities;
 - a missing or duplicated admission group;

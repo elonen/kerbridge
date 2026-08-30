@@ -331,7 +331,7 @@ fn toml_value(value: &serde_json::Value) -> Result<String, String> {
 const SOURCE_ENVELOPE_SRC: &str = r#"# One cloud IdP, as this realm stores it.
 #
 # The filename stem after `idp_` is the source name, and `name` below repeats
-# it. Everything above [provider_config] is about *our* directory (realm) and *our*
+# it. Everything above [provider_config] is about *our* realm directory and *our*
 # naming policy and is read by KerBridge itself; everything inside that block is
 # about the cloud IdP and is read only by that provider's adapter.
 #
@@ -352,7 +352,7 @@ const SOURCE_ENVELOPE_SRC: &str = r#"# One cloud IdP, as this realm stores it.
 # one of those values is rewritten: sync sees the old objects as gone, retires
 # each account and creates a replacement with a NEW SID, and every file whose
 # owner was resolved from the old SID loses its owner. Silent, and not
-# recoverable without a directory (realm) restore.
+# recoverable without a realm directory restore.
 #
 # Pointing an existing name at a different IdP costs the same. That one is at
 # least loud -- the new IdP's subjects share none of the old ones, so sync
@@ -361,7 +361,7 @@ const SOURCE_ENVELOPE_SRC: &str = r#"# One cloud IdP, as this realm stores it.
 # file. Detail: docs/setup/names-and-decisions.md.
 {{name}}
 
-# Which adapter verifies this source's tokens and reads its directory (IdP).
+# Which adapter verifies this source's tokens and reads its IdP directory.
 {{provider}}
 
 # What this source's group login names end with, which is what keeps them out of
@@ -384,9 +384,9 @@ const SOURCE_ENVELOPE_SRC: &str = r#"# One cloud IdP, as this realm stores it.
 # groups that are already in use, and a share ACL refers to the old name.
 {{group_suffix}}
 
-# This source's own directory (realm) account, and the file holding its password. One
+# This source's own realm directory account, and the file holding its password. One
 # account per source, never a shared one: AD enforces the write delegation
-# against the bound identity, and the directory (realm) audit is how you tell
+# against the bound identity, and the realm directory audit is how you tell
 # which source's cycle wrote what.
 #
 # Under /etc/kerbridge.secrets/generated/idp/<name>/, which is one mounted
@@ -398,7 +398,7 @@ const SOURCE_ENVELOPE_SRC: &str = r#"# One cloud IdP, as this realm stores it.
 {{bind_password_file}}
 
 # The IdP-specific OU this source owns, derived from `name` and
-# realm.idp_parent_ou. State it only for a directory (realm) whose existing layout
+# realm.idp_parent_ou. State it only for a realm directory whose existing layout
 # collides with the derived name.
 #
 {{ou}}
@@ -447,7 +447,7 @@ const MAIN_SRC: &str = r#"# KerBridge, entry point.
 # The cloud IdPs this deployment serves, one per idp_<name>.toml beside this
 # file. The list is the enable switch: drop a name and keep the file, and sync
 # stops mirroring that source and the broker stops serving its path, with
-# nothing already in the directory (realm) touched.
+# nothing already in the realm directory touched.
 #
 # Never a wildcard, deliberately. A source that disappeared by glob would orphan
 # every object it owns -- SIDs, memberships, file ownership -- with nothing
@@ -726,13 +726,13 @@ const BROKER_SRC: &str = r#"# The broker: the internet-facing half, and the only
 {{listen}}
 
 # Ticket exchanges in flight at once; the rest get 429 without touching the
-# directory (realm), and the client backs off. A valid token is not a budget -- each
+# realm directory, and the client backs off. A valid token is not a budget -- each
 # ticket costs an LDAPS bind plus three forked root subprocesses on the DC.
 # Above issuerd's cap on purpose: this number also has to cover the requests
 # still in verification.
 {{max_inflight}}
 
-# The broker's own directory (realm) identity, read-only. It resolves identities and
+# The broker's own realm directory identity, read-only. It resolves identities and
 # reads the admission group; every write goes through issuerd, so there is
 # nothing here to confine and one account serves every source.
 #
@@ -769,7 +769,7 @@ const KBMANAGE_SRC: &str = r#"# kbmanage: the operator CLI, and the only compone
 # means the value is yours to supply and nothing starts until you do.
 # main.toml gives the full rule.
 
-# Its own directory (realm) identity, created by `kbsetup directory`. Not the
+# Its own realm directory identity, created by `kbsetup directory`. Not the
 # broker's and not a source's sync account: this one may write in the resource
 # OU, which neither of those may, and may not write inside an IdP-specific OU,
 # which a sync account must.
@@ -831,7 +831,7 @@ const SYNC_SRC: &str = r#"# Sync: what the mirror does, and how it names what it
 {{automatic_sam_renames}}
 
 # Log the plan every cycle and apply nothing. The safe way to watch a new
-# deployment before letting it write the directory (realm).
+# deployment before letting it write the realm directory.
 {{dry_run}}
 
 # How far ahead of a device grant's effective deadline to warn: `off`, or a
@@ -845,7 +845,7 @@ const SYNC_SRC: &str = r#"# Sync: what the mirror does, and how it names what it
 # idp_<source>.toml.
 {{credential_warn_before_days}}
 
-# What each cycle changed in the directory (realm): the tally, and the object every
+# What each cycle changed in the realm directory: the tally, and the object every
 # applied write touched. A separate file on a separate mount from the other two
 # audit logs -- see the reason in issuerd.toml. An account created here outlives
 # any ticket or grant, and nothing else says who was given one. `none` keeps the

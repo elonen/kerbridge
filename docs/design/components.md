@@ -245,7 +245,7 @@ administrator. On another host, that state would cross a network boundary. Thus
 
 They are two processes, and each deployment runs them as two. A Debian
 deployment has `samba-ad-dc.service` and `kerbridge-issuerd.service`. Compose has
-the `realm` and `issuer` services, from one image, which share the directory (realm)
+the `realm` and `issuer` services, from one image, which share the realm directory
 volumes and one network namespace. Thus a restart stops one program only, and a
 failure names the program that failed.
 

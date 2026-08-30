@@ -95,7 +95,7 @@ Indicative layout for it:
     secrets/
 ```
 
-The directory (realm) is the critical state. It contains:
+The realm directory is the critical state. It contains:
 
 - The domain SID and the KDC keys.
 - The synchronized users and groups.
@@ -182,7 +182,7 @@ configured, and thus a deployment that can reach nobody says so.
 <summary>Why email is omitted</summary>
 
 Each common receiver accepts a webhook. SMTP brings a relay, credentials, and
-header construction from untrusted directory (realm)-derived text, for no capability that
+header construction from untrusted realm-directory-derived text, for no capability that
 the webhook lacks. To add it later is a second implementation of one trait.
 
 </details>
@@ -206,7 +206,7 @@ Rules that keep the channel trustworthy:
 - An unknown `%PLACEHOLDER%` in a template is a startup configuration error. It
   is not a field that is silently empty.
 - The body is JSON, and substituted values are always JSON-string-escaped.
-  Directory (realm)-derived text can contain quotes, backslashes and newlines, and must
+  Realm-directory-derived text can contain quotes, backslashes and newlines, and must
   not break or extend the payload. The content type is fixed and not
   configurable: a configurable one would let a template select an encoding that
   the escaper does not implement, which is an injection bug with a plausible
@@ -307,7 +307,7 @@ Rules that keep the channel trustworthy:
 The URL is the channel's only authentication for common receivers. Thus a
 connection that does not authenticate its peer lets a network attacker capture
 the URL. The attacker can then post forged `info` events into the operator's
-channel, which mutes the alarm, and can read the directory (realm)-derived text in each
+channel, which mutes the alarm, and can read the realm-directory-derived text in each
 event body.
 
 Notification is itself subject to the trust store that it reports on. If the
@@ -335,14 +335,14 @@ events. An adapter raises only the events that its IdP can produce.
 | `grant-group-misconfigured` — the configured device-grant group and the marker disagree, in either direction: grants still working after the operator turned the feature off, or no machine able to authorize at all. Invisible to the broker, which sees one marked group and nothing wrong | sync | persisting |
 | `device-grants-expiring` — one aggregate, not one problem per device: a laptop fleet would make the per-device form unusable, and the per-user channel already exists in the tray. Off unless `sync.toml`'s `device_grant_notify` names a threshold | sync | persisting |
 | `sync-cursor-corrupt` — a stored delta cursor was rejected and the cycle fell back to a full read. The one **incident**: never an open problem | sync | persisting |
-| `sync-cycle-failing`, after three consecutive discarded cycles — a stalled read or a transport failure against a directory (IdP) or the directory (realm) discards a cycle | sync | persisting |
+| `sync-cycle-failing`, after three consecutive discarded cycles — a stalled read or a transport failure against a IdP directory or the realm directory discards a cycle | sync | persisting |
 | `sync-name-collision` — a `sAMAccountName` collision blocked the whole cycle | sync | persisting |
-| `sync-apply-failing` — the directory (realm) rejected writes the plan expected to succeed, usually a delegation ACE that was never granted. The cycle returns `Ok`, so nothing else counts it | sync | persisting |
+| `sync-apply-failing` — the realm directory rejected writes the plan expected to succeed, usually a delegation ACE that was never granted. The cycle returns `Ok`, so nothing else counts it | sync | persisting |
 | `idp-trust-failure` — outbound TLS to the IdP could not be validated, distinct from the IdP being merely unreachable. Keyed per source | broker | persisting |
 | `idp-keys-unavailable` — the IdP signing keys could not be fetched and it is not a trust problem. `error` at startup and once the cached document has expired, `warning` while cached keys still serve. Keyed per source | broker | persisting |
-| `directory-unavailable` — the directory (realm) is not answering, so no login can succeed. A rejected bind — a rotated `svc-kerbridge-broker` password — is indistinguishable from here and equally fatal | broker | persisting |
+| `directory-unavailable` — the realm directory is not answering, so no login can succeed. A rejected bind — a rotated `svc-kerbridge-broker` password — is indistinguishable from here and equally fatal | broker | persisting |
 | `issuer-refused` — `issuerd` refused an account the broker admitted, so the two disagree. Keyed per account | broker | persisting |
-| `identity-ambiguous` — two directory (realm) objects carry one external identity. Keyed per identity | broker | persisting |
+| `identity-ambiguous` — two realm directory objects carry one external identity. Keyed per identity | broker | persisting |
 
 The `<role>-group-<fault>` events above are one family. Each one names a
 single condition with a single way out: create and mark a group, unmark the
@@ -355,7 +355,7 @@ same breath. If it did not, an operator would read a stale instruction beside a
 live one.
 
 `admission-group-missing` is the freeze-and-alert case. It also covers a
-directory (IdP) read that came back complete but empty, which is indistinguishable
+IdP directory read that came back complete but empty, which is indistinguishable
 from an IdP that genuinely emptied. To freeze is the side to be wrong on.
 
 `test-notification` is emitted too, and is deliberately not in these tables. It
@@ -364,8 +364,8 @@ raised by an operator and not by a condition, has no repeat policy, and has
 nothing to clear.
 
 Only a cycle that reached the end of its *write* breaks the run of failures
-behind `sync-cycle-failing`. A cycle that merely read its directory (IdP)
-successfully does not break it. Otherwise a directory (realm) that answers reads and refuses writes would clear
+behind `sync-cycle-failing`. A cycle that merely read its IdP directory
+successfully does not break it. Otherwise a realm directory that answers reads and refuses writes would clear
 the count as fast as it raised it, and would never alert, however long it stayed
 broken.
 
@@ -391,16 +391,16 @@ condition can clear it:
 | `sync-not-configured` | the credential file having content |
 | `sync-credential-expiring` | a deadline back beyond 30 days |
 | `sync-credential-expired` | a token acquisition that succeeds |
-| `admission-group-missing` | a plan that built with no admission-group alert (sync); a directory (realm) lookup that completed (broker) |
-| `admission-group-ambiguous` | a directory (realm) lookup that completed |
-| `grant-group-missing`, `grant-group-ambiguous` | a directory (realm) lookup that completed |
+| `admission-group-missing` | a plan that built with no admission-group alert (sync); a realm directory lookup that completed (broker) |
+| `admission-group-ambiguous` | a realm directory lookup that completed |
+| `grant-group-missing`, `grant-group-ambiguous` | a realm directory lookup that completed |
 | `grant-group-misconfigured` | a plan that built with no device-grant alert |
 | `device-grants-expiring` | a cycle in which no grant is inside the window |
 | `sync-cycle-failing` | a cycle that reached the end of its write |
 | `sync-name-collision` | a plan that built at all |
 | `sync-apply-failing` | a cycle whose writes all applied |
 | `idp-trust-failure`, `idp-keys-unavailable` | a signing-key fetch **for that source** that succeeds |
-| `directory-unavailable` | a directory (realm) lookup that completed |
+| `directory-unavailable` | a realm directory lookup that completed |
 | `issuer-refused` | **that account** getting a ticket |
 | `identity-ambiguous` | **that identity** resolving to one object |
 
@@ -412,7 +412,7 @@ and not a stable thing.
 
 The broker's conditions are all latent. The broker is request-driven, and
 thus both the raise and the clear wait for somebody to log in. On a quiet
-deployment, an operator can learn at 09:00 about a directory (realm) that stopped
+deployment, an operator can learn at 09:00 about a realm directory that stopped
 answering overnight. The `idp-*` conditions are raised only if a token arrives
 that carries an unknown `kid`, because nothing else prompts a refresh. Sync's
 conditions are prompt, because a polling loop re-evaluates on its own.
@@ -456,13 +456,13 @@ Nothing else in the deployment says who was given one.
 
 What lands in the file is the cycles that changed something: the tally, then one
 line per applied write that names the operation and the object that it touched,
-and one line per write that the directory (realm) refused. A cycle that changed nothing is
+and one line per write that the realm directory refused. A cycle that changed nothing is
 a console heartbeat and nothing more. The file answers *who was given what, and
 when*, and a line at each interval that says that nobody was is what would bury
 the answer. Conflicts and skipped destructive actions stay on the console for the
 same reason: they changed nothing. A source that has discarded three cycles in a
 row records that crossing and its recovery, and thus a stretch during which the
-directory (realm) was not updated can be dated afterwards. The days that remain on the
+realm directory was not updated can be dated afterwards. The days that remain on the
 sync credential are a notification and not a record, at warning severity after
 the configured threshold is crossed.
 
@@ -477,7 +477,7 @@ realm. The `Makefile` is authoritative, and `make test-all` runs them all.
 | `make test` (= `test-fast`) | stable Rust | `cargo test --workspace`, `cargo clippy -D warnings`, `shellcheck` over the deployment's scripts, a doc-link checker that resolves every relative markdown link and `#anchor` in the tree, and the Windows client's *pure-logic* unit tests — `krbcred.rs`'s DER encoding and `discovery.rs`'s URL rules — built for the host triple. Those need no Windows and no MinGW: nothing in a test references the Win32 FFI, so the linker never pulls those modules out of the rlib |
 | `make test-win` | MinGW-w64 | the Windows client as a Windows artifact: a clean cross-build to `x86_64-pc-windows-gnu` plus clippy. What this covers and `test-fast` cannot is the **link** — that the shipping binary really builds against the Win32 FFI. LSA, ccache injection and the message loop are not testable on any host, and are checked on a real client by hand |
 | `make test-build` | Docker | every shipping artifact still builds: the service images, both `.exe`s, the operator CLI and the MSI. It does not resolve the image-only authentik and PostgreSQL pins; a cached build also does not prove that a registry still serves a pin |
-| `make test-authentik` | Docker and the pinned external images | the authentik adapter from OIDC sign-in and a full directory (IdP) read through TGT issuance and an SMB file read. The preflight checks for both images in the local image store; Compose pulls an absent image |
+| `make test-authentik` | Docker and the pinned external images | the authentik adapter from OIDC sign-in and a full IdP directory read through TGT issuance and an SMB file read. The preflight checks for both images in the local image store; Compose pulls an absent image |
 | `make test-stack` | Docker | the whole server path against a realm provisioned from an empty volume: sign-in proof to a file read over SMB, no tenant and no secret. Runs in a disposable copy of the tree with its own project, names, subnet and port, so it is safe beside a running bench |
 | `make test-deb` | Docker | the Debian packages themselves: `lintian` at build time, then an install, a purge and `piuparts` on trixie and noble, and a check that bookworm and jammy refuse `kerbridge-issuerd` |
 
@@ -504,7 +504,7 @@ The boundaries that those tiers exercise, and where each one lands:
   on each run.
 - Joined file-server authorization, with `idmap_rid` and nested groups —
   `test-stack`.
-- authentik token verification, directory (IdP) reading, sync, ticket issuance,
+- authentik token verification, IdP directory reading, sync, ticket issuance,
   and joined file-server authorization — `test-authentik`.
 - Windows end-to-end ticket injection and the re-injection lifecycle —
   **manual**. The live Entra tenant and the ACME TLS strategies are manual too.

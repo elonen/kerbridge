@@ -1,7 +1,7 @@
 # One cloud IdP, as this realm stores it.
 #
 # The filename stem after `idp_` is the source name, and `name` below repeats
-# it. Everything above [provider_config] is about *our* directory (realm) and *our*
+# it. Everything above [provider_config] is about *our* realm directory and *our*
 # naming policy and is read by KerBridge itself; everything inside that block is
 # about the cloud IdP and is read only by that provider's adapter.
 #
@@ -22,7 +22,7 @@
 # one of those values is rewritten: sync sees the old objects as gone, retires
 # each account and creates a replacement with a NEW SID, and every file whose
 # owner was resolved from the old SID loses its owner. Silent, and not
-# recoverable without a directory (realm) restore.
+# recoverable without a realm directory restore.
 #
 # Pointing an existing name at a different IdP costs the same. That one is at
 # least loud -- the new IdP's subjects share none of the old ones, so sync
@@ -33,7 +33,7 @@
 # Example: "authentik"
 #name =
 
-# Which adapter verifies this source's tokens and reads its directory (IdP).
+# Which adapter verifies this source's tokens and reads its IdP directory.
 # REQUIRED. KerBridge does not start until this line is completed.
 # Example: "authentik"
 #provider =
@@ -59,9 +59,9 @@
 # Example: "-authentik"
 #group_suffix =
 
-# This source's own directory (realm) account, and the file holding its password. One
+# This source's own realm directory account, and the file holding its password. One
 # account per source, never a shared one: AD enforces the write delegation
-# against the bound identity, and the directory (realm) audit is how you tell
+# against the bound identity, and the realm directory audit is how you tell
 # which source's cycle wrote what.
 #
 # Under /etc/kerbridge.secrets/generated/idp/<name>/, which is one mounted
@@ -77,14 +77,14 @@
 #bind_password_file =
 
 # The IdP-specific OU this source owns, derived from `name` and
-# realm.idp_parent_ou. State it only for a directory (realm) whose existing layout
+# realm.idp_parent_ou. State it only for a realm directory whose existing layout
 # collides with the derived name.
 #
 # Example: "OU=Authentik,OU=CloudIdP,DC=example,DC=site"
 #ou =
 
 # authentik: one OAuth2 provider and one application, plus the API token that
-# sync uses to read the directory (IdP). authentik splits the protocol (the Provider) from
+# sync uses to read the IdP directory. authentik splits the protocol (the Provider) from
 # the access control (the Application), so there is one of each and no third
 # object. The provider settings KerBridge needs are mandatory and none of them
 # shows up in a token: sub_mode, a Signing Key, the offline_access mapping and a

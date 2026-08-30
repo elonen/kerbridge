@@ -11,7 +11,7 @@
 #            link the real Kerberos.framework, so they run rather than compile.
 #            Billed at ten times an ubuntu runner, so the gate earns most here.
 #   authentik  Main, manual. A realm beside a live authentik: sync mirrors its
-#              directory (IdP), a scripted sign-in issues a TGT, and a file is read
+#              IdP directory, a scripted sign-in issues a TGT, and a file is read
 #              over SMB with it.
 #   build    Main, manual. Every shipping artifact still builds.
 #   stack    Main, manual. A realm provisioned from scratch, a TGT issued

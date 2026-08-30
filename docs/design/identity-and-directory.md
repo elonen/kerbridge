@@ -1,8 +1,8 @@
 # Design » Identity and directories
 
 What a cloud identity is, how a token becomes one, and who owns which object in
-the directory (realm). This document uses *directory (IdP)* for the users and
-groups that a cloud IdP exposes. It uses *directory (realm)* for the Samba AD
+the realm directory. This document uses *IdP directory* for the users and
+groups that a cloud IdP exposes. It uses *realm directory* for the Samba AD
 data store. [`DESIGN.md`](../../DESIGN.md) is the index.
 
 ## External identity model
@@ -39,11 +39,11 @@ the user's canonical, lowercase `uuid`.
 Both fields are frozen for the life of the deployment. A change to either
 rewrites each stored identity. That orphans each synchronized object, and
 detaches each file whose owner `idmap_rid` derived from that object's SID. The
-damage is silent. Only a directory (realm) restore recovers from it.
+damage is silent. Only a realm directory restore recovers from it.
 
 Each provider-specific part lives in `crates/kerbridge-idp`, which **both** the
 broker and sync link. This is not tidiness. The broker builds an identity from a
-verified token, and sync builds one from directory (IdP) data, in separate processes
+verified token, and sync builds one from IdP directory data, in separate processes
 with no channel between them. The value is also the join key of sync's
 reconciliation loop. Thus there is one encoder, reached from both sides.
 
@@ -92,7 +92,7 @@ moves the answer.
   (research spike `samba-ad-identity-attribute`).
 - Role marker: `extensionName = kbrole1|realm-admission` on each source's
   synchronized admission group. It lets sync and the broker recover the
-  group's immutable identity from the directory (realm) after a group rename
+  group's immutable identity from the realm directory after a group rename
   or a loss of adapter state. It is policy metadata, not a second identity
   mapping.
 - The broker fails closed if no object matches, or if more than one matches.
@@ -247,20 +247,20 @@ The adapter validates these values:
 - `sub`, which must be the canonical lowercase UUID of the user.
 
 authentik must use `sub_mode: user_uuid`. The REST API can filter users by this
-UUID. Thus, the token face and the directory (IdP) face use the same subject.
+UUID. Thus, the token face and the IdP directory face use the same subject.
 The default hashed subject cannot provide this property. The adapter does not
 normalize a subject. It rejects a noncanonical value.
 
 The adapter does not require `nbf`, because authentik does not emit it. It does
 not use an OAuth scope as an authorization decision. Admission comes from the
-group closure that sync writes to the directory (realm). `kbconfig check
+group closure that sync writes to the realm directory. `kbconfig check
 --online` verifies the issuer, asymmetric signing key, and attached
 `offline_access` scope mapping. It separately checks that the sync credential
-authenticates, can read the directory (IdP), and has a usable expiry.
+authenticates, can read the IdP directory, and has a usable expiry.
 
-## Directory (realm) ownership and synchronization
+## Realm directory ownership and synchronization
 
-Recommended directory (realm) layout:
+Recommended realm directory layout:
 
 ```text
 OU=CloudIdP,DC=example,DC=site              the IdP parent OU
@@ -277,7 +277,7 @@ OU=Resources,DC=example,DC=site
   external identity attributes, the mutable display attributes, the account
   state, and the IdP-derived direct memberships.
 - Sync does not own `OU=Resources`. It must not remove a synchronized group from
-  a locally managed group. That membership belongs to the directory (realm),
+  a locally managed group. That membership belongs to the realm directory,
   not to a cloud IdP.
 
 ### One realm, several cloud IdPs
@@ -345,19 +345,19 @@ Admission group:
 - If the admission group is deleted or is absent from the read, ticket issuance
   fails closed: freeze and alert, and never recreate the group automatically.
   Only the operator restores it, because a recreated group loses its SID.
-- A failed or incomplete directory (IdP) read never starts a destructive change.
+- A failed or incomplete IdP directory read never starts a destructive change.
 
 Deletion is conservative, because Samba SIDs can appear in durable ACLs:
 
 ```mermaid
 stateDiagram-v2
     [*] --> ACTIVE
-    ACTIVE --> RETIRED: gone from the directory (IdP) — disabled, marked, renamed into _retired-
+    ACTIVE --> RETIRED: gone from the IdP directory — disabled, marked, renamed into _retired-
     RETIRED --> ACTIVE: reappears, same SID
     RETIRED --> [*]: operator deletes, at any age
 ```
 
-- Users: one cycle takes a user who has left the directory (IdP) to disabled, marks the user
+- Users: one cycle takes a user who has left the IdP directory to disabled, marks the user
   `kbstate1|retired|<timestamp>`, and renames the user into the `_retired-`
   namespace. Sync itself deletes nothing.
 - Groups cannot be disabled as users can. Sync clears their IdP-owned direct
@@ -395,7 +395,7 @@ failed on each cycle, until a human intervened.
 
 </details>
 
-The Entra directory (IdP) behavior was measured in research spike
+The Entra IdP directory behavior was measured in research spike
 `entra-directory-sync`:
 
 - Graph access is app-only `User.Read.All` and `Group.Read.All`: a full read
@@ -466,7 +466,7 @@ Thus a stolen sync credential gives its holder access to each Kerberos-protected
 service, under either scheme, and to confine write-property does not touch that
 attack. To tighten the ACEs would additionally deny only the attributes that sync
 never uses — `servicePrincipalName`, `msDS-KeyCredentialLink` and similar. Those
-are escalation primitives *within* a directory (realm) whose whole population this
+are escalation primitives *within* a realm directory whose whole population this
 credential already owns, and whose only purpose is to have tickets issued from
 it.
 
@@ -475,7 +475,7 @@ each time that sync learns to write another attribute, and each mismatch aborts
 `make up`.
 
 The confinement that carries the weight is the scope of the IdP-specific OU
-itself. `OU=Resources` and the rest of the directory (realm) stay unreachable, and that
+itself. `OU=Resources` and the rest of the realm directory stay unreachable, and that
 is what stops a compromised sync from authorizing anything against a share.
 
 </details>
@@ -486,7 +486,7 @@ object, and not enough to alter one. Thus the operator CLI cannot race the
 reconciliation loop. It was measured on the bench (2026-07-28): sufficient for
 deletes, and insufficient for writes.
 
-### authentik directory (IdP) read
+### authentik IdP directory read
 
 authentik has no delta API for this use. The adapter reads all pages of
 `/core/users/` and `/core/groups/` in each cycle. It requests `?ordering=pk`:
@@ -512,7 +512,7 @@ The adapter cannot verify the grant, so it checks the outcome instead. The
 dangling-id check catches a permissions cut that runs through a visible
 membership edge. It cannot catch a closure root the configuration names — an
 allowlist entry, or the device-grant group — hidden together with everything it
-reaches: what comes back is a smaller directory (IdP) that is self-consistent and
+reaches: what comes back is a smaller IdP directory that is self-consistent and
 has no dangling edge. Publishing it would retire every object behind the hidden
 root. So a named closure root that is absent from the read yields **no
 snapshot**, and the failure names the roots it did not see. The admission group needs no rule
@@ -522,7 +522,7 @@ while Samba holds synchronized ones.
 The adapter applies the same admission closure, extra-group allowlist, held
 narrowing, and planner as Entra. It offers the username, display name and email
 address as login-name candidates, in that order. The planner decides which
-candidate is safe in the directory (realm).
+candidate is safe in the realm directory.
 
 ### Sync credential lifetime
 
@@ -532,7 +532,7 @@ candidate is safe in the directory (realm).
   can forbid secrets completely.
 - At expiry the client-credentials request fails (`AADSTS7000222`), and *each*
   Graph read stops at once. If nothing handles this, synchronization freezes in
-  silence and the directory (realm) drifts, until somebody notices a stale user.
+  silence and the realm directory drifts, until somebody notices a stale user.
 - Entra mails the application's owners before expiry. That needs an owner
   mailbox in the customer's tenant, which is not a control that this deployment
   owns.
@@ -588,7 +588,7 @@ it is refused for the same least-privilege reason as `Directory.Read.All`.
   [Operator notification](operations.md#operator-notification) describes, which
   delivers the event as a countdown and not on a repeat interval.
 - An expired or refused credential is its own categorized failure. It is
-  separate from a transient directory (IdP) read error. The failure never
+  separate from a transient IdP directory read error. The failure never
   starts a destructive reconciliation. For Entra, `AADSTS7000222` from the
   token endpoint is the authoritative signal. The configured date is only an
   early warning. For authentik, `403 "Token invalid/expired"` is the
@@ -604,7 +604,7 @@ it is refused for the same least-privilege reason as `Directory.Read.All`.
 - To rotate the credential, replace the credential file. If an Entra source uses
   a secret, update its expiry date. The adapter reads the replacement on the next
   cycle. authentik also measures the new token's expiry. The adapter state, the
-  directory (realm) mapping, and the quarantine state are not affected. No
+  realm directory mapping, and the quarantine state are not affected. No
   resynchronization is necessary.
 
 The same failure class exists on the Samba side. The delegated sync account and

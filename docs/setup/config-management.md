@@ -23,7 +23,7 @@ config set<sup>[?](../../deploy/GLOSSARY.md#config-set)</sup>.
 | File | What it configures |
 |---|---|
 | `main.toml` | The entry point. It names your sources, and holds `[notify]`. |
-| `realm.toml` | The realm, and the directory (realm) the services read. |
+| `realm.toml` | The realm, and the realm directory the services read. |
 | `issuerd.toml` | The ticket issuer. |
 | `broker.toml` | The broker. |
 | `sync.toml` | The IdP-to-realm mirror. |
@@ -79,7 +79,7 @@ Example. `sync.toml` ships this:
 
 ```toml
 # Log the plan every cycle and apply nothing. The safe way to watch a new
-# deployment before letting it write the directory (realm).
+# deployment before letting it write the realm directory.
 #dry_run = false
 ```
 
@@ -89,7 +89,7 @@ To watch the deployment first, make it this:
 dry_run = true
 ```
 
-To let sync write the directory (realm) later, comment the line out again.
+To let sync write the realm directory later, comment the line out again.
 
 ## See what you decided
 

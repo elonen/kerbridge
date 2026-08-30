@@ -19,7 +19,7 @@ const A_GROUP: &str = "9202b000-0000-0000-0000-000000000001";
 
 /// A live account's login name follows a display-name change. It is what
 /// Windows shows as the file owner and in the *Security* tab, so leaving a
-/// renamed person's old name on their files means the directory (realm) is stale.
+/// renamed person's old name on their files means the realm directory is stale.
 /// The cost is one sign-out because the sam is a Kerberos principal.
 #[test]
 fn a_live_login_name_follows_the_display_name() {

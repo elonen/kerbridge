@@ -60,8 +60,8 @@ so it takes effect within one `interval_seconds`, which is 300 by default.
 > secret. Sync runs unprivileged, and it reaches the file through its group.
 
 > **CAUTION: Store each sync credential as a secret.** It is read-only in the
-> cloud IdP, but it can read that provider's whole directory (IdP), including
-> users that KerBridge does not synchronize. Sync's separate directory (realm)
+> cloud IdP, but it can read that provider's whole IdP directory, including
+> users that KerBridge does not synchronize. Sync's separate realm directory
 > account can create admitted identities, but its rights are confined to that
 > source's IdP-specific OU. It cannot change `OU=Resources`.
 
@@ -88,7 +88,7 @@ with a number that `adduser` chose, so there is no gid to check.
 
 Set `dry_run = true` in `sync.toml` **before sync first runs**. The template
 comments this line out, and the default is `false`, so a deployment that leaves
-the line alone writes to the directory (realm) on its first cycle. Remove the `#` from
+the line alone writes to the realm directory on its first cycle. Remove the `#` from
 `#dry_run = false`, then change the value to `true`.
 
 Watch one or two cycles:
@@ -98,7 +98,7 @@ docker compose logs -f sync          # Docker Compose
 journalctl -u kerbridge-sync -f      # Debian
 ```
 
-Check that sync reads the directory (IdP), that it resolves the admission group, and
+Check that sync reads the IdP directory, that it resolves the admission group, and
 that it logs the plan that it *would* apply.
 
 ### 3. Let it write

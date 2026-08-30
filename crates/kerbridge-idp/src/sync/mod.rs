@@ -1,9 +1,9 @@
-//! The directory (IdP) face: what an adapter reads out of its IdP, and the shape it
+//! The IdP directory face: what an adapter reads out of its IdP, and the shape it
 //! hands over.
 //!
 //! This isolates IdP-specific things from LDAP types. The mirror receives a
-//! [`SourceSnapshot`] and makes directory (realm) changes from it; nothing about the
-//! directory (realm) -- no bind identity, no OU, no `sAMAccountName` -- is reachable
+//! [`SourceSnapshot`] and makes realm directory changes from it; nothing about the
+//! realm directory -- no bind identity, no OU, no `sAMAccountName` -- is reachable
 //! from below the seam.
 //!
 //! Behind the crate's `sync` feature, so the broker's binary carries none of it.
@@ -28,7 +28,7 @@ pub(crate) mod conformance;
 
 /// What one [`DirectorySource::advance`] concluded.
 pub enum Progress {
-    /// A whole directory (IdP) enumeration, observed in one uninterrupted read.
+    /// A whole IdP directory enumeration, observed in one uninterrupted read.
     Complete(SourceSnapshot),
     /// No credential yet. Not a fault, and never counted.
     Idle(String),
@@ -128,7 +128,7 @@ pub enum CredentialState {
     Unknown,
 }
 
-/// One directory (IdP), reduced to what the mirror needs of it.
+/// One IdP directory, reduced to what the mirror needs of it.
 ///
 /// INVARIANT: cursors do not survive a restart. An adapter must be correct when
 /// its first cycle after start is a full read.
@@ -151,7 +151,7 @@ pub trait DirectorySource: Send {
 
 /// The one place a configured source becomes an adapter.
 ///
-/// Connect a configured directory (IdP). A failure stops sync because silently
+/// Connect a configured IdP directory. A failure stops sync because silently
 /// skipping a source would treat its complete population as departed.
 pub fn connect(
     settings: &IdpSettings,
@@ -180,7 +180,7 @@ pub struct Desired {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DesiredUser {
-    /// What the directory (IdP) shows: `displayName`, and the CN built from it.
+    /// What the IdP directory shows: `displayName`, and the CN built from it.
     pub display_name: String,
     /// What the login name may be minted from, best first.
     ///
@@ -227,7 +227,7 @@ const CANDIDATE_CHARS: usize = 20;
 ///
 /// NFC first, and this is the only place a read-path name is normalized:
 /// Unicode spells `å` as either `U+00E5` or `a` + `U+030A`, the two render
-/// identically, and deriving both would put two accounts in the directory (realm) that
+/// identically, and deriving both would put two accounts in the realm directory that
 /// no human can tell apart.
 ///
 /// The budget is not a parameter. An adapter that can pass a length can pass
@@ -370,7 +370,7 @@ pub fn build_desired(
                     mm.push(sub.clone());
                 }
                 // `selected`, not `groups`: a member group the read has but the
-                // closure did not select has no directory (realm) object, so naming it
+                // closure did not select has no realm directory object, so naming it
                 // here would put a member in `membership` that is absent from
                 // `groups`. The planner drops such a reference silently when it
                 // fails to resolve a DN for it, which makes this an invariant held
@@ -395,7 +395,7 @@ pub fn build_desired(
         membership.insert(gid.clone(), mm);
     }
 
-    // A directory (realm) object exists for someone a selected group holds, and for
+    // A realm directory object exists for someone a selected group holds, and for
     // nobody else. The admission group and the allowlist are therefore the whole
     // answer to "who has an account here", not merely "who may get a ticket":
     // an operator reading the IdP-specific OU in ADUC sees the admitted set and

@@ -46,7 +46,7 @@ its ACLs.
 
 | Layer | Owner | Lives in |
 |---|---|---|
-| Cloud users and their group membership | The cloud IdP | The directory (IdP) |
+| Cloud users and their group membership | The cloud IdP | The IdP directory |
 | Their managed realm objects | `kerbridge-sync` | The source's IdP-specific OU |
 | Resource groups | You | Anywhere outside `OU=CloudIdP`; `OU=Resources` by default |
 | Share definitions and filesystem ACLs | You | The file server |
@@ -200,7 +200,7 @@ gshadow:        files
 Rules for these two lines:
 
 - **Keep `files` first.** Local system accounts then always resolve locally. An
-  entry in the directory (realm) with the same name cannot hide them, and they continue to
+  entry in the realm directory with the same name cannot hide them, and they continue to
   resolve if winbind is down or the DC is unreachable.
 - **Put `winbind` last**, after `systemd` if it is there. Keep `systemd`: if
   you remove it, resolution breaks for the dynamic users of services with
@@ -415,7 +415,7 @@ flowchart TD
 
 The recurring work — who has access — happens **in the cloud IdP**, where group
 membership is stored. When a person joins or leaves a project, nothing changes
-on the file server or in the directory (realm).
+on the file server or in the realm directory.
 
 The on-prem work is per-share, and you do it one time: create a resource group,
 nest a synced group into it, and set an ACL.
@@ -428,7 +428,7 @@ When a person reaches the server but a folder denies access, run
 - It will not write to `OU=CloudIdP`. Those OUs belong to `kerbridge-sync`, and
   a second writer that races the reconciliation loop is exactly the problem
   that this project avoids.
-- It *can* delete there, to repair a directory (realm) that is in a bad state. It
+- It *can* delete there, to repair a realm directory that is in a bad state. It
   states clearly what that costs: it deletes the SID, and every filesystem ACE
   that names the SID then points to nothing. It is not a cleanup tool. Retired
   objects are intended to accumulate.

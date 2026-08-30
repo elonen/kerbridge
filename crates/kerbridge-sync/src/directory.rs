@@ -93,7 +93,7 @@ impl Directory {
         ldap3::drive!(conn);
         ldap.simple_bind(&self.bind_dn, &self.bind_password)
             .await
-            .context("binding to the directory (realm)")?
+            .context("binding to the realm directory")?
             .success()
             .with_context(|| format!("binding as {}", self.bind_dn))?;
         Ok(ldap)
@@ -583,7 +583,7 @@ mod tests {
 
     /// The complexity rule itself is `kerbridge_core::password`'s to hold, over
     /// thousands of draws. What is this crate's is the form: a delegation that
-    /// silently changed the alphabet would be invisible until a directory (realm)
+    /// silently changed the alphabet would be invisible until a realm directory
     /// refused a password.
     #[test]
     fn random_password_is_still_the_form_this_crate_writes() {

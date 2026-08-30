@@ -401,7 +401,7 @@ test-mac:
 # parsing when the deployment file is absent.
 test-build: build-docker installer
 
-# Test authentik sign-in and a directory (IdP) read through an SMB file read.
+# Test authentik sign-in and a IdP directory read through an SMB file read.
 # This tier uses a disposable project, subnet, port and tree of its own under
 # .local-tmp/ -- distinct from test-stack's, so the two can run at once -- and
 # pulls pinned external images. `ARGS=--keep` preserves the stack.

@@ -123,7 +123,7 @@ broker.
 The deployment-shape file, holding what compose itself interpolates and what the
 deploy scripts source as shell. Its keys are classified by **where the operator
 gets the value** — the realm being created, the portal,
-the directory (realm), or nowhere but the operator's own decision, which is unprefixed.
+the realm directory, or nowhere but the operator's own decision, which is unprefixed.
 It carries no secrets; those are one-value files under `secrets/`.
 
 Read last, after [`bench.env`](#benchenv), by compose and by the scripts alike:
@@ -150,7 +150,7 @@ bench file server, the mock IdP, and the accounts and identifiers
 
 The subdirectory of `secrets/` holding machine-generated
 values, never to be opened or edited: the same value also lives in the
-directory (realm), so editing one desynchronizes a password rather than changing it.
+realm directory, so editing one desynchronizes a password rather than changing it.
 It is the whole of what [`kbsetup`](../GLOSSARY.md#kbsetup) writes and the only
 part of `secrets/` the [setup service](#setup-service) is given, which is why a
 per-source `bind_password` lives at `generated/idp/<name>/` rather than beside
@@ -284,7 +284,7 @@ memberships, file ownership — with nothing reporting it.
 
 It is also the enable switch. Drop a name and keep the file and that source stops
 being mirrored and stops being served, with nothing in the
-[directory (realm)](../GLOSSARY.md#directory-realm) touched; there is no `enabled` field. A
+[realm directory](../GLOSSARY.md#realm-directory) touched; there is no `enabled` field. A
 listed name with no file refuses to start, and a file no name lists is ignored
 with a line saying so.
 <!-- refs: `main.sources`, `kbconfig sources` -->

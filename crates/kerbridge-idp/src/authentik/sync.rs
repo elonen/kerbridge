@@ -1,4 +1,4 @@
-//! The authentik directory (IdP) adapter, behind the directory-source seam.
+//! The authentik IdP directory adapter, behind the directory-source seam.
 //!
 //! Each cycle reads all users and groups with an API token. It returns a complete
 //! enumeration or no enumeration. authentik has no delta API or group change
@@ -41,7 +41,7 @@ fn complete_snapshot(
 
 /// One authentik instance, read over its REST API.
 ///
-/// Directory (realm) details such as the bind identity and OU do not cross the
+/// Realm directory details such as the bind identity and OU do not cross the
 /// directory-source seam.
 pub struct AuthentikSource {
     /// This source's name, the subject of every problem raised below the seam.
@@ -77,7 +77,7 @@ impl AuthentikSource {
         }
     }
 
-    /// This source's sync credential -- the API token used to read the directory (IdP)
+    /// This source's sync credential -- the API token used to read the IdP directory
     /// -- or `None` while the operator has yet to paste one in, which is the
     /// state [`kerbridge_core::secret::read_optional`] defines: setup is
     /// incomplete, the source has not failed, and the next cycle looks again.
@@ -102,7 +102,7 @@ impl AuthentikSource {
     /// invariant here, before a snapshot exists.
     fn snapshot(&self, read: crate::sync::Enumeration) -> Result<SourceSnapshot, String> {
         // The device-grant group joins the closure roots the way an allowlist
-        // entry does: someone held only by it gets a directory (realm) object and no
+        // entry does: someone held only by it gets a realm directory object and no
         // admission, so the two groups are additive, never alternatives.
         let mut roots: Vec<Subject> = self.allowlist.iter().cloned().map(Subject::new).collect();
         let grant = self.grant_group_id.clone().map(Subject::new);

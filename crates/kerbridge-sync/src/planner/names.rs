@@ -140,11 +140,11 @@ pub(crate) fn group_suffix_rejection(suffix: &str) -> Option<String> {
 /// `sAMAccountName`-safe, by the one rule `issuerd` also validates against.
 ///
 /// The retirement path only. A name minted from the cloud goes through
-/// `kerbridge_idp::sync::name_candidate`; this reshapes a name the directory (realm)
+/// `kerbridge_idp::sync::name_candidate`; this reshapes a name the realm directory
 /// already holds.
 ///
 /// NFC first, as that function does: Unicode spells `å` as either `U+00E5` or
-/// `a` + `U+030A`, the two render identically, and a directory (realm) holding both
+/// `a` + `U+030A`, the two render identically, and a realm directory holding both
 /// holds two accounts no human can tell apart. A name this tool wrote is
 /// composed already; a hand-edited one need not be.
 ///

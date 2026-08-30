@@ -57,7 +57,7 @@ const NOT_CANONICAL: &str = "a UUID in canonical lowercase form: authentik seria
 /// Store the user's canonical lowercase `uuid` with `sub_mode: user_uuid`.
 ///
 /// The UUID is the only user identifier that `/core/users/` can filter on. The
-/// token face and directory (IdP) face therefore use the same rule. The adapter
+/// token face and IdP directory face therefore use the same rule. The adapter
 /// rejects, and does not normalize, a noncanonical value. Normalization could
 /// silently change a permanent stored subject.
 pub fn identity(source: &Source, uuid: &str) -> Result<ExternalIdentity, IdentityError> {
@@ -123,7 +123,7 @@ pub struct Settings {
     /// whatever happened to be on disk.
     pub jwks_url: String,
     pub display_name: String,
-    /// The file holding the API token that sync uses to read the directory (IdP).
+    /// The file holding the API token that sync uses to read the IdP directory.
     ///
     /// There is deliberately no `sync_credential_expires` beside it: authentik
     /// reports an API token's own expiry to the bearer, so the adapter measures
@@ -342,7 +342,7 @@ struct Discovery {
 }
 
 /// Compare the public provider metadata and test the sync credential. The
-/// authenticated probes test the token, directory (IdP) grant, and expiry.
+/// authenticated probes test the token, IdP directory grant, and expiry.
 pub(crate) async fn probe(
     settings: &Settings,
     credential: Option<&str>,
@@ -425,7 +425,7 @@ fn credential_verdict(fetched: Fetched) -> Probe {
     }
 }
 
-/// `GET /core/groups/?page_size=1`: does the grant permit a directory (IdP) read?
+/// `GET /core/groups/?page_size=1`: does the grant permit a IdP directory read?
 async fn grant_probe(base: &str, token: &str, timeout: Duration) -> Probe {
     let url = format!("{}/api/v3/core/groups/?page_size=1", base.trim_end_matches('/'));
     grant_verdict(get_authed(&url, token, timeout).await)
@@ -436,10 +436,10 @@ async fn grant_probe(base: &str, token: &str, timeout: Duration) -> Probe {
 /// so the permission must be global.
 fn grant_verdict(fetched: Fetched) -> Probe {
     match fetched {
-        Fetched::Body(_) => Probe::pass(GRANT, "the service account may list the directory (IdP)"),
+        Fetched::Body(_) => Probe::pass(GRANT, "the service account may list the IdP directory"),
         Fetched::Status(403) => Probe::fail(
             GRANT,
-            "authentik refused the directory (IdP) read (403): with the sync-credential leg green \
+            "authentik refused the IdP directory read (403): with the sync-credential leg green \
              this is a missing grant -- give the service account view_user and view_group globally \
              through a Role. A per-object grant answers 200 with a silently truncated list, which \
              reconciles the people it left out as departures.",
@@ -665,7 +665,7 @@ pub(crate) fn measured_days(body: &str, now: u64) -> Option<i64> {
 /// build rather than misleading an operator.
 #[cfg(feature = "schema")]
 pub(crate) const AUTHENTIK_SRC: &str = r#"# authentik: one OAuth2 provider and one application, plus the API token that
-# sync uses to read the directory (IdP). authentik splits the protocol (the Provider) from
+# sync uses to read the IdP directory. authentik splits the protocol (the Provider) from
 # the access control (the Application), so there is one of each and no third
 # object. The provider settings KerBridge needs are mandatory and none of them
 # shows up in a token: sub_mode, a Signing Key, the offline_access mapping and a
@@ -799,7 +799,7 @@ pub mod tests {
     #[test]
     fn both_faces_derive_the_same_bytes_from_one_uuid() {
         let from_idp = crate::encode_identity(crate::Provider::Authentik, &source(), USER_UUID)
-            .expect("the directory (IdP) face encodes a uuid");
+            .expect("the IdP directory face encodes a uuid");
         let token = identity(&source(), USER_UUID).expect("the token face encodes the same uuid");
         assert_eq!(from_idp, token, "one rule, so one identity");
         assert_eq!(from_idp.encode(), format!("kb1|authentik|{USER_UUID}"));
@@ -812,7 +812,7 @@ pub mod tests {
     fn a_non_canonical_subject_is_refused_on_both_faces_and_names_its_cause() {
         let uppercase = USER_UUID.to_ascii_uppercase();
         let from_idp = crate::encode_identity(crate::Provider::Authentik, &source(), &uppercase)
-            .expect_err("the directory (IdP) face refuses it");
+            .expect_err("the IdP directory face refuses it");
         let from_token = identity(&source(), &uppercase).expect_err("the token face refuses it");
         assert_eq!(from_idp, from_token, "one rule, so one refusal");
 

@@ -286,7 +286,7 @@ const GRAPH_PATH: &str = "/v1.0";
 /// Only the first URL of a stream is this crate's own; every one after it is
 /// `@odata.nextLink` as the server wrote it, and the stored cursor a later cycle
 /// resumes from is the same string read back from disk. The request carries a
-/// bearer token issued for Graph and for the whole tenant's directory (IdP), so a URL
+/// bearer token issued for Graph and for the whole tenant's IdP directory, so a URL
 /// pointing elsewhere is that token handed to whoever is there -- and the read
 /// would then look like an ordinary empty page. Checked on every request rather
 /// than where links are parsed, so a new call site cannot skip it.
@@ -379,7 +379,7 @@ fn carries_cursor(url: &str) -> bool {
 
 /// Graph refused the request itself, not the transport. `401` is an access token
 /// Graph no longer accepts -- normally one that aged out during a long read, which
-/// the next cycle's own token clears. `403` is a directory (IdP) permission the
+/// the next cycle's own token clears. `403` is a IdP directory permission the
 /// application never had, which no retry fixes.
 #[derive(Debug)]
 pub(super) struct AuthRefused {

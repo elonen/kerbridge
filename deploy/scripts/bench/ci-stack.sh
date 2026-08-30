@@ -15,7 +15,7 @@
 #   3. The public endpoint terminates TLS on a certificate this script creates, and
 #      the broker answers GET /config behind it.
 #   4. POST /ticket with a freshly issued token returns a real KDC-signed TGT:
-#      verify -> resolve the external identity in the directory (realm) -> issue.
+#      verify -> resolve the external identity in the realm directory -> issue.
 #   5. One engineer's sign-in authorizes a machine to obtain tickets as a service
 #      account they hold no credential for, and the ticket that machine gets is
 #      the service account's. An admitted user outside the delegate group cannot
@@ -128,7 +128,7 @@ EOF
 # ---------------------------------------------------------------------------
 tok() { printf 'Authorization: Bearer %s' "$(cat "$FIXDIR/$1.jwt")"; }
 
-say "seeding the demo directory (realm)"
+say "seeding the demo realm directory"
 scripts/bench/seed-demo.sh
 
 say "POST /ticket with a token issued three minutes ago"
@@ -149,7 +149,7 @@ echo "an expired token from the same key is refused 401"
 # ---------------------------------------------------------------------------
 # Device grants do not require TPM attestation. A software key therefore tests
 # the assertion format, single-use nonce, grant-group gate, and grant value stored
-# in the directory (realm).
+# in the realm directory.
 # The Windows bench tests the CNG client path.
 # ---------------------------------------------------------------------------
 say "authorizing a device with the same token"
