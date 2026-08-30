@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use objc2::rc::Retained;
 use objc2::runtime::{NSObject, NSObjectProtocol};
-use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
+use objc2::{ClassType, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSAlert, NSAlertStyle, NSApplication, NSButton, NSControlStateValueOff, NSControlStateValueOn,
     NSTextField, NSView, NSWorkspace,
@@ -173,10 +173,10 @@ fn queue(job: Job) {
 /// the other -- there is no run loop yet to track it in.
 fn next_pass(job: Job) {
     MAIN_QUEUE.lock().unwrap().push(job);
+    // `class()` registers the class on first use; `define_class!` alone does
+    // not. A wake-up can arrive before the main thread builds its first `Runner`.
     unsafe {
-        let cls = objc2::runtime::AnyClass::get(c"KerBridgeRunner")
-            .expect("KerBridgeRunner is defined by define_class! above");
-        let obj: *mut NSObject = msg_send![cls, new];
+        let obj: *mut NSObject = msg_send![Runner::class(), new];
         // Owned, so it is released once the message has been delivered; left
         // raw it would leak one object per wake-up. `performSelectorOnMainThread`
         // retains the receiver until then, so the drop below is not a race.
