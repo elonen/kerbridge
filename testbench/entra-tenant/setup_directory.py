@@ -107,7 +107,7 @@ state["users"]["kb-guest"] = inv["invitedUser"]["id"]
 print("guest %-14s %s" % ("kb-guest", inv["invitedUser"]["id"]))
 
 # --- groups ------------------------------------------------------------
-admission = mkgroup("onprem-realm-users", "onprem-realm-users")
+admission = mkgroup("kb-admission", "KerBridge Allowed On-prem Users")
 eng = mkgroup("eng-team", "eng-team")
 sub = mkgroup("eng-backend", "eng-backend")
 projx = mkgroup("proj-x", "proj-x")

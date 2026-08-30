@@ -149,8 +149,13 @@ Python reference implementations and the spike bring-up scripts are gone.
   `fixtures/authentik-directory/` is derived from.
 - `mock-idp/` — the fake OIDC server and approval hook that `make test-stack`
   runs instead of a live tenant.
-- `entra-tenant/` — the tools for driving a live Entra tenant. Kept because they
-  implement nothing KerBridge ships and the work they serve is still open.
+- `entra-tenant/` — the tools for driving a live Entra tenant, and
+  `conformance.py`, which reads one to check that `fixtures/graph-sync/` still
+  describes what Graph sends — the corpus is written from documentation, so
+  `make test` cannot tell.
+  [`testbench/entra-tenant/README.md`](testbench/entra-tenant/README.md) is the
+  procedure and the tenant it expects. The rest are kept because they implement
+  nothing KerBridge ships and the work they serve is still open.
 - `wire.py` — decodes a tcpdump capture without tshark, which
   [`docs/windows-testbench.md`](docs/windows-testbench.md) needs and nothing else provides.
 

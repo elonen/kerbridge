@@ -37,6 +37,12 @@ DEV_1 = "de71ce14-aaaa-bbbb-cccc-000000000014"
 SP_1 = "5e9f1015-aaaa-bbbb-cccc-000000000015"
 
 USER_SELECT = "id,displayName,userPrincipalName,accountEnabled,userType,onPremisesSyncEnabled"
+# A `/members` read with no $select answers with the default property set, and
+# that set has no userType -- measured against a live tenant on 2026-08-30. Every
+# member read therefore names what it wants. A property that no returned type
+# holds is ignored rather than refused, so one list serves the mixed collection.
+MEMBER_SELECT = ("id,displayName,userPrincipalName,userType,securityEnabled,mailEnabled,"
+                 "groupTypes,membershipRule,membershipRuleProcessingState,deviceId,appId")
 GROUP_SELECT = ("id,displayName,securityEnabled,mailEnabled,groupTypes,membershipRule,"
                 "membershipRuleProcessingState,onPremisesSyncEnabled,members")
 
@@ -45,9 +51,19 @@ def user(oid, dn, upn, enabled=True, utype="Member", onprem=None):
             "accountEnabled": enabled, "userType": utype, "onPremisesSyncEnabled": onprem}
 
 def group(gid, dn, sec=True, mail=False, gtypes=None, rule=None, rulestate=None, onprem=None):
-    return {"id": gid, "displayName": dn, "securityEnabled": sec, "mailEnabled": mail,
-            "groupTypes": gtypes or [], "membershipRule": rule,
-            "membershipRuleProcessingState": rulestate, "onPremisesSyncEnabled": onprem}
+    # A selected property with no value is omitted, not returned as null. Measured
+    # against a live tenant on 2026-08-30: a `/groups/delta` that selects
+    # membershipRule, membershipRuleProcessingState and onPremisesSyncEnabled gets
+    # back none of the three for a cloud-only static group. `/users` differs -- it
+    # does return onPremisesSyncEnabled as null -- so this is a groups rule, not a
+    # Graph-wide one, and `user()` above keeps its nulls.
+    g = {"id": gid, "displayName": dn, "securityEnabled": sec, "mailEnabled": mail,
+         "groupTypes": gtypes or []}
+    for key, value in (("membershipRule", rule), ("membershipRuleProcessingState", rulestate),
+                       ("onPremisesSyncEnabled", onprem)):
+        if value is not None:
+            g[key] = value
+    return g
 
 def mref(t, oid, removed=False):
     d = {"@odata.type": f"#microsoft.graph.{t}", "id": oid}
@@ -215,13 +231,13 @@ fx("transitive_members_admission_group", "GET",
         "admission cross-check; costs 5 resource units vs 3 for /members (throttling-limits).")
 
 # --- 11. syncable zoo: every claimed member type on one admission group ---------------------
-fx("syncable_zoo_members", "GET", f"{G}/groups/{ADMISSION}/members", 200,
-   {"@odata.context": f"{G}/$metadata#directoryObjects", "value": [
+fx("syncable_zoo_members", "GET", f"{G}/groups/{ADMISSION}/members?$select={MEMBER_SELECT}", 200,
+   {"@odata.context": f"{G}/$metadata#directoryObjects({MEMBER_SELECT})", "value": [
       dict(mref("user", U_ALICE), **{"displayName": "Alice Anderson", "userType": "Member"}),
       dict(mref("user", U_GUEST), **{"displayName": "Gary Guest", "userType": "Guest",
            "userPrincipalName": "gary_partner.example#EXT#@contoso.onmicrosoft.com"}),
       dict(mref("group", G_MID), **{"displayName": "mid-group", "securityEnabled": True,
-           "mailEnabled": False, "groupTypes": [], "onPremisesSyncEnabled": None}),
+           "mailEnabled": False, "groupTypes": []}),
       dict(mref("group", G_M365), **{"displayName": "marketing-m365", "securityEnabled": False,
            "mailEnabled": True, "groupTypes": ["Unified"]}),
       dict(mref("group", G_DYN), **{"displayName": "all-fte-dynamic", "securityEnabled": True,

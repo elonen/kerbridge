@@ -106,6 +106,7 @@ them, and [`../docs/setup/entra-manual.md`](../docs/setup/entra-manual.md) is th
 
 | File | What |
 |---|---|
+| `conformance.py` | Reads a live tenant and compares it with the `graph-sync` corpus, so the corpus stops being documentation-derived. Read-only, run by hand, never a tier. [`entra-tenant/README.md`](entra-tenant/README.md) is the whole procedure, including how to build a tenant for it. |
 | `graph.py` | Thin Graph client the rest call. Reads the tenant id from `ENTRA_TENANT_ID` or a local `config.json`; credentials from a gitignored `secrets/`. |
 | `devicecode.py` | Device-code flow for a delegated admin Graph token. |
 | `pkce.py` | Auth code + PKCE for a *user* token, loopback redirect. `client/kerbridge-client/src/oidc.rs` is the port of this, and `kerbridge.exe --token-file` still takes the `access_token` it writes. |

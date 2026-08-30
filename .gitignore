@@ -1,4 +1,10 @@
 .local-tmp/
+
+# Credentials for a live tenant, exported into a shell. `deploy/.gitignore`
+# already excludes the deployment's own; this is the repository root, where the
+# Graph conformance run's three variables are kept.
+/.env
+
 .DS_Store
 target/
 dist/

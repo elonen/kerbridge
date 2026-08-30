@@ -60,6 +60,18 @@ none, their cases being hand-written or hand-derived golden files.
 <!-- refs: `make_fixtures.py` / `make_fixtures.sh`, one per generated corpus: `entra-token`, `authentik-token`, `graph-sync`, `tls`; the two token generators share `tokenforge.py` -->
 <!-- avoid: script -->
 
+### Graph conformance run
+
+The read-only run that points [`conformance.py`](entra-tenant/conformance.py) at
+a live Entra tenant and names each place where Graph and the `graph-sync`
+[corpus](#corpus) disagree. It states the directory (IdP) it expects, in the
+words the Entra portal uses, so the tenant is reproducible. It is run by hand
+and it gates nothing: it turns red when Microsoft changes something, not when a
+commit does.
+<!-- refs: `testbench/entra-tenant/conformance.py`, `testbench/entra-tenant/README.md` -->
+<!-- avoid: conformance test, live tier, graph test -->
+<!-- different than: the verifier conformance suite, which is a set of cases inside `test-fast` -->
+
 ### instrument
 
 A script in the live-tenant tooling, pointed at a live tenant to settle one

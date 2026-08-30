@@ -284,6 +284,7 @@ test-fast:
 		exit 1; \
 	fi
 	python3 deploy/scripts/bench/test_prepare_ci_tree.py
+	python3 testbench/entra-tenant/test_conformance.py
 	@body=$$(sed -e '/^idp_prepare()/,/^}$$/d' -e '/^idp_env_lines()/,/^}$$/d' \
 		-e '/^idp_source_toml()/,/^}$$/d' -e '/^[[:space:]]*#/d' \
 		-e '/^SOURCE=/d' -e '/^TENANT=/d' -e '/^export COMPOSE_FILE=/d' \

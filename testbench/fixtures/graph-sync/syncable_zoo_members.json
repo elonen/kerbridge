@@ -2,7 +2,7 @@
   "note": "Syncable fixture. KNOWN ISSUE (group-list-members doc): v1.0 /members omits servicePrincipals; included here deliberately so the syncable filter is exercised - implementation must reject SPs whether or not Graph returns them. @odata.type strings for device/servicePrincipal are pattern-inferred (live-tenant TODO).",
   "request": {
     "method": "GET",
-    "url": "https://graph.microsoft.com/v1.0/groups/4e8a1c9d-5f6b-4d7e-b8a9-001122334455/members"
+    "url": "https://graph.microsoft.com/v1.0/groups/4e8a1c9d-5f6b-4d7e-b8a9-001122334455/members?$select=id,displayName,userPrincipalName,userType,securityEnabled,mailEnabled,groupTypes,membershipRule,membershipRuleProcessingState,deviceId,appId"
   },
   "response": {
     "status": 200,
@@ -10,7 +10,7 @@
       "Content-Type": "application/json"
     },
     "body": {
-      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#directoryObjects",
+      "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#directoryObjects(id,displayName,userPrincipalName,userType,securityEnabled,mailEnabled,groupTypes,membershipRule,membershipRuleProcessingState,deviceId,appId)",
       "value": [
         {
           "@odata.type": "#microsoft.graph.user",
@@ -31,8 +31,7 @@
           "displayName": "mid-group",
           "securityEnabled": true,
           "mailEnabled": false,
-          "groupTypes": [],
-          "onPremisesSyncEnabled": null
+          "groupTypes": []
         },
         {
           "@odata.type": "#microsoft.graph.group",
