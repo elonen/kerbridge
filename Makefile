@@ -77,7 +77,10 @@ cli-dist:
 # tags are unavailable: `make debian-docker KB_VERSION=0.10.0`.
 #
 # Build one native architecture per run. Do not reuse KBMANAGE_PLATFORM because
-# emulating six crate builds is slow.
+# emulating six crate builds is slow. Release CI builds each architecture on a
+# runner of that architecture for the same reason. DEB_PLATFORM overrides it for
+# a one-off cross build: `make debian-docker DEB_PLATFORM=linux/amd64`.
+DEB_PLATFORM ?=
 KB_VERSION ?= $(shell debian/make-changelog --print-version)
 
 # CI sets optional BuildKit cache flags because a fresh runner has no builder
@@ -102,6 +105,7 @@ debian-docker:
 	@# `apt-get install ./*.deb` select multiple versions.
 	rm -rf $(DIST)/debian
 	docker buildx build -f debian/Dockerfile --build-arg KB_VERSION=$(KB_VERSION) \
+	  $(if $(DEB_PLATFORM),--platform=$(DEB_PLATFORM)) \
 	  $(DOCKER_CACHE) --target dist --output type=local,dest=$(DIST)/debian .
 	@ls -l $(DIST)/debian
 
