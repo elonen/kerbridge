@@ -111,3 +111,14 @@ Entra, but it writes to the directory (realm): it creates the identities in
 
 Entra always signs asymmetrically, so there is no signing-key choice to make on
 this provider.
+
+## Removing it
+
+This is [step 9 (*Uninstall*) in
+SETUP.md](../../SETUP.md#9-uninstall), for the Entra side.
+
+On the Terraform path, `terraform destroy` removes all of it —
+[Teardown (`entra-terraform.md`)](entra-terraform.md#teardown), which also says
+what deleting the group costs you. By hand, delete the three application
+registrations and the admission group, and revoke the sync app's secret if it
+outlives the app.

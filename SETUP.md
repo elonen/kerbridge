@@ -561,6 +561,11 @@ The steps above, in reverse.
    A purge is not a decommission: it keeps your secrets, your audit logs and
    the domain itself. For the full list of what stays, see
    [The packages (`debian-deployment.md`)](docs/setup/debian-deployment.md#the-packages).
+5. **Your cloud identity provider(s)** — delete what step 2 created. KerBridge
+   owns nothing else in the provider, and a user's cloud account does not
+   change. Follow the page for the provider:
+   [Entra](docs/setup/entra.md#removing-it),
+   [authentik](docs/setup/authentik.md#removing-it).
 
 > **CAUTION: Make a backup before you destroy the domain.** A new provision of
 > the same realm gives you a *different* domain SID, and the existing

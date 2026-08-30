@@ -159,3 +159,35 @@ The rest of this source's setup is the `idp_authentik.toml` named above, not
 authentik. It lists every `[provider_config]` value, marks the ones you must
 supply, and explains the derived URLs. The blueprint fills the authentik side;
 that file is the KerBridge side.
+
+## Removing it
+
+This is [step 9 (*Uninstall*) in
+SETUP.md](../../SETUP.md#9-uninstall), for the authentik side.
+
+**Delete the blueprint instance first**, under **Customization → Blueprints**.
+It re-applies every hour, so an object you delete while the instance stands
+comes back within the hour — see [Why the entries heal](#why-the-entries-heal-and-what-stays-yours).
+
+Then delete what it made, and the token you made by hand:
+
+| Where | What |
+|---|---|
+| **Directory → Tokens** | the API token for sync |
+| **Applications → Providers** | the OAuth2 provider `KerBridge` |
+| **Applications → Applications** | the application with slug `kerbridge` |
+| **Directory → Users** | the service account `svc-kerbridge-sync` |
+| **Directory → Roles** | `KerBridge sync (read-only)` |
+| **Directory → Groups** | `KerBridge sync`, and the admission group |
+
+The application, the service account and both groups are yours to rename, so
+they may no longer carry those names. The provider and the Role heal back to
+them.
+
+**Leave the rest.** The signing certificate, the two flows and the three scope
+mappings are authentik's own defaults. The blueprint only points at them, and
+other applications use them.
+
+Deleting the admission group loses its pk. A group that you create again gets a
+new one, and every `idp_authentik.toml` that names the old one denies every
+login.

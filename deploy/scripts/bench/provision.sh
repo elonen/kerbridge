@@ -62,14 +62,22 @@ FQDN=broker.$DOMAIN
 IDP_FQDN=idp.$DOMAIN
 # Derive the base DN so it cannot diverge from DOMAIN.
 BASE_DN=DC=${DOMAIN//./,DC=}
-# The realm and the member take fixed hosts in whichever /24 the tier chose, so
-# a subnet written any other way would silently produce two unusable addresses.
-case $SUBNET in
-  *.0/24) ;;
-  *) die "CI_SUBNET is $SUBNET; it has to be a /24 written x.y.z.0/24, because the realm and the member take .10 and .20 in it";;
-esac
-REALM_IP=${SUBNET%.0/24}.10
-NAS_IP=${SUBNET%.0/24}.20
+# The realm and the member take fixed hosts in whichever /24 the tier chose.
+# Parsed, not pattern-matched, and both addresses come from what parsed: a
+# spelling this cannot build two hosts from is refused, rather than turned into
+# two addresses nothing reaches.
+hosts=$(python3 - "$SUBNET" 2>&1 <<'EOF'
+import ipaddress, sys
+try:
+    net = ipaddress.ip_network(sys.argv[1])
+except ValueError as e:
+    raise SystemExit(f"{e}")
+if net.version != 4 or net.prefixlen != 24:
+    raise SystemExit("not an IPv4 /24")
+print(net, net[10], net[20])
+EOF
+) || die "CI_SUBNET is $SUBNET: $hosts. It has to be an IPv4 /24 with no host bits set, written x.y.z.0/24, because the realm and the member take .10 and .20 in it"
+read -r SUBNET REALM_IP NAS_IP <<<"$hosts"
 USER_NAME=alice
 # seed-demo.sh maps this token object ID to $USER_NAME in the directory (realm).
 OID=33334444-dddd-5555-eeee-6666ffff7777
@@ -178,6 +186,10 @@ cd "$ROOT/deploy"
 . scripts/lib.sh
 
 # Use a non-example realm because check-env.sh rejects the documented example.
+#
+# This heredoc and the config-set ones below are unquoted, for the $VAR each
+# needs, so a backtick or a $( in one runs and a backslash rewrites its line.
+# `make test` refuses all three.
 say "writing deploy/.env for the throwaway realm"
 cat > .env <<EOF
 # Written by scripts/bench/provision.sh in a disposable tree. Not a deployment.
@@ -190,7 +202,6 @@ TLS_STRATEGY=external
 CI_HTTPS_PORT=$PORT
 # The container names in compose.ci.yaml and the tier overlays. A fixed
 # container name is global, so this is what lets two tiers run at once.
-# (No backticks in this heredoc: EOF is unquoted, so they would run.)
 CI_PROJECT=$PROJECT
 # compose.ci.yaml mounts the client and CA into nas1. The tier fragment adds its
 # sign-in helper.

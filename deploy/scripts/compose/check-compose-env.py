@@ -158,14 +158,24 @@ def environments(path):
                 in_services, service, in_env = body == "services:", None, False
             elif not in_services:
                 continue
-            elif indent == 2 and (m := _KEY.match(body)):
+            elif indent == 2:
+                # A key this does not recognize -- quoted, or trailing a comment
+                # -- would leave `service` on the one before it, and hand that
+                # service the next one's keys.
+                if not (m := _KEY.match(body)):
+                    raise ComposeError(f"{path}: {body!r} is not a service key this reads")
                 service, in_env = m.group(1), False
                 services.setdefault(service, {})
                 if m.group(2):
                     anchors[m.group(2)] = service
             elif service is None:
                 continue
-            elif indent == 4 and (m := _MERGE.match(body)):
+            elif indent == 4 and body.startswith("<<:"):
+                # Only a merge of one anchor. A sequence (`<<: [*a, *b]`, or `<<:`
+                # over indented `- *a` lines) is YAML this does not implement, and
+                # reading past it drops every key the service merged.
+                if not (m := _MERGE.match(body)):
+                    raise ComposeError(f"{path}: {service} merges {body!r}, not <<: *anchor")
                 merges.append((service, m.group(1)))
                 in_env = False
             elif indent == 4:
@@ -180,6 +190,10 @@ def environments(path):
                 if not sep or not _NAME.fullmatch(key):
                     raise ComposeError(f"{path}: {service} passes {body!r}, which is not KEY: value")
                 services[service][key] = value.strip().strip("\"'")
+            elif in_env:
+                # Deeper than six: a block scalar or a nested value, whose key
+                # above it was read as if the whole value were on that line.
+                raise ComposeError(f"{path}: {service} passes {body!r}, indented past KEY: value")
 
     # A merged key yields to one the service states itself, as YAML's does. In
     # file order, so a service merged from is already resolved when merged.
@@ -192,6 +206,10 @@ def environments(path):
     for service in declared:
         if not services[service]:
             raise ComposeError(f"{path}: {service} states environment: and this reads no key from it")
+    # Reading no service at all is the shape drift with no symptom: every check
+    # below still passes, over nothing.
+    if not services:
+        raise ComposeError(f"{path}: this reads no service from it")
     return services
 
 

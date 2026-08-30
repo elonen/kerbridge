@@ -33,6 +33,9 @@ names the tag, and it stops if that section is absent or empty.
 - A signing-key document that publishes two usable keys under one `kid` is
   now refused whole. Which key verified a token must not depend on the order
   the document lists the keys in.
+- `SETUP.md` §9 now says what to delete in the identity provider. Each
+  provider's step-2 page names its objects, and warns what a deleted admission
+  group costs.
 - The two IdP signing-key conditions, `idp-trust-failure` and
   `idp-keys-unavailable`, now carry the source name and are opened and
   cleared per source. A deployment with two identity providers no longer
