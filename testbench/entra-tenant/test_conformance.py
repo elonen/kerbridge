@@ -485,4 +485,12 @@ class Driver(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main(verbosity=1)
+    # One summary line on success, like the other checks make test runs; the
+    # captured report is what a failure needs.
+    report = io.StringIO()
+    runner = unittest.TextTestRunner(stream=report, verbosity=1)
+    result = unittest.main(exit=False, testRunner=runner).result
+    if not result.wasSuccessful():
+        sys.stderr.write(report.getvalue())
+        sys.exit(1)
+    print(f"entra conformance: {result.testsRun} cases hold")

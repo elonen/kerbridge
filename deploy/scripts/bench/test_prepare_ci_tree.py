@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import errno
 import importlib.util
+import io
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -169,4 +171,12 @@ class PrepareCiTreeTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    # One summary line on success, like the other checks make test runs; the
+    # captured report is what a failure needs.
+    report = io.StringIO()
+    runner = unittest.TextTestRunner(stream=report, verbosity=1)
+    result = unittest.main(exit=False, testRunner=runner).result
+    if not result.wasSuccessful():
+        sys.stderr.write(report.getvalue())
+        sys.exit(1)
+    print(f"ci tree: {result.testsRun} boundary cases hold")

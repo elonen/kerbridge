@@ -194,194 +194,307 @@ setup-tools:
 
 test: test-fast
 
+# Cargo tests print one character per test. KB_TEST_VERBOSE=1 restores the
+# per-test name list, for a failure that needs the names around it.
+CARGO_TEST_Q := $(if $(KB_TEST_VERBOSE),,--quiet)
+
+# The report shape for test-fast. `section` heads a group. `check` runs a short
+# command, marks every line it prints with `ok`, and names a silent one by its
+# label; it buffers, so a non-zero exit prints the whole output under FAIL and
+# stops the tier. `step` streams instead, for the commands that compile --
+# their progress has to arrive while they run.
+#
+# A gate reached through `check` states only what is wrong. The macro supplies
+# the marker and the label, so no gate repeats them.
+define section
+@printf '\n=== %s ===\n' "$(1)"
+endef
+
+define check
+@out=$$($(2) 2>&1); st=$$?; \
+if [ $$st -ne 0 ]; then \
+	printf 'FAIL %s\n' "$(1)"; printf '%s\n' "$$out" | sed 's/^/     /' >&2; exit $$st; \
+fi; \
+if [ -n "$$out" ]; then printf '%s\n' "$$out" | sed 's/^/ok   /'; \
+else printf 'ok   %s\n' "$(1)"; fi
+endef
+
+define step
+@printf '\n-- %s\n' "$(1)"; \
+$(2) \
+	&& printf 'ok   %s\n' "$(1)" \
+	|| { printf 'FAIL %s\n' "$(1)" >&2; exit 1; }
+endef
+
+# The root rustfmt.toml applies to all three workspaces. Formatting parses
+# platform-specific crates without building them.
+define gate_rustfmt
+cargo fmt --all --check \
+	&& (cd client && cargo fmt --all --check) \
+	&& (cd website && cargo fmt --all --check)
+endef
+
+define gate_graph_fixtures
+stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT; \
+python3 testbench/fixtures/graph-sync/make_fixtures.py --out "$$stage" >/dev/null; \
+diff -ru --exclude=make_fixtures.py --exclude=__pycache__ testbench/fixtures/graph-sync "$$stage"
+endef
+
+# Run the client core on Darwin or Linux. Darwin links Kerberos.framework;
+# Linux writes a FILE ccache. test-win covers Windows compilation. An
+# unsupported host is reported as skipped, not passed.
+UNAME_S := $(shell uname -s)
+define step_client_core
+(cd client/kerbridge-client \
+	&& cargo test $(CARGO_TEST_Q) \
+	&& cargo clippy --all-targets -- -D warnings)
+endef
+
+# rustls can select aws-lc-rs, which requires CMake and causes musl build
+# problems. KerBridge uses ring; reject an additional provider before the
+# musl cross-build.
+define gate_tls_provider
+if cargo tree --workspace -e normal 2>/dev/null | grep -q aws-lc; then \
+	echo "aws-lc-rs entered the tree; rustls must stay on ring" >&2; exit 1; \
+fi
+endef
+
+# Permit one major version of each TLS crate. Multiple majors retain an older
+# line that cannot receive fixes released only on the current line.
+define gate_tls_majors
+for c in rustls ring rustls-webpki; do \
+	n=$$(cargo tree --workspace -e normal 2>/dev/null \
+	     | grep -oE "(^|[^-a-z])$$c v[0-9]+\.[0-9]+" | grep -oE "[0-9]+\.[0-9]+" | sort -u | wc -l); \
+	if [ "$$n" -gt 1 ]; then \
+		echo "$$n majors of $$c in the tree; expected 1" >&2; exit 1; \
+	fi; \
+done
+endef
+
+# kbconfig runs before the realm exists and must not access the directory.
+# Reject ldap3 so this boundary is structural, not only untested.
+define gate_kbconfig_ldap
+if cargo tree -p kerbridge-config -e normal 2>/dev/null | grep -q ldap3; then \
+	echo "ldap3 entered kerbridge-config's tree; the config tool must not be able to reach the directory" >&2; \
+	exit 1; \
+fi
+endef
+
+# Only kbconfig renders templates from schema metadata. Reject schemars from
+# services, especially issuerd, to keep their dependency surfaces narrow.
+define gate_schemars
+for p in kerbridge-issuerd kerbridge-broker kerbridge-sync kerbridge-manage kerbridge-setup; do \
+	if cargo tree -p $$p -e normal 2>/dev/null | grep -q schemars; then \
+		echo "schemars entered $$p's tree; only kbconfig renders templates" >&2; exit 1; \
+	fi; \
+done
+endef
+
+# The password feature pulls ring and belongs only in kerbridge-sync and
+# kbsetup, which create directory accounts. Check issuerd separately because
+# Cargo features are additive across a workspace build.
+define gate_issuerd_ring
+if cargo tree -p kerbridge-issuerd -e normal 2>/dev/null | grep -qE '(^|[^-a-z])ring v[0-9]'; then \
+	echo "ring entered issuerd's tree; only the crates that generate passwords take it" >&2; exit 1; \
+fi
+endef
+
+# Caddy proxies an allowlist. A missing broker route returns 404 through the
+# public endpoint while direct broker tests pass. Replace each route parameter
+# with one segment and require the Caddy expression to match it. Keep the
+# expression in the syntax shared by RE2 and POSIX ERE. Also reject an empty
+# route search, which would make the loop pass without checking a route.
+define gate_caddy_routes
+re=$$(sed -n 's/^@api path_regexp //p' deploy/caddy/routes.caddyfile); \
+[ -n "$$re" ] || { echo "deploy/caddy/routes.caddyfile has no @api path_regexp" >&2; exit 1; }; \
+routes=$$(grep -rhoE '\.route\("[^"]+"' crates/kerbridge-broker/src \
+          | grep -oE '"/[^"]*"' | tr -d '"' | sed 's/{[^}]*}/x/g'); \
+[ -n "$$routes" ] || { echo "no .route(\"...\") under crates/kerbridge-broker/src; this gate greps for them" >&2; exit 1; }; \
+for r in $$routes; do \
+	printf '%s\n' "$$r" | grep -Eq -- "$$re" || { \
+		echo "the broker serves $$r; deploy/caddy/routes.caddyfile does not proxy it" >&2; \
+		exit 1; }; \
+done
+endef
+
+# The tray maps broker 403 reasons to translated messages. The client and
+# broker share no crate, so require exact strings in both sources and in
+# docs/design/api-and-network.md.
+define gate_403_reasons
+for s in "account may not authorize a device" "device grants are not enabled" \
+         "you may not authorize a device for that account"; do \
+	for f in crates/kerbridge-broker/src client/kerbridge-client/src/broker.rs docs/design/api-and-network.md; do \
+		grep -rFq -- "$$s" "$$f" || { \
+			echo "403 reason \"$$s\" is not in $$f; the tray picks its message from it" >&2; \
+			exit 1; }; \
+	done; \
+done
+endef
+
+# provision.sh writes .env and the config set from unquoted heredocs. An
+# unquoted heredoc expands three things and only $VAR is wanted, so the other
+# two are refused between an unquoted <<EOF and its terminator. shellcheck
+# does not see them: a backtick that runs leaves the tier green, printing
+# "command not found" and writing the line with a hole in it. A backslash is
+# the quiet one -- it eats the character after it, and one before a newline
+# joins two lines.
+define gate_provision_heredocs
+if sed -n '/<<EOF$$/,/^EOF$$/p' deploy/scripts/bench/provision.sh | grep -nE '`|\$$\(|\\'; then \
+	echo "the lines above are inside an unquoted heredoc in provision.sh" >&2; \
+	echo "a backtick or a \$$( there runs as a command, and a backslash" >&2; \
+	echo "rewrites the line -- write it without one, or quote the heredoc" >&2; \
+	echo "if it needs no \$$VAR expansion" >&2; \
+	exit 1; \
+fi
+endef
+
+# provision.sh must not depend on one identity source. Otherwise, one tier can
+# pass while the shared provisioning code is no longer reusable. Every source
+# any tier uses belongs in the pattern, not only the first one.
+define gate_provision_source
+if grep -inE 'mock-?idp|entra|authentik' deploy/scripts/bench/provision.sh; then \
+	echo "the lines above are in deploy/scripts/bench/provision.sh" >&2; \
+	echo "shared provisioning code must not name an identity source" >&2; \
+	exit 1; \
+fi
+endef
+
+# In ci-stack.sh, source-specific terms are valid only in comments, SOURCE and
+# TENANT declarations, COMPOSE_FILE, and the three idp_* hook bodies. There is
+# no counterpart for ci-authentik.sh: that tier states its own source in the
+# assertions it prints, so the same gate would refuse prose it is right to
+# have. The guard that matters is the one above, on the shared file.
+define gate_ci_stack_hooks
+body=$$(sed -e '/^idp_prepare()/,/^}$$/d' -e '/^idp_env_lines()/,/^}$$/d' \
+	-e '/^idp_source_toml()/,/^}$$/d' -e '/^[[:space:]]*#/d' \
+	-e '/^SOURCE=/d' -e '/^TENANT=/d' -e '/^export COMPOSE_FILE=/d' \
+	deploy/scripts/bench/ci-stack.sh); \
+for line in 'seed-demo.sh' 'PASS -- provisioned'; do \
+	printf '%s\n' "$$body" | grep -qF "$$line" || { \
+		echo "the idp_* hook ranges include ci-stack.sh's \"$$line\" line" >&2; \
+		echo "this check no longer covers the complete tier body; check the closing braces" >&2; \
+		exit 1; }; \
+done; \
+if printf '%s\n' "$$body" | grep -inE 'mock-?idp|entra'; then \
+	echo "the lines above are source-specific and sit outside ci-stack.sh's idp_* hooks" >&2; \
+	echo "move each one into the applicable hook" >&2; \
+	exit 1; \
+fi
+endef
+
+# Enumerate .sh files from Git so moved scripts remain covered. List scripts
+# without a .sh suffix explicitly. Exclude SC1091 for intentional sources of
+# .env and /usr/share/debconf/confmodule, which shellcheck cannot follow.
+define gate_shellcheck
+git ls-files -z '*.sh' | xargs -0 shellcheck -S warning -e SC1091 \
+	docs/research/read-result crates/kerbridge-config/libexec/prepare-state \
+	debian/make-changelog debian/stage-prebuilt debian/check-install \
+	debian/check-manifests \
+	debian/kerbridge-config.config \
+	debian/kerbridge-config.postinst debian/kerbridge-config.postrm \
+	debian/kerbridge-issuerd.postinst debian/kerbridge-issuerd.postrm \
+	debian/kerbridge-broker.postinst debian/kerbridge-broker.postrm \
+	debian/kerbridge-sync.postinst debian/kerbridge-sync.postrm
+endef
+
+# These directives skip a unit with no config and stop restart loops after a
+# configuration failure. Daemon tests do not exercise this unit behavior.
+define gate_unit_directives
+for unit in debian/kerbridge-issuerd.service debian/kerbridge-broker.service \
+            debian/kerbridge-sync.service; do \
+	for directive in ConditionPathExists StartLimitIntervalSec StartLimitBurst; do \
+		grep -q "^$$directive=" "$$unit" || { \
+			echo "$$unit has no $$directive=; without all three a failing" >&2; \
+			echo "ExecStartPre= restarts every RestartSec= for ever" >&2; \
+			exit 1; }; \
+	done; \
+done
+endef
+
+# The three daemons parse arguments without command metadata, so their man
+# pages are hand-written. Permit only `--help`; generated pages own current
+# flag lists. Remove roff backslashes before searching for escaped hyphens.
+define gate_man_flags
+for page in debian/man/issuerd.8 debian/man/kerbridge-broker.8 debian/man/kerbridge-sync.8; do \
+	[ -f "$$page" ] || { echo "$$page is missing; the package manifest ships it" >&2; exit 1; }; \
+	found=$$(tr -d '\\\\' < "$$page" | grep -oE -- '--[a-zA-Z][a-zA-Z0-9-]*' | grep -vx -- '--help' | sort -u); \
+	if [ -n "$$found" ]; then \
+		echo "$$page names flags a hand-written page cannot keep current: $$found" >&2; \
+		echo "Say what the daemon does and point at --help; the generated pages carry the flags." >&2; \
+		exit 1; \
+	fi; \
+	grep -q -- '--help' "$$page" || { echo "$$page does not point the reader at --help" >&2; exit 1; }; \
+done
+endef
+
+# Require each hand-written parser to keep the `--help` flag named by its man
+# page.
+define gate_help_parsers
+for c in kerbridge-issuerd kerbridge-broker kerbridge-sync; do \
+	grep -rq -- '"--help" .*=> return Ok(None)' "crates/$$c/src" || { \
+		echo "$$c no longer answers --help, and its man page points at it" >&2; \
+		exit 1; }; \
+done
+endef
+
 # Fast, host-native checks with no Docker or network. Requires rustfmt, clippy,
 # shellcheck, zstd, and python3; `make setup` installs the missing test tools.
 test-fast:
-	@# The root rustfmt.toml applies to all three workspaces. Formatting parses
-	@# platform-specific crates without building them.
-	cargo fmt --all --check
-	cd client && cargo fmt --all --check
-	cd website && cargo fmt --all --check
-	@stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT; \
-		python3 testbench/fixtures/graph-sync/make_fixtures.py --out "$$stage" >/dev/null; \
-		diff -ru --exclude=make_fixtures.py --exclude=__pycache__ testbench/fixtures/graph-sync "$$stage"
+	$(call section,formatting)
+	$(call check,rustfmt in all three workspaces,$(gate_rustfmt))
+	$(call section,fixtures)
+	$(call check,graph-sync fixtures regenerate identically,$(gate_graph_fixtures))
 	@# The authentik corpus has no generator -- it is hand-derived from the
 	@# recordings, so it is held to the derivation instead of regenerated.
-	python3 testbench/fixtures/authentik-directory/check_derivation.py
-	cargo test --workspace
-	cargo clippy --workspace --all-targets -- -D warnings
-	@# Run the client core on Darwin or Linux. Darwin links Kerberos.framework;
-	@# Linux writes a FILE ccache. test-win covers Windows compilation. Report an
-	@# unsupported host as skipped instead of passing without a client test.
-	@case "$$(uname -s)" in \
-		Darwin|Linux) cd client/kerbridge-client && cargo test \
-		              && cargo clippy --all-targets -- -D warnings ;; \
-		*) echo "skipped: the client core has no arm for $$(uname -s)" ;; \
-	esac
-	@# rustls can select aws-lc-rs, which requires CMake and causes musl build
-	@# problems. KerBridge uses ring; reject an additional provider before the
-	@# musl cross-build.
-	@if cargo tree --workspace -e normal 2>/dev/null | grep -q aws-lc; then \
-		echo "FAIL: aws-lc-rs entered the tree; rustls must stay on ring" >&2; exit 1; \
-	fi
-	@# Permit one major version of each TLS crate. Multiple majors retain an older
-	@# line that cannot receive fixes released only on the current line.
-	@for c in rustls ring rustls-webpki; do \
-		n=$$(cargo tree --workspace -e normal 2>/dev/null \
-		     | grep -oE "(^|[^-a-z])$$c v[0-9]+\.[0-9]+" | grep -oE "[0-9]+\.[0-9]+" | sort -u | wc -l); \
-		if [ "$$n" -gt 1 ]; then \
-			echo "FAIL: $$n majors of $$c in the tree; expected 1" >&2; exit 1; \
-		fi; \
-	done
-	@# kbconfig runs before the realm exists and must not access the directory.
-	@# Reject ldap3 so this boundary is structural, not only untested.
-	@if cargo tree -p kerbridge-config -e normal 2>/dev/null | grep -q ldap3; then \
-		echo "FAIL: ldap3 entered kerbridge-config's tree; the config tool must not be able to reach the directory" >&2; exit 1; \
-	fi
-	@# Only kbconfig renders templates from schema metadata. Reject schemars from
-	@# services, especially issuerd, to keep their dependency surfaces narrow.
-	@for p in kerbridge-issuerd kerbridge-broker kerbridge-sync kerbridge-manage kerbridge-setup; do \
-		if cargo tree -p $$p -e normal 2>/dev/null | grep -q schemars; then \
-			echo "FAIL: schemars entered $$p's tree; only kbconfig renders templates" >&2; exit 1; \
-		fi; \
-	done
-	@# The password feature pulls ring and belongs only in kerbridge-sync and
-	@# kbsetup, which create directory accounts. Check issuerd separately because
-	@# Cargo features are additive across a workspace build.
-	@if cargo tree -p kerbridge-issuerd -e normal 2>/dev/null | grep -qE '(^|[^-a-z])ring v[0-9]'; then \
-		echo "FAIL: ring entered issuerd's tree; only the crates that generate passwords take it" >&2; exit 1; \
-	fi
-	@# Caddy proxies an allowlist. A missing broker route returns 404 through the
-	@# public endpoint while direct broker tests pass. Replace each route parameter
-	@# with one segment and require the Caddy expression to match it. Keep the
-	@# expression in the syntax shared by RE2 and POSIX ERE. Also reject an empty
-	@# route search, which would make the loop pass without checking a route.
-	@re=$$(sed -n 's/^@api path_regexp //p' deploy/caddy/routes.caddyfile); \
-	[ -n "$$re" ] || { echo "FAIL: deploy/caddy/routes.caddyfile has no @api path_regexp" >&2; exit 1; }; \
-	routes=$$(grep -rhoE '\.route\("[^"]+"' crates/kerbridge-broker/src \
-	          | grep -oE '"/[^"]*"' | tr -d '"' | sed 's/{[^}]*}/x/g'); \
-	[ -n "$$routes" ] || { echo "FAIL: no .route(\"...\") under crates/kerbridge-broker/src; this gate greps for them" >&2; exit 1; }; \
-	for r in $$routes; do \
-		printf '%s\n' "$$r" | grep -Eq -- "$$re" || { \
-			echo "FAIL: the broker serves $$r; deploy/caddy/routes.caddyfile does not proxy it" >&2; \
-			exit 1; }; \
-	done
-	@# The tray maps broker 403 reasons to translated messages. The client and
-	@# broker share no crate, so require exact strings in both sources and in
-	@# docs/design/api-and-network.md.
-	@for s in "account may not authorize a device" "device grants are not enabled" \
-	          "you may not authorize a device for that account"; do \
-		for f in crates/kerbridge-broker/src client/kerbridge-client/src/broker.rs docs/design/api-and-network.md; do \
-			grep -rFq -- "$$s" "$$f" || { \
-				echo "FAIL: 403 reason \"$$s\" is not in $$f; the tray picks its message from it" >&2; \
-				exit 1; }; \
-		done; \
-	done
-	@# provision.sh writes .env and the config set from unquoted heredocs. An
-	@# unquoted heredoc expands three things and only $$VAR is wanted, so the other
-	@# two are refused between an unquoted <<EOF and its terminator. shellcheck
-	@# does not see them: a backtick that runs leaves the tier green, printing
-	@# "command not found" and writing the line with a hole in it. A backslash is
-	@# the quiet one -- it eats the character after it, and one before a newline
-	@# joins two lines.
-	@if sed -n '/<<EOF$$/,/^EOF$$/p' deploy/scripts/bench/provision.sh | grep -nE '`|\$$\(|\\'; then \
-		echo "FAIL: the lines above are inside an unquoted heredoc in provision.sh" >&2; \
-		echo "      a backtick or a \$$( there runs as a command, and a backslash" >&2; \
-		echo "      rewrites the line -- write it without one, or quote the heredoc" >&2; \
-		echo "      if it needs no \$$VAR expansion" >&2; \
-		exit 1; \
-	fi
-	@# provision.sh must not depend on one identity source. Otherwise, one tier can
-	@# pass while the shared provisioning code is no longer reusable. Every source
-	@# any tier uses belongs in the pattern, not only the first one.
-	@#
-	@# In ci-stack.sh, source-specific terms are valid only in comments, SOURCE and
-	@# TENANT declarations, COMPOSE_FILE, and the three idp_* hook bodies. There is
-	@# no counterpart for ci-authentik.sh: that tier states its own source in the
-	@# assertions it prints, so the same gate would refuse prose it is right to
-	@# have. The guard that matters is the one above, on the shared file.
-	@if grep -inE 'mock-?idp|entra|authentik' deploy/scripts/bench/provision.sh; then \
-		echo "FAIL: deploy/scripts/bench/provision.sh contains the source-specific lines above" >&2; \
-		echo "      shared provisioning code must not name an identity source" >&2; \
-		exit 1; \
-	fi
-	python3 deploy/scripts/bench/test_prepare_ci_tree.py
-	python3 testbench/entra-tenant/test_conformance.py
-	@body=$$(sed -e '/^idp_prepare()/,/^}$$/d' -e '/^idp_env_lines()/,/^}$$/d' \
-		-e '/^idp_source_toml()/,/^}$$/d' -e '/^[[:space:]]*#/d' \
-		-e '/^SOURCE=/d' -e '/^TENANT=/d' -e '/^export COMPOSE_FILE=/d' \
-		deploy/scripts/bench/ci-stack.sh); \
-	for line in 'seed-demo.sh' 'PASS -- provisioned'; do \
-		printf '%s\n' "$$body" | grep -qF "$$line" || { \
-			echo "FAIL: the idp_* hook ranges include ci-stack.sh's \"$$line\" line" >&2; \
-			echo "      this check no longer covers the complete tier body; check the closing braces" >&2; \
-			exit 1; }; \
-	done; \
-	if printf '%s\n' "$$body" | grep -inE 'mock-?idp|entra'; then \
-		echo "FAIL: ci-stack.sh contains source-specific lines outside its idp_* hooks" >&2; \
-		echo "      move the lines above into the applicable hook" >&2; \
-		exit 1; \
-	fi
-	@# Enumerate .sh files from Git so moved scripts remain covered. List scripts
-	@# without a .sh suffix explicitly. Exclude SC1091 for intentional sources of
-	@# .env and /usr/share/debconf/confmodule, which shellcheck cannot follow.
-	git ls-files -z '*.sh' | xargs -0 shellcheck -S warning -e SC1091 \
-		docs/research/read-result crates/kerbridge-config/libexec/prepare-state \
-		debian/make-changelog debian/stage-prebuilt debian/check-install \
-		debian/check-manifests \
-		debian/kerbridge-config.config \
-		debian/kerbridge-config.postinst debian/kerbridge-config.postrm \
-		debian/kerbridge-issuerd.postinst debian/kerbridge-issuerd.postrm \
-		debian/kerbridge-broker.postinst debian/kerbridge-broker.postrm \
-		debian/kerbridge-sync.postinst debian/kerbridge-sync.postrm
-	python3 docs/scripts/check-research.py
-	python3 docs/scripts/check-doc-links.py
-	python3 docs/scripts/check-signing-key.py
+	$(call check,authentik corpus,python3 testbench/fixtures/authentik-directory/check_derivation.py)
+	$(call section,rust)
+	$(call step,workspace tests,cargo test --workspace $(CARGO_TEST_Q))
+	$(call step,workspace clippy,cargo clippy --workspace --all-targets -- -D warnings)
+ifneq ($(filter Darwin Linux,$(UNAME_S)),)
+	$(call step,client core,$(step_client_core))
+else
+	@printf 'skip  client core -- no arm for $(UNAME_S)\n'
+endif
+	$(call section,dependencies)
+	$(call check,tls provider is ring,$(gate_tls_provider))
+	$(call check,one major of each tls crate,$(gate_tls_majors))
+	$(call check,kbconfig cannot reach the directory,$(gate_kbconfig_ldap))
+	$(call check,only kbconfig renders templates,$(gate_schemars))
+	$(call check,issuerd takes no password crate,$(gate_issuerd_ring))
+	$(call section,cross-source contracts)
+	$(call check,caddy proxies every broker route,$(gate_caddy_routes))
+	$(call check,403 reasons reach broker client and design,$(gate_403_reasons))
+	$(call section,scripts)
+	$(call check,provision.sh heredocs stay literal,$(gate_provision_heredocs))
+	$(call check,provision.sh names no identity source,$(gate_provision_source))
+	$(call check,ci tree preparation,python3 deploy/scripts/bench/test_prepare_ci_tree.py)
+	$(call check,entra conformance,python3 testbench/entra-tenant/test_conformance.py)
+	$(call check,ci-stack.sh keeps its source in the idp hooks,$(gate_ci_stack_hooks))
+	$(call check,shellcheck,$(gate_shellcheck))
+	$(call section,docs)
+	$(call check,research,python3 docs/scripts/check-research.py)
+	$(call check,doc links,python3 docs/scripts/check-doc-links.py)
+	$(call check,signing key,python3 docs/scripts/check-signing-key.py)
 	@# The reverse proxies allow a route list and 404 the rest, so a route the
 	@# broker gained and a proxy did not is a 404 nothing reaching the broker
 	@# directly can see.
-	python3 docs/scripts/check-broker-routes.py
+	$(call check,broker routes,python3 docs/scripts/check-broker-routes.py)
 	@# Render every help-site language in memory to detect invalid templates,
 	@# renamed fields, and missing translation keys before publication.
-	$(MAKE) -C website check
+	$(call check,website,$(MAKE) -s --no-print-directory -C website check)
+	$(call section,deployment)
 	@# compose.yaml maps the two environment namespaces. A wrong default starts a
 	@# daemon with the wrong limit. Check the mapping without Docker because
 	@# `docker compose config` resolves interpolation before inspection.
-	python3 deploy/scripts/compose/check-compose-env.py
-	@# These directives skip a unit with no config and stop restart loops after a
-	@# configuration failure. Daemon tests do not exercise this unit behavior.
-	@for unit in debian/kerbridge-issuerd.service debian/kerbridge-broker.service \
-	             debian/kerbridge-sync.service; do \
-		for directive in ConditionPathExists StartLimitIntervalSec StartLimitBurst; do \
-			grep -q "^$$directive=" "$$unit" || { \
-				echo "FAIL: $$unit has no $$directive=; without all three a failing" >&2; \
-				echo "      ExecStartPre= restarts every RestartSec= for ever" >&2; \
-				exit 1; }; \
-		done; \
-	done
-	@# The three daemons parse arguments without command metadata, so their man
-	@# pages are hand-written. Permit only `--help`; generated pages own current
-	@# flag lists. Remove roff backslashes before searching for escaped hyphens.
-	@for page in debian/man/issuerd.8 debian/man/kerbridge-broker.8 debian/man/kerbridge-sync.8; do \
-		[ -f "$$page" ] || { echo "FAIL: $$page is missing; the package manifest ships it" >&2; exit 1; }; \
-		found=$$(tr -d '\\\\' < "$$page" | grep -oE -- '--[a-zA-Z][a-zA-Z0-9-]*' | grep -vx -- '--help' | sort -u); \
-		if [ -n "$$found" ]; then \
-			echo "FAIL: $$page names flags a hand-written page cannot keep current: $$found" >&2; \
-			echo "      Say what the daemon does and point at --help; the generated pages carry the flags." >&2; \
-			exit 1; \
-		fi; \
-		grep -q -- '--help' "$$page" || { echo "FAIL: $$page does not point the reader at --help" >&2; exit 1; }; \
-	done
-	@# Require each hand-written parser to keep the `--help` flag named by its man
-	@# page.
-	@for c in kerbridge-issuerd kerbridge-broker kerbridge-sync; do \
-		grep -rq -- '"--help" .*=> return Ok(None)' "crates/$$c/src" || { \
-			echo "FAIL: $$c no longer answers --help, and its man page points at it" >&2; \
-			exit 1; }; \
-	done
+	$(call check,compose env,python3 deploy/scripts/compose/check-compose-env.py)
+	$(call section,packaging)
+	$(call check,systemd units carry all three restart directives,$(gate_unit_directives))
+	$(call check,man pages name only --help,$(gate_man_flags))
+	$(call check,each daemon answers --help,$(gate_help_parsers))
 	@# Check duplicated binary names, package names, debhelper compatibility,
 	@# version, and latest changelog section without the Docker-based test-deb.
-	debian/check-manifests
+	$(call check,package manifests,debian/check-manifests)
+	@printf '\ntest-fast: all checks passed\n'
 
 # Cross-build and lint the Windows client against Win32 FFI. test-fast runs its
 # unit tests on the host. Test LSA, ccache injection, and the message loop on a

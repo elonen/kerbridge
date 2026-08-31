@@ -177,5 +177,4 @@ for pair in issuer:kerbridge-issuerd broker:kerbridge-broker sync:kerbridge-sync
         || fail "$unit runs $start, and no debian/*.install ships that path."
 done
 
-echo "check-manifests: binaries, package names, compat, versions, CHANGELOG.md
-    and the two deployments' unit/entrypoint pairs all agree"
+echo "manifests: binaries, package names, compat, versions, CHANGELOG.md and the two deployments' unit/entrypoint pairs all agree"

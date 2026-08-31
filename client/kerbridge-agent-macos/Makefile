@@ -27,11 +27,15 @@ all: build
 build:
 	cargo build --release
 
+# Cargo tests print one character per test. KB_TEST_VERBOSE=1 restores the
+# per-test name list.
+CARGO_TEST_Q := $(if $(KB_TEST_VERBOSE),,--quiet)
+
 # Run core tests against Kerberos.framework and libresolv, not platform stubs.
 check: build
 	cargo clippy --release --all-targets -- -D warnings
-	cargo test
-	cd ../kerbridge-client && cargo test
+	cargo test $(CARGO_TEST_Q)
+	cd ../kerbridge-client && cargo test $(CARGO_TEST_Q)
 
 # Apply an ad-hoc signature because Notification Center rejects unsigned
 # binaries. The publisher applies the Developer ID signature during release.
