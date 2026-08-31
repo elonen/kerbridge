@@ -133,6 +133,13 @@ Write a `uidNumber` for **every admitted user**, not only the mapped ones. Use
 `RID + 1000000` for the others. Write a `gidNumber` for every group in a share
 ACL, and for `CN=Domain Users,CN=Users,DC=example,DC=site`.
 
+To find the users that still have none:
+
+```sh
+dist/kbmanage cloud list --json |
+  jq -r '.[] | select(.kind == "user" and .uid_number == null) | .sam'
+```
+
 ### A2. Configure the file server
 
 Replace the four idmap lines of [file-server.md

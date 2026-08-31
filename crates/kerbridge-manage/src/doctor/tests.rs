@@ -27,6 +27,7 @@ fn user(sam: &str) -> CloudObject {
         kind: Kind::User,
         display_name: Some(sam.to_owned()),
         upn: Some(format!("{sam}@example.site")),
+        uid_number: None,
         identity: Some(identity(sam)),
         markers: vec![],
         uac: Some(UAC_ENABLED.parse().unwrap()),

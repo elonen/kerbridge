@@ -35,12 +35,13 @@ pub struct Directory {
     timeout: Duration,
 }
 
-const CLOUD_ATTRS: [&str; 11] = [
+const CLOUD_ATTRS: [&str; 12] = [
     "distinguishedName",
     "sAMAccountName",
     "objectClass",
     "displayName",
     "userPrincipalName",
+    "uidNumber",
     "msDS-ExternalDirectoryObjectId",
     "extensionName",
     "userAccountControl",
@@ -696,6 +697,7 @@ fn cloud_object(e: SearchEntry) -> CloudObject {
         kind,
         display_name: first(&e, "displayName"),
         upn: first(&e, "userPrincipalName"),
+        uid_number: first(&e, "uidNumber").and_then(|v| v.parse().ok()),
         identity: first(&e, "msDS-ExternalDirectoryObjectId"),
         markers: all(&e, "extensionName"),
         uac: first(&e, "userAccountControl").and_then(|v| v.parse().ok()),

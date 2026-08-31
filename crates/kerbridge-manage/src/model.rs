@@ -45,6 +45,10 @@ pub struct CloudObject {
     pub display_name: Option<String>,
     #[serde(default)]
     pub upn: Option<String>,
+    /// `uidNumber`, when an operator wrote one: KerBridge never assigns it.
+    /// See `docs/setup/pre-existing-uids.md`.
+    #[serde(default)]
+    pub uid_number: Option<u32>,
     /// Raw `msDS-ExternalDirectoryObjectId`, undecoded: a malformed value is
     /// something `doctor` must be able to report, so it cannot be parsed away
     /// at read time.

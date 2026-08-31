@@ -26,7 +26,8 @@ names the tag, and it stops if that section is absent or empty.
 
 ## Unreleased
 
-- (nothing yet)
+- `kbmanage cloud list --json` now reports `uidNumber`, so you can find an
+  admitted user that has none.
 
 ## 1.0.0
 
