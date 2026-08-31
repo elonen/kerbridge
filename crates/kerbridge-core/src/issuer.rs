@@ -95,7 +95,9 @@ pub struct TouchGrantRequest {
 /// whose symptom would be the broker reading an error as a ticket. Nothing
 /// outside this workspace speaks this protocol, so there is no shape to
 /// preserve.
-#[derive(Debug, Serialize, Deserialize)]
+///
+/// No `Debug`: deriving it here would require it for [`Ticket`].
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Response {
     Ok(Ticket),
@@ -116,7 +118,10 @@ pub enum Response {
 /// The three timestamps are [`crate::time::rfc3339`] of the values read out of
 /// the issued ccache, so the helper plans its renewal against what the KDC
 /// actually granted rather than against what was asked for.
-#[derive(Debug, Serialize, Deserialize)]
+///
+/// No `Debug`: `ccache_b64` contains a live TGT and session key. Formatting it
+/// would leak them to logs.
+#[derive(Serialize, Deserialize)]
 pub struct Ticket {
     pub request_id: String,
     pub principal: String,

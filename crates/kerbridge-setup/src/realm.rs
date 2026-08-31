@@ -626,7 +626,7 @@ fn provision(config: &Config, db: &dc::Dc) -> Result<()> {
         "--function-level=2008_R2".into(),
         format!("--base-schema={BASE_SCHEMA}"),
         format!("--host-name={}", realm.dc_hostname()),
-        format!("--adminpass={throwaway}"),
+        format!("--adminpass={}", throwaway.expose()),
     ];
     argv.extend(options.iter().map(|o| format!("--option={o}")));
 

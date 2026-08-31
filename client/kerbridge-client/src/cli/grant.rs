@@ -47,7 +47,7 @@ pub(crate) fn do_grant(args: &Args, broker: &str) -> Result<()> {
     let (broker, token) = obtain_token(args, broker)?;
     let grant = session::create_grant(
         &broker,
-        &token,
+        token.expose(),
         &config.device_grant.audience,
         target.as_deref(),
     )
@@ -174,8 +174,9 @@ pub(crate) fn do_grant_list(args: &Args, broker: &str) -> Result<()> {
     let whose = target.clone().unwrap_or_else(|| "this account".to_owned());
     let mine = config::Settings::load().grant().map(|g| g.grant_id.clone());
     let (broker, token) = obtain_token(args, broker)?;
-    let devices = kerbridge_client::broker::list_devices(&broker, &token, target.as_deref())
-        .map_err(|e| anyhow!("listing {whose}'s devices: {e}"))?;
+    let devices =
+        kerbridge_client::broker::list_devices(&broker, token.expose(), target.as_deref())
+            .map_err(|e| anyhow!("listing {whose}'s devices: {e}"))?;
 
     if devices.is_empty() {
         println!("[kerbridge] no device authorized for {whose}");
@@ -255,7 +256,7 @@ pub(crate) fn do_grant_revoke(args: &Args, id: &str) -> Result<()> {
     let (broker, token) = obtain_token(args, &broker)?;
     kerbridge_client::broker::revoke_device(
         &broker,
-        AuthScheme::Bearer(&token),
+        AuthScheme::Bearer(token.expose()),
         id,
         target.as_deref(),
     )

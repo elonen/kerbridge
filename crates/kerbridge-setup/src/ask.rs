@@ -17,6 +17,7 @@
 use std::io::{BufRead, IsTerminal, Write};
 
 use anyhow::{Context, Result, bail};
+use kerbridge_core::secret::Secret;
 use nix::sys::termios::{LocalFlags, SetArg, tcgetattr, tcsetattr};
 
 /// Is there an operator to ask?
@@ -32,7 +33,7 @@ pub fn interactive() -> bool {
 /// The prompt goes to stderr so that it stays visible when stdout is being
 /// read, and the trailing newline the terminal did not echo is supplied here --
 /// without it whatever is printed next lands on the prompt's own line.
-pub fn secret(prompt: &str) -> Result<String> {
+pub fn secret(prompt: &str) -> Result<Secret> {
     let mut stderr = std::io::stderr();
     write!(stderr, "{prompt}").context("writing the prompt")?;
     stderr.flush().context("writing the prompt")?;
@@ -42,7 +43,7 @@ pub fn secret(prompt: &str) -> Result<String> {
         read_line()?
     };
     writeln!(stderr).context("writing the prompt")?;
-    Ok(value)
+    Ok(Secret::new(value))
 }
 
 /// One line, echoed. For an answer that is not a secret.

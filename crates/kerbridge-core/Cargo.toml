@@ -39,6 +39,7 @@ ring = { workspace = true, optional = true }
 rustix.workspace = true
 serde.workspace = true
 toml.workspace = true
+zeroize.workspace = true
 rustls = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }

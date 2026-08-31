@@ -21,6 +21,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
+use kerbridge_core::secret::Secret;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use url::Url;
@@ -50,7 +51,7 @@ pub struct GraphClient {
     http: reqwest::Client,
     tenant: String,
     client_id: String,
-    secret: String,
+    secret: Secret,
 }
 
 /// A stored delta cursor after a completed stream read, or a signal that the
@@ -138,7 +139,7 @@ impl GraphReader for GraphClient {
         let params = [
             ("client_id", self.client_id.as_str()),
             ("scope", "https://graph.microsoft.com/.default"),
-            ("client_secret", self.secret.as_str()),
+            ("client_secret", self.secret.expose()),
             ("grant_type", "client_credentials"),
         ];
         let resp = self
@@ -189,7 +190,7 @@ impl GraphReader for GraphClient {
 }
 
 impl GraphClient {
-    pub fn new(tenant: String, client_id: String, secret: String) -> Result<Self> {
+    pub fn new(tenant: String, client_id: String, secret: Secret) -> Result<Self> {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::custom(|attempt| {
@@ -547,7 +548,7 @@ mod tests {
             .route("/hop", axum::routing::get(|| async { "{}" }));
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
-        let client = GraphClient::new("t".into(), "c".into(), "s".into()).unwrap().http;
+        let client = GraphClient::new("t".into(), "c".into(), Secret::new("s")).unwrap().http;
         let err = client
             .get(format!("http://127.0.0.1:{port}/off"))
             .send()

@@ -26,6 +26,7 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use kerbridge_core::secret::Secret;
 
 /// The `PATH` every subprocess gets. The same list `issuerd` compiles in, for
 /// the same reason: `samba-tool` and the `ldb` tools live in `/usr/bin` on a
@@ -161,12 +162,22 @@ fn finish(argv: &[&str], done: Done) -> Result<String> {
 /// terminal it could not put into no-echo mode. It is not true of a pipe, and
 /// showing it to an operator would only alarm them about a leak that is not
 /// happening.
-pub fn without_password_prompts(text: &str) -> String {
+///
+/// `password` is redacted from what is returned. Measured behaviour is that
+/// `samba-tool` never echoes a piped credential, so this catches nothing today;
+/// it is here because the result is printed, and the caller cannot see whether a
+/// future tool version starts quoting what it was given.
+pub fn without_password_prompts(text: &str, password: &Secret) -> String {
     let mut out = text.to_owned();
     for fragment in
         ["Warning: Password input may be echoed.", "New Password: ", "Retype Password: "]
     {
         out = out.replace(fragment, "");
+    }
+    // An empty needle matches at every boundary, which would splice the marker
+    // between every character.
+    if !password.expose().is_empty() {
+        out = out.replace(password.expose(), "<redacted>");
     }
     out.lines().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join("\n")
 }
@@ -202,7 +213,7 @@ mod tests {
         let raw = "New Password: Retype Password: Warning: Password input may be echoed.\n\
                    User 'svc-kerbridge-broker' created successfully\n";
         assert_eq!(
-            without_password_prompts(raw),
+            without_password_prompts(raw, &Secret::new("Kb1-abc")),
             "User 'svc-kerbridge-broker' created successfully"
         );
     }
@@ -212,7 +223,28 @@ mod tests {
     #[test]
     fn a_refusal_survives_the_prompt_filter() {
         let raw = "New Password: Retype Password: \nERROR: Bad password\n";
-        assert_eq!(without_password_prompts(raw), "ERROR: Bad password");
+        assert_eq!(without_password_prompts(raw, &Secret::new("Kb1-abc")), "ERROR: Bad password");
+    }
+
+    /// The result is printed, so a credential quoted back by a future
+    /// `samba-tool` must not survive the filter.
+    #[test]
+    fn the_password_does_not_survive_the_filter() {
+        let raw = "New Password: ERROR: password 'Kb1-abc' is too short\n";
+        let said = without_password_prompts(raw, &Secret::new("Kb1-abc"));
+        assert!(!said.contains("Kb1-abc"), "{said}");
+        assert_eq!(said, "ERROR: password '<redacted>' is too short");
+    }
+
+    /// An empty needle matches at every boundary. `reserve` writes an empty
+    /// credential to claim a path, so this is reachable rather than theoretical.
+    #[test]
+    fn an_empty_password_redacts_nothing() {
+        let raw = "User 'svc' created successfully\n";
+        assert_eq!(
+            without_password_prompts(raw, &Secret::new("")),
+            "User 'svc' created successfully"
+        );
     }
 
     /// The measured shape of a Samba crash: the sentence, a backtrace, and the

@@ -357,6 +357,26 @@ satisfies `validate` — that invariant is the module's reason to exist.
 <!-- refs: `kerbridge_core::sam::sanitize` -->
 <!-- avoid: sanitize_sam, safe_name, slugify -->
 
+### secret
+
+A credential once it is in memory, carried in a `Secret` rather than in a
+`String`. Its `Debug` prints `<redacted>`, it has no `Display`, and it gives its
+value up only to `expose` — so a `#[derive(Debug)]` on a struct holding a
+password cannot print one, `{}` where the plaintext was wanted does not compile,
+and reading the plaintext costs a call a reviewer greps for. A compiler-enforced
+control in place of a review habit, and against the accident only: nothing in it
+stops a caller who means it. Dropping
+one zeroizes the bytes, which is best effort rather than a guarantee — it
+reaches no copy the allocator or the kernel already made.
+
+`client/` carries its own copy, `kerbridge_client::secret::Secret`, same shape
+and same reasoning: that workspace deliberately does not depend on this crate
+(workspace isolation — see `client/Cargo.toml`), so the type is duplicated
+rather than shared.
+<!-- refs: `kerbridge_core::secret::Secret`, `kerbridge_core::password::generate`, `kerbridge_client::secret::Secret` -->
+<!-- avoid: secret string, sensitive value, redacted string, secure string -->
+<!-- different than: secret file (root GLOSSARY.md), the protected file one is read from -->
+
 ### seen stamp
 
 The `seen=<epoch>` field on a device grant recording its last use, written at

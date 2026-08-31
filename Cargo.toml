@@ -84,6 +84,10 @@ webpki-roots = "1"
 # `alloc` that `getgroups`'s `Vec` needs.
 rustix = { version = "1", features = ["process"] }
 
+# `Secret` zeroizes its `String` on drop. `alloc` provides that implementation;
+# omitting `derive` keeps its proc-macro dependencies out of `issuerd`.
+zeroize = { version = "1", default-features = false, features = ["alloc"] }
+
 axum = "0.8"
 unicode-normalization = "0.1"
 clap = { version = "4", features = ["derive"] }

@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
+use kerbridge_core::secret::Secret;
 use kerbridge_notify::{Event, Notifier, Severity};
 
 use super::Settings;
@@ -85,8 +86,8 @@ impl AuthentikSource {
     /// Unlike Entra's, there is **no shape to refuse locally**: an authentik API
     /// token is an opaque string, so the prompt's words are the only local
     /// defence and a wrong token fails identically to a right one until the read.
-    fn credential(&self) -> Result<Option<String>> {
-        kerbridge_core::secret::read_optional(&self.credential_file)
+    fn credential(&self) -> Result<Option<Secret>> {
+        Ok(kerbridge_core::secret::read_optional(&self.credential_file)?.map(Secret::new))
     }
 
     /// The enumeration, narrowed to the population the realm should hold, once

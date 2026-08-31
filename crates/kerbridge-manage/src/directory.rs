@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use kerbridge_core::dn::{dn_equals, parent_of};
+use kerbridge_core::secret::Secret;
 use kerbridge_core::state::ROLE_DELEGATES;
 use kerbridge_core::{decode_sid_attr, escape_ldap_filter_value};
 use ldap3::{LdapConnAsync, LdapConnSettings, Mod, Scope, SearchEntry};
@@ -28,7 +29,7 @@ pub struct Directory {
     cloud_idp_ou: String,
     resource_ou: String,
     bind_dn: String,
-    bind_password: String,
+    bind_password: Secret,
     ca_file: std::path::PathBuf,
     tls: Arc<rustls::ClientConfig>,
     timeout: Duration,
@@ -97,7 +98,7 @@ impl Directory {
             .await
             .with_context(|| self.connect_advice())?;
         ldap3::drive!(conn);
-        ldap.simple_bind(&self.bind_dn, &self.bind_password)
+        ldap.simple_bind(&self.bind_dn, self.bind_password.expose())
             .await
             .context("binding to the directory")?
             .success()

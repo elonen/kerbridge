@@ -128,7 +128,7 @@ const FALLBACK_POLL_SECS: i64 = 30;
 /// Windows, and whatever holds the account on the next platform.
 pub enum NativeToken {
     /// A bearer access token for the broker API, issued by the OS.
-    Token(String),
+    Token(crate::secret::Secret),
     /// The platform cannot serve this request. The caller falls back to the browser.
     ///
     /// There is no third answer for a dismissed platform dialog: asking the OS
@@ -363,7 +363,7 @@ static CANCEL: AtomicBool = AtomicBool::new(false);
 /// The OIDC refresh token. **Memory only, never persisted, never logged.** It is
 /// what makes re-injection silent; losing it (quit, logoff, reboot) costs one
 /// click, which is the trade the design chose over writing a credential to disk.
-static REFRESH_TOKEN: Mutex<Option<String>> = Mutex::new(None);
+static REFRESH_TOKEN: Mutex<Option<crate::secret::Secret>> = Mutex::new(None);
 
 /// Whether a browser sign-in is waiting on its loopback redirect. [`CANCEL`] is
 /// read there and nowhere else, so this is the whole of when cancelling does

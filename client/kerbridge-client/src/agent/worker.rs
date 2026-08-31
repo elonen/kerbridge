@@ -782,7 +782,7 @@ fn run_sign_in(
         None => return Ok(None),
     };
 
-    match session::inject(broker_url, &token) {
+    match session::inject(broker_url, token.expose()) {
         Ok(injected) => Ok(Some((injected, config, false))),
         Err(e) => Err(describe_inject_error(&e, &host_of(broker_url))),
     }
@@ -795,7 +795,7 @@ fn acquire_token(
     config: &BrokerConfig,
     silent: bool,
     use_native: bool,
-) -> Result<Option<String>, Failure> {
+) -> Result<Option<crate::secret::Secret>, Failure> {
     // The platform's own credential source, silently on both paths: that is what
     // keeps re-injection unattended without this process holding a refresh token
     // at all, and a silent success is also the only evidence that the OS has an
@@ -822,7 +822,7 @@ fn acquire_token(
                 if use_native { tr().err_wam_empty } else { tr().err_browser_required }.to_string(),
             )
         })?;
-        let tokens = oidc::refresh(&config.oidc, &refresh_token)
+        let tokens = oidc::refresh(&config.oidc, refresh_token.expose())
             .map_err(|e| describe_token_error(&e, tr().err_silent_refresh))?;
         if let Some(rt) = tokens.refresh_token {
             *REFRESH_TOKEN.lock().unwrap() = Some(rt);
@@ -973,7 +973,7 @@ fn run_create_grant(
     // that never broke. On success the new grant is written over the old one
     // anyway; and a grant that really is dead is caught where it shows, at the
     // next exchange, by the `InvalidProof` arm above.
-    session::create_grant(broker_url, &token, &config.device_grant.audience, target)
+    session::create_grant(broker_url, token.expose(), &config.device_grant.audience, target)
         .map(Some)
         .map_err(|e| match e {
             session::GrantError::Broker(e) => describe_grant_error(&e, &host_of(broker_url)),

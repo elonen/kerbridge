@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result, anyhow};
 use kerbridge_client::broker::BrokerError;
+use kerbridge_client::secret::Secret;
 use kerbridge_client::session::{InjectError, Injected};
 use kerbridge_client::{config, session};
 
@@ -14,13 +15,13 @@ use crate::Args;
 /// thing that varies here is which one the renew loop keeps re-presenting.
 pub(crate) enum Proof {
     Grant(config::Grant),
-    Token(String),
+    Token(Secret),
 }
 
 pub(crate) fn inject(broker: &str, proof: &Proof) -> Result<Injected, InjectError> {
     match proof {
         Proof::Grant(grant) => session::inject_with_grant(broker, grant),
-        Proof::Token(token) => session::inject(broker, token),
+        Proof::Token(token) => session::inject(broker, token.expose()),
     }
 }
 

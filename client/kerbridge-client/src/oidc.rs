@@ -21,14 +21,15 @@ use base64::Engine;
 use sha2::{Digest, Sha256};
 
 use crate::discovery::OidcConfig;
+use crate::secret::Secret;
 
 /// How long to wait for the user to complete the browser sign-in.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct Tokens {
-    pub access_token: String,
+    pub access_token: Secret,
     /// Present only if `offline_access` was granted. Memory-only.
-    pub refresh_token: Option<String>,
+    pub refresh_token: Option<Secret>,
 }
 
 /// Run the browser sign-in. `Ok(None)` means the caller set `cancel` (the tray's
@@ -223,12 +224,13 @@ fn token_request(cfg: &OidcConfig, body: String) -> Result<Tokens> {
     }
 
     let token: serde_json::Value = serde_json::from_str(&text).context("parsing token response")?;
-    let access_token = token
-        .get("access_token")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow!("token response carried no access_token"))?
-        .to_owned();
-    let refresh_token = token.get("refresh_token").and_then(|v| v.as_str()).map(str::to_owned);
+    let access_token = Secret::new(
+        token
+            .get("access_token")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("token response carried no access_token"))?,
+    );
+    let refresh_token = token.get("refresh_token").and_then(|v| v.as_str()).map(Secret::new);
     Ok(Tokens { access_token, refresh_token })
 }
 

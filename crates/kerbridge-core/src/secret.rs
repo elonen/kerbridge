@@ -1,4 +1,4 @@
-//! Reading a credential off disk, the same way in every component.
+//! Shared credential-file reads and in-memory [`Secret`] values.
 //!
 //! `deploy/scripts/check-secrets.sh` already enforces this rule on the host, and
 //! refuses to start the stack when it is broken -- but it only sees the files
@@ -16,8 +16,41 @@
 //! (`config/mod.rs`) out of this crate as well.
 
 use anyhow::{Context, Result, bail};
+use std::fmt;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
+use zeroize::Zeroizing;
+
+const REDACTED: &str = "<redacted>";
+
+/// A credential held in memory.
+///
+/// `Debug` redacts accidental logging. There is no `Display`: `{}` must not
+/// silently substitute redacted text where plaintext is required. Plaintext
+/// access requires an explicit [`Secret::expose`] call.
+///
+/// [`Zeroizing`] overwrites this allocation on drop. It cannot erase prior
+/// copies held by the allocator, kernel, or formatting code. Clones own and
+/// zeroize their copies independently.
+#[derive(Clone)]
+pub struct Secret(Zeroizing<String>);
+
+impl Secret {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(Zeroizing::new(value.into()))
+    }
+
+    /// Returns the plaintext; the explicit name makes each access searchable.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for Secret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(REDACTED)
+    }
+}
 
 /// Read a secret file, refusing one whose permissions hand it to somebody else.
 ///
@@ -368,6 +401,23 @@ mod tests {
 
     fn file(mode: u32, uid: u32, gid: u32) -> Owned {
         Owned { mode, uid, gid }
+    }
+
+    #[test]
+    fn debug_redacts_and_only_the_accessor_does_not() {
+        let secret = Secret::new("Kb1-hunter2");
+        assert_eq!(format!("{secret:?}"), REDACTED);
+        assert_eq!(secret.expose(), "Kb1-hunter2");
+
+        #[derive(Debug)]
+        struct Holder {
+            password: Secret,
+        }
+        let holder = Holder { password: Secret::new("Kb1-hunter2") };
+        let held = format!("{holder:?}");
+        assert!(!held.contains("hunter2"), "{held}");
+        assert!(held.contains(REDACTED), "{held}");
+        assert_eq!(holder.password.expose(), "Kb1-hunter2");
     }
 
     #[test]

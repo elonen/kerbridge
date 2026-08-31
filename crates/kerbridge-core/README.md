@@ -10,7 +10,9 @@ broker↔`issuerd` wire protocol.
 
 **Decisions**, which are not wire formats but must still be identical in every
 component: what permissions a credential file may have (`secret`), and what an
-LDAPS bind trusts (`tls`).
+LDAPS bind trusts (`tls`). `secret` also holds `Secret`, the type a credential
+travels in once it is in memory, whose `Debug` prints `<redacted>` and which
+gives its value up only to `expose`.
 
 **Vocabulary**, which is ordinary shared code, here only because the copies had
 started to disagree: the calendar (`time`), DN splitting (`dn`), and the GUID

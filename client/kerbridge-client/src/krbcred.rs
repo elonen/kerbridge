@@ -46,6 +46,8 @@
 use anyhow::{Result, anyhow, bail, ensure};
 
 /// A TGT ready to submit, with the lifetime the KDC granted it.
+///
+/// No `Debug`: `krbcred` contains an unencrypted ticket and session key.
 pub struct Tgt {
     /// DER KRB-CRED bytes for `KerbSubmitTicketMessage`.
     pub krbcred: Vec<u8>,
@@ -135,6 +137,7 @@ impl std::fmt::Display for Principal {
     }
 }
 
+/// No `Debug`: `key` contains the raw session key.
 struct Credential {
     client: Principal,
     server: Principal,

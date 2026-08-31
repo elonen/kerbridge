@@ -45,6 +45,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use kerbridge_core::config::Issuerd;
+use kerbridge_core::secret::Secret;
 
 use crate::units;
 
@@ -138,7 +139,7 @@ impl Reader {
 }
 
 /// The value already there, or `None` for a file that is absent or empty.
-pub fn existing(path: &Path) -> Result<Option<String>> {
+pub fn existing(path: &Path) -> Result<Option<Secret>> {
     let Ok(meta) = std::fs::metadata(path) else { return Ok(None) };
     if meta.is_dir() {
         bail!(
@@ -152,7 +153,7 @@ pub fn existing(path: &Path) -> Result<Option<String>> {
     if meta.len() == 0 {
         return Ok(None);
     }
-    kerbridge_core::secret::read(path).map(Some)
+    Ok(Some(Secret::new(kerbridge_core::secret::read(path)?)))
 }
 
 /// Write a generated credential, and report anything about the result an
@@ -160,7 +161,7 @@ pub fn existing(path: &Path) -> Result<Option<String>> {
 ///
 /// The returned lines are warnings, not failures. Each one names a state the
 /// deployment can still start in and a consequence it will meet later.
-pub fn write(path: &Path, value: &str, group: u32, reader: Reader) -> Result<Vec<String>> {
+pub fn write(path: &Path, value: &Secret, group: u32, reader: Reader) -> Result<Vec<String>> {
     if let Some(parent) = path.parent() {
         ensure_directory(parent, group)?;
     }
@@ -178,7 +179,8 @@ pub fn write(path: &Path, value: &str, group: u32, reader: Reader) -> Result<Vec
         .with_context(|| format!("writing {}", path.display()))?;
     // The bare value with no trailing newline -- the convention every reader in
     // this repository expects (`deploy/README.md` @ Secrets).
-    file.write_all(value.as_bytes()).with_context(|| format!("writing {}", path.display()))?;
+    file.write_all(value.expose().as_bytes())
+        .with_context(|| format!("writing {}", path.display()))?;
     file.sync_all().with_context(|| format!("writing {}", path.display()))?;
     drop(file);
 
@@ -340,7 +342,7 @@ fn reserve(path: &Path, group: u32) -> Result<()> {
     if path.exists() {
         return Ok(());
     }
-    write(path, "", group, Reader::Group(group)).map(|_| ())
+    write(path, &Secret::new(""), group, Reader::Group(group)).map(|_| ())
 }
 
 /// One credential: show what it is, ask, check, write. `Ok(false)` is a
@@ -369,7 +371,7 @@ fn one(want: &crate::pasted::Pasted, group: u32, replace: bool) -> Result<bool> 
     println!();
     loop {
         let value = crate::ask::secret("  Value (not echoed): ")?;
-        let value = value.trim();
+        let value = value.expose().trim();
         if value.is_empty() {
             let question = if want.optional {
                 "Nothing typed. Leave this one unset?"
@@ -386,7 +388,7 @@ fn one(want: &crate::pasted::Pasted, group: u32, replace: bool) -> Result<bool> 
             println!();
             continue;
         }
-        for warning in write(&want.path, value, group, Reader::Group(group))? {
+        for warning in write(&want.path, &Secret::new(value), group, Reader::Group(group))? {
             eprintln!("[kbsetup] warning: {warning}");
         }
         // The length and nothing else. It is what tells a mis-paste -- a
@@ -443,8 +445,8 @@ mod tests {
         File::create(&path).unwrap();
         assert!(existing(&path).unwrap().is_none(), "an empty file is absent");
 
-        write(&path, "Kb1abc", 0, Reader::RootOnly).unwrap();
-        assert_eq!(existing(&path).unwrap().as_deref(), Some("Kb1abc"));
+        write(&path, &Secret::new("Kb1abc"), 0, Reader::RootOnly).unwrap();
+        assert_eq!(existing(&path).unwrap().unwrap().expose(), "Kb1abc");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -456,7 +458,8 @@ mod tests {
         let dir = scratch("readable");
         let mine = nix::unistd::getgid().as_raw();
         let path = dir.join("notify_url");
-        write(&path, "https://hooks.example.site/x", mine, Reader::Group(mine)).unwrap();
+        write(&path, &Secret::new("https://hooks.example.site/x"), mine, Reader::Group(mine))
+            .unwrap();
         assert_eq!(unreadable_by(&path, mine), None, "0640 in the reader's own group");
 
         // The same file, offered to a group this process is not in: the case
@@ -492,7 +495,7 @@ mod tests {
     fn the_written_file_is_the_bare_value_at_the_stated_mode() {
         let dir = scratch("mode");
         let path = dir.join("svc_password");
-        write(&path, "Kb1-value", 0, Reader::RootOnly).unwrap();
+        write(&path, &Secret::new("Kb1-value"), 0, Reader::RootOnly).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "Kb1-value");
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "{mode:o}");
@@ -504,8 +507,8 @@ mod tests {
     fn a_rewrite_truncates() {
         let dir = scratch("truncate");
         let path = dir.join("svc_password");
-        write(&path, "Kb1-a-very-long-previous-value", 0, Reader::RootOnly).unwrap();
-        write(&path, "Kb1-short", 0, Reader::RootOnly).unwrap();
+        write(&path, &Secret::new("Kb1-a-very-long-previous-value"), 0, Reader::RootOnly).unwrap();
+        write(&path, &Secret::new("Kb1-short"), 0, Reader::RootOnly).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "Kb1-short");
         std::fs::remove_dir_all(&dir).unwrap();
     }

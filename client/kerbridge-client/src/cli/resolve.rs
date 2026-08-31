@@ -4,6 +4,7 @@
 use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result, anyhow};
+use kerbridge_client::secret::Secret;
 use kerbridge_client::{config, discovery, oidc};
 
 use crate::Args;
@@ -59,11 +60,11 @@ pub(crate) fn resolve_broker(args: &Args) -> Result<String> {
 /// Hands back the base this run's broker calls hang off alongside it: the
 /// address asked, plus the source segment the broker confirmed. Unchanged where
 /// no discovery ran, which is `--token-file`.
-pub(crate) fn obtain_token(args: &Args, broker: &str) -> Result<(String, String)> {
+pub(crate) fn obtain_token(args: &Args, broker: &str) -> Result<(String, Secret)> {
     if let Some(path) = &args.token_file {
         let token = std::fs::read_to_string(path)
             .with_context(|| format!("reading an access token from {}", path.display()))?;
-        return Ok((broker.to_owned(), token.trim().to_owned()));
+        return Ok((broker.to_owned(), Secret::new(token.trim())));
     }
     let config = discovery::discover(broker).context("discovering OIDC configuration")?;
     // Share the realm with the tray: whichever of the two discovers it first, the

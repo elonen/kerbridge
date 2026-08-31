@@ -42,6 +42,8 @@
 use base64::Engine;
 use ring::rand::SecureRandom;
 
+use crate::secret::Secret;
+
 /// Upper, lower and digit in three characters, prepended to every draw. Fixed
 /// rather than drawn: a random affix would only move the failure this exists to
 /// remove.
@@ -61,8 +63,8 @@ pub enum Alphabet {
 }
 
 /// A password the realm will accept, every time.
-pub fn generate(alphabet: Alphabet) -> String {
-    match alphabet {
+pub fn generate(alphabet: Alphabet) -> Secret {
+    Secret::new(match alphabet {
         // 18 bytes rather than 24: base64 of 18 is 24 characters with no
         // padding, so nothing has to be trimmed and no `=` reaches a config file.
         Alphabet::Base64Url => {
@@ -70,7 +72,7 @@ pub fn generate(alphabet: Alphabet) -> String {
             format!("{COMPLEXITY}-{body}")
         }
         Alphabet::Alphanumeric => format!("{COMPLEXITY}{}", alphanumeric(32)),
-    }
+    })
 }
 
 const ALNUM: &[u8; 62] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -129,7 +131,8 @@ mod tests {
         for alphabet in [Alphabet::Base64Url, Alphabet::Alphanumeric] {
             for _ in 0..3000 {
                 let password = generate(alphabet);
-                assert_eq!(classes(&password), (true, true, true), "{alphabet:?}: {password}");
+                let password = password.expose();
+                assert_eq!(classes(password), (true, true, true), "{alphabet:?}: {password}");
             }
         }
     }
@@ -140,6 +143,7 @@ mod tests {
     #[test]
     fn the_base64url_form_is_the_one_sync_already_writes() {
         let password = generate(Alphabet::Base64Url);
+        let password = password.expose();
         assert!(password.starts_with("Kb1-"), "{password}");
         assert_eq!(password.len(), 4 + 24, "{password}");
         assert!(
@@ -153,6 +157,7 @@ mod tests {
     #[test]
     fn the_alphanumeric_form_carries_no_punctuation() {
         let password = generate(Alphabet::Alphanumeric);
+        let password = password.expose();
         assert_eq!(password.len(), 3 + 32, "{password}");
         assert!(password.bytes().all(|b| b.is_ascii_alphanumeric()), "{password}");
     }
@@ -160,8 +165,11 @@ mod tests {
     /// A generator that returned a constant would pass every test above.
     #[test]
     fn two_draws_differ() {
-        assert_ne!(generate(Alphabet::Base64Url), generate(Alphabet::Base64Url));
-        assert_ne!(generate(Alphabet::Alphanumeric), generate(Alphabet::Alphanumeric));
+        assert_ne!(generate(Alphabet::Base64Url).expose(), generate(Alphabet::Base64Url).expose());
+        assert_ne!(
+            generate(Alphabet::Alphanumeric).expose(),
+            generate(Alphabet::Alphanumeric).expose()
+        );
     }
 
     /// Every character of the alphabet is reachable, and no character outside it

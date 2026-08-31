@@ -27,6 +27,9 @@
 //! copy and `issuerd`'s copy did diverge, so a non-ASCII user synchronized
 //! cleanly and could never obtain a ticket.
 //!
+//! [`Secret`](secret::Secret) carries in-memory credentials. It redacts `Debug`,
+//! has no `Display`, and requires an explicit call to expose plaintext.
+//!
 //! **Vocabulary**, which is ordinary shared code and here only because the
 //! copies had started to disagree: [`time`] (four transcriptions of the same
 //! calendar, two of them differing on what a bad date meant), [`dn`], [`env`],
@@ -41,17 +44,11 @@
 //! ceiling or a device-grant cap cannot mean one thing to the broker and
 //! another to `issuerd`.
 //!
-//! One rule governs what may be added, and it is `DESIGN.md`'s: `issuerd` links
-//! this crate and holds KDC authority, so nothing here may widen its dependency
-//! surface. Anything needing a dependency goes behind a feature `issuerd` does
-//! not enable, as [`tls`] does. There are two unconditional exceptions, and each
-//! is an exception to the letter of the rule rather than to what it protects.
-//! [`config`]'s `toml` is small and pure Rust, and what `issuerd` buys with it
-//! is losing the ability to disagree silently with the broker about a number
-//! they share. [`secret`]'s `rustix` -- three calls asking the kernel who this
-//! process is, so a denied read can name its own fix -- is the one that does
-//! cost `issuerd` a crate, and what the whole crate buys with it is the
-//! `forbid(unsafe_code)` below.
+//! Because `issuerd` links this crate with KDC authority, new dependencies must
+//! remain behind features that it does not enable. The unconditional exceptions
+//! are `toml` for shared config parsing, `rustix` for safe process-identity
+//! queries, and `zeroize` for [`Secret`](secret::Secret). `zeroize` uses no
+//! `derive` feature, so it adds no proc macro.
 
 #![forbid(unsafe_code)]
 

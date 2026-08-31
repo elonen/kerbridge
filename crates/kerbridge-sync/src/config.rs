@@ -10,6 +10,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use kerbridge_core::Source;
 use kerbridge_core::config::SourceFile;
+use kerbridge_core::secret::Secret;
 use kerbridge_idp::sync::Subject;
 use kerbridge_idp::{IdpSettings, Provider};
 
@@ -68,7 +69,7 @@ pub struct SourceConfig {
     /// when the source file wrote `none`.
     pub group_suffix: String,
     pub bind_dn: String,
-    pub bind_password: String,
+    pub bind_password: Secret,
     /// The adapter's half of the source file: the IdP, its credential and
     /// its group ids. Handed to [`kerbridge_idp::sync::connect`] and never read
     /// above the seam.
@@ -124,8 +125,10 @@ impl SourceConfig {
             idp_ou: file.ou(parent_ou),
             group_suffix: group_suffix(&file.group_suffix(), &named)?,
             bind_dn: file.bind_dn.clone(),
-            bind_password: kerbridge_core::secret::read(&file.bind_password_file)
-                .with_context(|| format!("{named}: bind_password_file"))?,
+            bind_password: Secret::new(
+                kerbridge_core::secret::read(&file.bind_password_file)
+                    .with_context(|| format!("{named}: bind_password_file"))?,
+            ),
             settings,
         })
     }

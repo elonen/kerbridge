@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use kerbridge_core::grant::DeviceGrant;
+use kerbridge_core::secret::Secret;
 use kerbridge_core::state::{ROLE_ADMISSION, ROLE_DELEGATES, ROLE_DEVICE_GRANT};
 use kerbridge_core::{ExternalIdentity, decode_sid_attr, escape_ldap_filter_value};
 use ldap3::{LdapConnAsync, LdapConnSettings, Scope, SearchEntry};
@@ -48,7 +49,7 @@ pub struct Directory {
     /// make the first one ambiguous and freeze both.
     role_base_dn: String,
     bind_dn: String,
-    bind_password: String,
+    bind_password: Secret,
     tls: Arc<rustls::ClientConfig>,
     timeout: Duration,
 }
@@ -210,7 +211,7 @@ impl Directory {
         base_dn: String,
         role_base_dn: String,
         bind_dn: String,
-        bind_password: String,
+        bind_password: Secret,
         ca_pem: Option<&std::path::Path>,
         timeout: Duration,
     ) -> Result<Self> {
@@ -249,7 +250,7 @@ impl Directory {
             .with_context(|| format!("connecting to {}", self.url))?;
         ldap3::drive!(conn);
         self.op(&mut ldap)
-            .simple_bind(&self.bind_dn, &self.bind_password)
+            .simple_bind(&self.bind_dn, self.bind_password.expose())
             .await
             .context("binding to the directory")?
             .success()

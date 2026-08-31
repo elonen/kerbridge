@@ -8,6 +8,10 @@ members = [
 
 default-members = ["kerbridge-client"]
 
+[workspace.dependencies]
+# `alloc` supplies `Zeroize` for `String`; `secret.rs` does not use `derive`.
+zeroize = { version = "1", default-features = false, features = ["alloc"] }
+
 # Cargo honors profiles only at a workspace root, so the release settings for
 # the agents and the CLI have to live here.
 [profile.release]

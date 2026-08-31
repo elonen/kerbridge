@@ -22,6 +22,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use kerbridge_core::secret::Secret;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -62,11 +63,11 @@ pub struct AuthentikClient {
     http: reqwest::Client,
     /// The instance URL, scheme and host, trailing slash trimmed.
     base: String,
-    token: String,
+    token: Secret,
 }
 
 impl AuthentikClient {
-    pub fn new(url: &str, token: String) -> Result<Self> {
+    pub fn new(url: &str, token: Secret) -> Result<Self> {
         // The crate's shared client: rustls trusting native roots merged with the
         // webpki set, so `SSL_CERT_FILE` reaches an authentik behind an operator's
         // own CA -- the same trust the broker's JWKS fetch has. A bare builder here
@@ -151,7 +152,7 @@ impl AuthentikClient {
         let resp = self
             .http
             .get(url)
-            .bearer_auth(&self.token)
+            .bearer_auth(self.token.expose())
             .send()
             .await
             .with_context(|| format!("GET {url}"))?;

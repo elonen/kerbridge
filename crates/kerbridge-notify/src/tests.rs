@@ -172,7 +172,7 @@ fn notifier_with(url: Option<String>, min_severity: Severity, timeout: Duration)
         problems: Mutex::new(Problems::load(None, "sync", 3600, 0)),
         channel: url.map(|url| Channel {
             http: http_client(timeout, None, true).unwrap(),
-            url,
+            url: Secret::new(url),
             template: Template::parse(DEFAULT_TEMPLATE).unwrap(),
         }),
     }

@@ -15,6 +15,8 @@
 use base64::Engine;
 
 /// A TGT fetched from the broker.
+///
+/// No `Debug`: `ccache` contains a live ticket and its session key.
 pub struct Ticket {
     pub principal: String,
     /// Raw MIT ccache bytes (a fresh TGT for `principal`).

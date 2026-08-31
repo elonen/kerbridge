@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use kerbridge_core::is_guid;
+use kerbridge_core::secret::Secret;
 use kerbridge_core::time::{days_from_ymd, now_unix};
 use kerbridge_notify::{Event, Notifier, Severity};
 
@@ -68,7 +69,7 @@ impl EntraSource {
     ///
     /// Only emptiness is treated that way. A credential that is present and
     /// wrong -- the *Secret ID* GUID, say -- is an error.
-    fn credential(&self) -> Result<Option<String>> {
+    fn credential(&self) -> Result<Option<Secret>> {
         let Some(value) = kerbridge_core::secret::read_optional(&self.credential_file)? else {
             return Ok(None);
         };
@@ -81,7 +82,7 @@ impl EntraSource {
                 self.credential_file.display()
             );
         }
-        Ok(Some(value))
+        Ok(Some(Secret::new(value)))
     }
 
     /// One read of both delta streams, into the shadow they patch.

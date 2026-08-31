@@ -115,6 +115,10 @@ These are the levers that change your own risk, in order of effect.
 8. **Turn operator notification on/off.** Put a URL in `secrets/notify_url` and
    uncomment `url_file`. Without it, the only channels are the container logs and
    the problem directory. Alternatively, keep it off if you are concerned information might leak through it.
+   Treat the URL as a credential: whoever holds it can usually post to the
+   receiver. `notify.insecure_host` disables TLS certificate validation for one
+   host. Use it only in a lab; an on-path attacker can read notifications and
+   steal the URL.
 9. **Read the audit log after any incident.** Every exchange has a random
    correlation ID. Grants name both parties. Tokens, ccaches, session keys,
    keytabs and credentials are never logged.

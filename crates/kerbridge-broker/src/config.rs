@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use kerbridge_core::Source;
+use kerbridge_core::secret::Secret;
 use kerbridge_idp::{IdpSettings, OidcDiscovery, Provider};
 use serde::Serialize;
 
@@ -25,7 +26,7 @@ pub struct Config {
     /// [`crate::directory::Denied::Ambiguous`].
     pub ldap_base_dn: String,
     pub ldap_bind_dn: String,
-    pub ldap_bind_password: String,
+    pub ldap_bind_password: Secret,
     pub ldap_ca_file: PathBuf,
     pub issuer_socket: PathBuf,
     pub ticket_lifetime_seconds: u32,
@@ -237,7 +238,9 @@ impl Config {
             ldap_base_dn: realm.base_dn(),
             ldap_url: realm.ldap_url,
             ldap_bind_dn: broker.bind_dn,
-            ldap_bind_password: kerbridge_core::secret::read(&broker.bind_password_file)?,
+            ldap_bind_password: Secret::new(kerbridge_core::secret::read(
+                &broker.bind_password_file,
+            )?),
             ldap_ca_file: realm.ldap_ca_file,
             issuer_socket: broker.issuer_socket,
             ticket_lifetime_seconds: realm.ticket_lifetime_seconds,

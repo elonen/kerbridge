@@ -24,6 +24,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use kerbridge_core::secret::Secret;
 
 use crate::ldif::{self, Entry};
 use crate::run;
@@ -167,7 +168,7 @@ impl Dc {
     }
 
     /// Create a service account with its password over stdin, never on argv.
-    pub fn user_create(&self, name: &str, description: &str, password: &str) -> Result<String> {
+    pub fn user_create(&self, name: &str, description: &str, password: &Secret) -> Result<String> {
         let said = run::piped(
             &[
                 "samba-tool",
@@ -178,20 +179,20 @@ impl Dc {
                 "-H",
                 &self.h(),
             ],
-            &twice(password),
+            twice(password).expose(),
         )
         .with_context(|| format!("creating {name}"))?;
-        Ok(run::without_password_prompts(&said))
+        Ok(run::without_password_prompts(&said, password))
     }
 
     /// Set an existing account's password, the same way.
-    pub fn set_password(&self, name: &str, password: &str) -> Result<String> {
+    pub fn set_password(&self, name: &str, password: &Secret) -> Result<String> {
         let said = run::piped(
             &["samba-tool", "user", "setpassword", name, "-H", &self.h()],
-            &twice(password),
+            twice(password).expose(),
         )
         .with_context(|| format!("setting {name}'s password"))?;
-        Ok(run::without_password_prompts(&said))
+        Ok(run::without_password_prompts(&said, password))
     }
 
     /// One account's SID, out of the directory rather than out of winbind.
@@ -340,8 +341,9 @@ fn log_level_in(smb_conf: &str) -> String {
 /// **With a tty it reads neither** -- `getpass` opens /dev/tty first, and falls
 /// back to stdin only when that open fails. That is what `run::piped` runs
 /// these in a session of their own for.
-fn twice(password: &str) -> String {
-    format!("{password}\n{password}\n")
+fn twice(password: &Secret) -> Secret {
+    let password = password.expose();
+    Secret::new(format!("{password}\n{password}\n"))
 }
 
 /// The account name out of the DN the config set states.
@@ -420,6 +422,6 @@ mod tests {
 
     #[test]
     fn a_password_answers_both_prompts() {
-        assert_eq!(twice("Kb1-abc"), "Kb1-abc\nKb1-abc\n");
+        assert_eq!(twice(&Secret::new("Kb1-abc")).expose(), "Kb1-abc\nKb1-abc\n");
     }
 }

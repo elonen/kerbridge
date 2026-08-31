@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
+use kerbridge_core::secret::Secret;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -35,7 +36,7 @@ pub struct Config {
     /// is exactly the host whose configuration someone needs printed. Every
     /// verb that does bind takes it through `Directory::new`, which turns this
     /// Err back into the same message it would have carried.
-    pub bind_password: Result<String, String>,
+    pub bind_password: Result<Secret, String>,
     pub ca_file: PathBuf,
     /// The parent of the per-service problem directories, as `main.toml` states
     /// it. `None` is `notify.state_dir = "none"`, where the open problems exist
@@ -126,6 +127,7 @@ impl Config {
                     password_file.display()
                 )
             })
+            .map(Secret::new)
             .map_err(|e| format!("{e:#}"));
 
         Ok(Self {
@@ -229,7 +231,7 @@ mod tests {
         assert_eq!(cfg.cloud_idp_ou, "OU=CloudIdP,DC=example,DC=site");
         assert_eq!(cfg.resource_ou, "OU=Resources,DC=example,DC=site");
         assert_eq!(cfg.bind_dn, "CN=svc-kerbridge-manage,CN=Users,DC=example,DC=site");
-        assert_eq!(cfg.bind_password.as_deref(), Ok("s3cret"));
+        assert_eq!(cfg.bind_password.as_ref().map(Secret::expose), Ok("s3cret"));
         assert_eq!(cfg.source, dir.0);
         assert!(cfg.warnings.is_empty(), "{:?}", cfg.warnings);
     }

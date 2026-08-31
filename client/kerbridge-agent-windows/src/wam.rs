@@ -44,6 +44,7 @@ use windows::core::HSTRING;
 
 use kerbridge_client::discovery::OidcConfig;
 use kerbridge_client::log;
+use kerbridge_client::secret::Secret;
 
 /// The account-provider id for Microsoft accounts and Entra ID. Constant, and
 /// not the same string as the authority -- this names the *provider*, the
@@ -62,7 +63,7 @@ const OIDC_SCOPES: [&str; 4] = ["openid", "profile", "email", "offline_access"];
 
 pub enum Outcome {
     /// A bearer access token for the broker API, issued by Windows.
-    Token(String),
+    Token(Secret),
     /// WAM cannot serve this request. The caller falls back to the browser.
     Unavailable,
 }
@@ -119,7 +120,7 @@ fn try_acquire(cfg: &OidcConfig) -> windows::core::Result<Outcome> {
     match result.ResponseStatus()? {
         WebTokenRequestStatus::Success => {
             log::info("WAM: silent token acquired");
-            return Ok(Outcome::Token(token_of(&result)?));
+            return Ok(Outcome::Token(Secret::new(token_of(&result)?)));
         }
         // Windows has no account here it can serve unattended. Escalating to its
         // dialog would summon the Workplace Join prompt, and answering that "No,

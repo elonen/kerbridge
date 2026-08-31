@@ -46,6 +46,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use kerbridge_core::config::Notify;
+use kerbridge_core::secret::Secret;
 use kerbridge_core::time::{now_unix, rfc3339};
 use url::Url;
 
@@ -141,7 +142,7 @@ struct Channel {
     /// A credential -- for common chat receivers the *only* authentication. Never
     /// logged, which is also why every `reqwest` error below is stripped of its
     /// URL before it reaches a log line.
-    url: String,
+    url: Secret,
     template: Template,
 }
 
@@ -215,7 +216,7 @@ impl Notifier {
                         cfg.ca_file.as_deref(),
                         insecure,
                     )?,
-                    url,
+                    url: Secret::new(url),
                     template: Template::parse(cfg.template.as_deref().unwrap_or(DEFAULT_TEMPLATE))?,
                 })
             }
@@ -395,7 +396,7 @@ impl Notifier {
         });
         let response = channel
             .http
-            .post(&channel.url)
+            .post(channel.url.expose())
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(body)
             .send()

@@ -72,6 +72,7 @@ pub mod present;
 #[path = "windows/reg.rs"]
 pub mod reg;
 pub mod repair;
+pub mod secret;
 pub mod session;
 pub mod srv;
 pub mod strings;
