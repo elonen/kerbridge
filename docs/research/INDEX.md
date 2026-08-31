@@ -27,7 +27,7 @@ Meta docs, read once:
   produced, plus the live-tenant tooling and the capture decoder that have no
   equivalent in `crates/`.
 
-## 1. Samba TGT issuance — spike `samba-tgt-issuance` — DONE, GO (local key export)
+## 1. Samba TGT issuance — spike `samba-tgt-issuance`
 
 Archive: `samba-tgt-issuance.zst`.
 
@@ -49,7 +49,7 @@ Archive: `samba-tgt-issuance.zst`.
 Conditional PKINIT-fallback spike **not run** — local key export got GO, so that
 branch was skipped (Decision, :378-396).
 
-## 2. Entra token validation — spike `entra-token-validation` — DONE, all follow-ups closed
+## 2. Entra token validation — spike `entra-token-validation`
 
 Archive: `entra-token-validation.zst`.
 
@@ -77,7 +77,7 @@ Each numbered question has its own subheading in the result.
   actual access control, not defense-in-depth →
   [`DESIGN.md`](../../DESIGN.md) § Entra validation (last bullet)
 
-## 3. Samba AD identity attribute — spike `samba-ad-identity-attribute` — DONE
+## 3. Samba AD identity attribute — spike `samba-ad-identity-attribute`
 
 Archive: `samba-ad-identity-attribute.zst`.
 
@@ -98,7 +98,7 @@ Archive: `samba-ad-identity-attribute.zst`.
 - Experiment index (all 12, evidence file map) → :487-511
 - Hand-offs / SERVER-PLAN reconciliation → :530-551
 
-## 4. Entra directory sync — spike `entra-directory-sync` — DONE, PARTIAL (3/9 live items open)
+## 4. Entra directory sync — spike `entra-directory-sync`
 
 Archive: `entra-directory-sync.zst`.
 
@@ -122,7 +122,7 @@ Archive: `entra-directory-sync.zst`.
   `Location` shape, real throttling values, delta-lag bound) → :929-937
 - Hand-offs / SERVER-PLAN reconciliation → :962-997
 
-## 5. Host networking & DNS — spike `host-networking-and-dns` — DONE, CONDITIONAL GO
+## 5. Host networking & DNS — spike `host-networking-and-dns`
 
 Archive: `host-networking-and-dns.zst`.
 
@@ -142,7 +142,7 @@ Archive: `host-networking-and-dns.zst`.
 - Decision: CONDITIONAL GO → :432-452
 - **Requires Linux-VM follow-up** (bounded list, condition not open risk) → :453-480
 
-## 6. Container runtime boundaries — spike `container-runtime-boundaries` — DONE
+## 6. Container runtime boundaries — spike `container-runtime-boundaries`
 
 Archive: `container-runtime-boundaries.zst`.
 
@@ -159,7 +159,7 @@ Archive: `container-runtime-boundaries.zst`.
 - Realm capability matrix (provisioning vs steady state vs broker/sync/caddy) → :239-297
 - Downstream hand-offs (SAN cert, socket contract, cap set) → :450-464
 
-## 7. Joined NAS authorization — spike `joined-nas-authorization` — DONE, GO
+## 7. Joined NAS authorization — spike `joined-nas-authorization`
 
 Archive: `joined-nas-authorization.zst`.
 
@@ -176,7 +176,7 @@ Archive: `joined-nas-authorization.zst`.
 - Operator-facing member join recipe (copy-paste) → :99-146
 - Surprises / operational notes → :470-497
 
-## 8. Windows TGT renewal (unjoined client) — spike `windows-tgt-renewal` — DONE; renewal design REPLACED by re-injection
+## 8. Windows TGT renewal (unjoined client) — spike `windows-tgt-renewal`
 
 Archive: `windows-tgt-renewal.zst`.
 
@@ -204,7 +204,7 @@ Archive: `windows-tgt-renewal.zst`.
 - Is Windows SSP auto-renew safe to rely on? **No** → :510-568
 - Recommended default lifetimes (10h/7d justification) → :569-589
 
-## 9. Windows TGT follow-up, Entra-joined client — spike `windows-tgt-followup-entra-joined` — DONE, PASSED
+## 9. Windows TGT follow-up, Entra-joined client — spike `windows-tgt-followup-entra-joined`
 
 Archive: `windows-tgt-followup-entra-joined.zst`.
 
@@ -231,7 +231,7 @@ Archive: `windows-tgt-followup-entra-joined.zst`.
   tenants, rung 1.5) → :1226-1272
 - Teardown + acceptance criterion 5 (workstation fully restored) → :1273-1365
 
-## 10. WAM / WHfB silent broker-token acquisition — spike `windows-wam-whfb-silent-token` — DONE, GO (one-time bootstrap)
+## 10. WAM / WHfB silent broker-token acquisition — spike `windows-wam-whfb-silent-token`
 
 Archive: `windows-wam-whfb-silent-token.zst`.
 
@@ -258,7 +258,7 @@ Practical closure of research spike `entra-token-validation` §11
 (`xms_cc`/CA/MFA) — the WAM token carries no such claims. **Answered here; do
 not edit that spike's archive.**
 
-## 11. ADUC, elevation and injected tickets — spike `aduc-elevation-and-injected-tickets` — DONE, one open experiment
+## 11. ADUC, elevation and injected tickets — spike `aduc-elevation-and-injected-tickets`
 
 Archive: `aduc-elevation-and-injected-tickets.zst`.
 
@@ -283,7 +283,7 @@ Operator procedure distilled from this:
 [`../rsat-and-kerbridge-management.md`](../rsat-and-kerbridge-management.md).
 This file is only the evidence.
 
-## 12. Unicode names — spike `unicode-name` — DONE, defect found and fixed
+## 12. Unicode names — spike `unicode-name`
 
 Archive: `unicode-name.zst`.
 
@@ -308,7 +308,7 @@ the naming rule disagreeing with each other.
 The rule this produced is `kerbridge_core::sam`; that module's own docs are the
 reference for the rule, and this file is the evidence behind it.
 
-## 13. Device-grant TPM key — spike `device-grant-tpm-key` — DONE, no change required
+## 13. Device-grant TPM key — spike `device-grant-tpm-key`
 
 Archive: `device-grant-tpm-key.zst`.
 
@@ -334,7 +334,7 @@ firmware TPM, unelevated.
 - Q8 Second machine (ARM64 vTPM) — not run → :193-196
 - Decision (no change) and what is still open → :205-216
 
-## 14. macOS ticket injection — spike `macos-ticket-injection` — DONE, GO (simpler than Windows)
+## 14. macOS ticket injection — spike `macos-ticket-injection`
 
 Archive: `macos-ticket-injection.zst`.
 
