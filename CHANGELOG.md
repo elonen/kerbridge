@@ -30,8 +30,8 @@ names the tag, and it stops if that section is absent or empty.
 
 ## 1.0.0
 
-- Authentik is now supported IdP for sign-in, ticket issuance, and read-only user
-  and group synchronization.
+- Authentik is now a supported IdP for sign-in, ticket issuance, and
+  read-only user and group synchronization.
 
 ## 0.9.3
 

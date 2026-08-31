@@ -84,9 +84,9 @@ done
 # 5. CHANGELOG.md, which a build turns into debian/changelog.
 #
 # The version of a package comes from `git describe`, never from a manifest, so
-# the newest section is not compared with the manifests above. It is compared
-# with the tag, and only where HEAD carries one -- a shallow checkout reaches no
-# tag and this then checks the grammar alone.
+# no section here is compared with the manifests above. The grammar is checked
+# always; the tag is compared only where HEAD carries one, because a shallow
+# checkout reaches no tag.
 newest=$(sed -n 's/^## //p' CHANGELOG.md | head -n 1)
 [ -n "$newest" ] || fail "CHANGELOG.md has no '## ' section"
 
@@ -97,13 +97,6 @@ case $newest in
             || fail "CHANGELOG.md's newest section is '$newest', which dpkg refuses as a version" ;;
     *) fail "CHANGELOG.md's newest section is '$newest'. Write a version, or 'Unreleased'." ;;
 esac
-
-if tag=$(git describe --tags --exact-match 2>/dev/null); then
-    [ "$newest" = "${tag#v}" ] \
-        || fail "HEAD is tagged $tag, and CHANGELOG.md's newest section is '$newest'.
-    A tagged build takes its notes from the section that names the version, and
-    finds none. Rename the section to ${tag#v}."
-fi
 
 # A `###` heading inside a section reaches debian/changelog unchanged, and that
 # file has no grammar for it.
@@ -118,6 +111,22 @@ fi
 long=$(sed -n '/^## /,$p' CHANGELOG.md | awk 'length > 78 { printf "    %s\n", $0 }')
 [ -z "$long" ] || fail "CHANGELOG.md has lines over 78 columns, which lintian refuses once two more are added:
 $long"
+
+# The tag's own section, wherever it sits. A release reads the section that
+# names the version, so an empty `## Unreleased` above it is the state right
+# after a release and not a defect. `--match 'v*'` for the reason
+# make-changelog states: the repository carries tags that name no release.
+# The grammar checks stay above this one, so a tree this cannot judge -- a
+# shallow checkout, or a tag it must ignore -- is still held to them.
+if tag=$(git describe --tags --match 'v*' --exact-match 2>/dev/null); then
+    notes=$(awk -v want="${tag#v}" '
+        /^## / { inside = ($2 == want); next }
+        inside && /^[[:space:]]*[-*] /
+    ' CHANGELOG.md)
+    [ -n "$notes" ] || fail "HEAD is tagged $tag, and CHANGELOG.md has no '## ${tag#v}'
+    section with lines in it. A tagged build takes its notes from that section,
+    and would ship a package with none."
+fi
 
 # 6. Each daemon starts the same program in both deployment methods.
 #
