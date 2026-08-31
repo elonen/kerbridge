@@ -150,9 +150,12 @@ yourself. There is no `.pkg`, no `.dmg` and no MDM payload.
 
 **What it costs you:** System Settings ▸ Login Items lists the agent as *Item
 from unidentified developer*, and a bundle that arrives from a different
-machine is quarantined until a person permits it in Privacy & Security. Ad-hoc
-signing also blocks the Secure Enclave device grant, which needs a
-keychain-access-group entitlement, which needs a real signing identity.
+machine is quarantined until a person permits it in Privacy & Security.
+
+Ad-hoc signing does not cost you the Secure Enclave. An Enclave key needs no
+entitlement: research spike `device-grant-enclave-key`. It costs you the account
+boundary. To confine a device grant to one macOS account needs the
+data-protection keychain, and that needs a real signing identity.
 
 The repair is a Developer ID signature and notarization. Like the MSI, that is
 a release-time act by the publisher.

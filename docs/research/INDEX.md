@@ -363,6 +363,40 @@ the live bench, unelevated throughout.
 - Design trap: injection must append, not reinitialize the cache → :283-290
 - Open: additive injection, multi-realm cache, logout/reboot → :299-315
 
+## 15. macOS device-grant key — spike `device-grant-enclave-key` — DONE, GO (option A)
+
+Archive: `device-grant-enclave-key.zst`.
+
+Not work-ordered. "Is the macOS device grant really blocked behind Developer ID?"
+Five places in the repository said it was, because a Secure Enclave key was
+believed to need a keychain-access-group entitlement. Measured 2026-08-31/09-01 on
+two Macs (M4 Max / 26.5.1 and M5 / 26.4.1), with ad-hoc-signed, entitlement-free
+binaries throughout.
+
+- Which two machines, which signing, which session → :19-28
+- Q1 Does the documented blocker hold? **Only for a keychain-persisted key** → :40-58
+- Q1 Ad-hoc signature carrying the entitlement: SIGKILL at exec → :44-49
+- Q2 Can the key persist with no keychain? **Yes — the wrapped-blob attribute** → :59-72
+- Q2 Trap: the blob passed as key data silently mints a fresh key → :73-82
+- Q3 Is the wire format the one the broker already verifies? **Yes, both halves** → :83-99
+- Q3 The arm needs no new dependency → :100-102
+- Q4 Is the blob portable to another Mac? **No, both directions** → :103-113
+- Q4 Why a matching public point proves nothing → :114-122
+- Q4 The selector field selects; the ciphertext binds — the A/B that separates them → :124-131
+- Q5 Does the key survive a reboot? **Yes**, and the negative control beside it → :133-149
+- Q5 Why the accessibility constant is not the reboot argument → :150-155
+- Q6 Is the key bound to the macOS user? **No** → :156-165
+- Q6 What follows for the shipping arm, and the platform contrast not to draw → :166-175
+- Q7 A per-user boundary with no entitlement, and the three costs that sink it → :176-213
+- Q7 What the keychain portability test did not cover → :214-222
+- Q8 Any non-exportable store unlocked at interactive login? **One — the wall** → :223-242
+- Traps, and results that were briefly wrong → :243-267
+- Decision (GO, option A; the entitlement path waits on signing) → :268-284
+- Still open: Developer ID vs provisioning profile, OS major upgrade, no-Enclave Mac → :285-298
+
+`SECURITY.md` and the macOS setup pages carry the conclusions; this is the
+evidence. The Windows counterpart is spike `device-grant-tpm-key`.
+
 ## Cross-topic narrative — [`windows-kerberos-findings.md`](../windows-kerberos-findings.md)
 
 Prose synthesis; its headings are already phrased as questions.

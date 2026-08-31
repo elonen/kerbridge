@@ -52,9 +52,11 @@ failure.
 - A recovery path for the measured NTLM fallback, entered by detection and
   completed only with the user's consent. Windows only.
 - **Device grants**, off unless the deployment enables them. A device grant is a
-  non-exportable ECDSA P-256 key in this machine's TPM, and it stands in for a
-  browser sign-in for a number of days that the deployment sets. The key is
-  measured on real hardware (research spike `device-grant-tpm-key`).
+  non-exportable ECDSA P-256 key. This machine's hardware holds it: the TPM on
+  Windows, the Secure Enclave on macOS. It stands in for a browser sign-in for a
+  number of days that the deployment sets. The key is measured on real hardware
+  on both platforms (research spikes `device-grant-tpm-key` and
+  `device-grant-enclave-key`).
   Two rules travel with it. **The release deletes the key locally *before* it
   tells the broker**, so it works offline. **The key is reused, not replaced.**
   If the client created a new key for each authorization, the server would add a
@@ -1109,7 +1111,7 @@ flowchart LR
 | Elevation | `--enroll` and `--repair` | none anywhere in the product |
 | NTLM fallback | detected, and repaired with the user's consent | none; the mount drops visibly and reconnects |
 | Native token source | WAM, on by default | none; `native_token` is `Unavailable`, so every sign-in is a browser sign-in |
-| Device grant | a TPM key through CNG | none; a Secure Enclave key needs an entitlement, which needs a signing identity |
+| Device grant | a TPM key through CNG | none yet; an Enclave key needs no entitlement. A signing identity buys the user boundary, not the key |
 | Status surface | a flyout window plus the tray menu | the menu, which is also the status window |
 | Autostart | a per-user `Run` value | `SMAppService` |
 

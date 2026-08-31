@@ -1,11 +1,16 @@
 //! The macOS arm of [`super`]: no device grant yet.
 //!
-//! The Secure Enclave is the counterpart of the TPM the Windows arm uses, and a
-//! P-256 key in it would be non-exportable in the same way. What is not yet
-//! settled is everything around it: an Enclave key needs the app to be signed
-//! with a keychain-access-group entitlement, which means the signing and
-//! notarization story has to exist first. Until it does, this arm reports that
-//! the machine holds no key -- which is the truth -- and refuses to invent one.
+//! The Secure Enclave is the counterpart of the TPM the Windows arm uses. A P-256
+//! key in it is non-exportable in the same way. It needs no entitlement and no
+//! Developer ID. A transient key persists as the Enclave-wrapped blob that the key
+//! carries. The broker's own verifier accepts what it signs. Measured on two Macs:
+//! research spike `device-grant-enclave-key`.
+//!
+//! Signing gates the user boundary, not the key. The Enclave imposes no user
+//! boundary of its own. Any local account that can read a stored blob can use the
+//! key it names. A file mode is the only barrier.
+//!
+//! This arm is not written yet, so it reports that the machine holds no key.
 //!
 //! [`open`] returning `None` is the ordinary answer, not an error: it is exactly
 //! what a Windows machine that has never been authorized reports, and every

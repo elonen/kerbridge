@@ -176,9 +176,12 @@ machine whose user has never chosen. See
   counterpart is the Company Portal SSO extension. That extension is a
   deployment dependency and a spike of its own. Until that spike is measured,
   every sign-in goes through the browser.
-- **No device grant.** The Secure Enclave is the counterpart of the Windows TPM
-  key. But an Enclave key needs a keychain-access-group entitlement, and that
-  entitlement needs the signature work above.
+- **No device grant yet.** The Secure Enclave is the counterpart of the Windows
+  TPM key. It needs no entitlement, and it does not need the signature work
+  above. A Mac can hold such a key, and the broker accepts what it signs.
+  The arm is not written yet. The signature work would only confine a grant to
+  one macOS account. The Enclave does not do that by itself. Research spike
+  `device-grant-enclave-key`.
 
 The state machine, the schedule and every user-visible string come from the
 core, not from this agent:

@@ -428,4 +428,3 @@ and composites the badge. Two Windows-only requirements:
   against explicit host maps.
 - **Whether a stuck NTLM fallback clears itself after about 20 minutes idle**
   (`SpnCacheTimeout`). Not reached in the measurements.
-</content>

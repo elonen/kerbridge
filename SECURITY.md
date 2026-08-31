@@ -663,8 +663,10 @@ as every Rust program's do, and nothing here audits it.
 
 - **The Windows MSI is unsigned.** SmartScreen warns. Signing is the publisher's
   step, and the build process does not do it.
-- **The macOS app is ad-hoc signed only.** There is no Developer ID. This also
-  blocks Secure Enclave use.
+- **The macOS app is ad-hoc signed only.** There is no Developer ID. An Enclave
+  key needs no entitlement, so this does not block Secure Enclave use (research
+  spike `device-grant-enclave-key`). It does block confining a device grant to
+  one macOS account, and macOS grants do not exist yet.
 - Release artifacts carry a `SHA256SUMS` file and **no cryptographic signature**.
   A hash proves integrity against corruption, not against a substituted release.
 - Nothing is published to crates.io.

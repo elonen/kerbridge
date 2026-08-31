@@ -179,7 +179,8 @@ schema; the packages are the same bytes on both. The other way to run the
 ### delegate
 
 A user who has [admission](#admission) and can authorize a device to work as another
-account. The agent then stores a [device grant](#device-grant) to a TPM. The device then gets
+account. The agent then stores a [device grant](#device-grant) in hardware. The device
+cannot export the key. The device then gets
 [tickets](#ticket) for the target account, not for the delegate.
 <!-- avoid: owner, proxy, second party, on-behalf-of caller, authoriser, impersonation -->
 <!-- not to confuse: Entra ID delegated token -->
@@ -203,8 +204,8 @@ and compare login names.
 
 ### device grant
 
-A time-limited TPM-stored record that lets one [workstation](#workstation) get [tickets](#ticket) without a new [browser sign-in](#browser-sign-in).
-It belongs to one synchronized user and one key held by the workstation.
+A time-limited record that lets one [workstation](#workstation) get [tickets](#ticket) without a new [browser sign-in](#browser-sign-in).
+It belongs to one synchronized user and one key that the workstation holds and cannot export.
 The grant-authorizing user must be a member of [delegate group](#delegate-group). The grant can identify another user.
 This is why it's shown to end-users as *Authorize this device to work as user X*.
 <!-- refs: encoding `kbkey1|`, `kerbridge_core::grant`, `configs/main.toml` `device_grant_days` -->
