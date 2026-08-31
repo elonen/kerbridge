@@ -17,7 +17,8 @@ use super::client::{AuthRefused, GraphClient, GraphReader, StreamResult, TokenEr
 use super::wire::Shadow;
 use super::{SamSource, Settings};
 use crate::sync::{
-    CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, Subject, build_desired,
+    Credential, CredentialAlarm, CredentialState, DirectorySource, Progress, Roots, SourceError,
+    SourceSnapshot, credential_or_idle,
 };
 
 /// One Entra tenant, read over Graph.
@@ -92,23 +93,14 @@ impl EntraSource {
     /// credential, and the recovery is otherwise observable only against a real
     /// tenant.
     async fn read(&mut self, graph: &impl GraphReader) -> Result<Progress, SourceError> {
-        let subject = self.credential_subject();
+        let alarm = CredentialAlarm::new(self.notifier.clone(), self.credential_subject());
         let token = match graph.acquire_token().await {
             Ok(token) => {
-                // A token came back, so the credential the operator was told
-                // about has been rotated or was never the problem.
-                self.notifier.resolve_subject("sync-credential-expired", &subject).await;
+                alarm.resolved().await;
                 token
             }
             Err(e @ (TokenError::Expired(_) | TokenError::Invalid(_))) => {
-                let why = e.to_string();
-                self.notifier
-                    .send(
-                        Event::new("sync-credential-expired", Severity::Error, why.clone())
-                            .subject(&subject),
-                    )
-                    .await;
-                return Err(SourceError::CredentialRejected(why));
+                return Err(alarm.rejected(e.to_string()).await);
             }
             Err(TokenError::Other(e)) => {
                 return Err(transport(e.context("acquiring Graph token")));
@@ -184,35 +176,23 @@ impl EntraSource {
 
     /// The shadow, as the population the realm should hold.
     fn snapshot(&self) -> SourceSnapshot {
-        // The device-grant group joins the closure roots the way an allowlist entry
-        // does, so it synchronizes whether or not the operator nested it inside the
-        // admission group. Someone held only by this group gets a realm directory object
-        // and no admission, so no ticket -- the two groups are additive, never
-        // alternatives.
-        let mut roots: Vec<Subject> = self.allowlist.iter().cloned().map(Subject::new).collect();
-        let grant = self.grant_group_id.clone().map(Subject::new);
-        roots.extend(grant.clone());
-        let admission = Subject::new(self.admission_group_id.clone());
-        let (desired, refused) =
-            build_desired(self.shadow.enumerate(self.sam_source), &admission, &roots);
-        SourceSnapshot { desired, admission, grant, refused }
+        Roots::new(
+            self.admission_group_id.clone(),
+            self.grant_group_id.clone(),
+            self.allowlist.iter().cloned(),
+        )
+        .narrow(self.shadow.enumerate(self.sam_source))
     }
 }
 
 #[async_trait::async_trait]
 impl DirectorySource for EntraSource {
     async fn advance(&mut self) -> Result<Progress, SourceError> {
-        let credential = match self.credential() {
-            Ok(Some(secret)) => secret,
-            Ok(None) => {
-                return Ok(Progress::Idle(format!(
-                    "no sync credential in {}: source {} is idle until one appears",
-                    self.credential_file.display(),
-                    self.source
-                )));
-            }
-            Err(e) => return Err(SourceError::Credential(format!("credential unreadable: {e:#}"))),
-        };
+        let credential =
+            match credential_or_idle(self.credential(), &self.credential_file, &self.source)? {
+                Credential::Ready(secret) => secret,
+                Credential::Missing(idle) => return Ok(idle),
+            };
         // Rebuilt every cycle rather than cached, so a rotated secret is picked
         // up by the next cycle with nothing to restart. The connection pool it
         // drops matters within a cycle, not across one.

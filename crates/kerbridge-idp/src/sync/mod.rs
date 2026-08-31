@@ -9,10 +9,12 @@
 //! Behind the crate's `sync` feature, so the broker's binary carries none of it.
 
 use std::collections::{BTreeMap, HashSet};
+use std::path::Path;
 use std::sync::Arc;
 
 use kerbridge_core::sam;
-use kerbridge_notify::Notifier;
+use kerbridge_core::secret::Secret;
+use kerbridge_notify::{Event, Notifier, Severity};
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
@@ -163,6 +165,69 @@ pub fn connect(
         IdpSettings::Authentik(authentik) => {
             Ok(Box::new(AuthentikSource::new(authentik, source, notifier)))
         }
+    }
+}
+
+// ---- the credential ----------------------------------------------------
+
+/// Operator notification event shared by credential rejection and recovery.
+const CREDENTIAL_REFUSED: &str = "sync-credential-expired";
+
+/// A credential read normalized at the directory-source seam.
+pub(crate) enum Credential {
+    /// Present and accepted by the adapter.
+    Ready(Secret),
+    /// The shared idle result for a missing credential.
+    Missing(Progress),
+}
+
+/// Normalize an adapter's credential read.
+///
+/// The adapter validates present credentials. A missing credential is incomplete
+/// setup, not a source failure. The seam owns this state and its message.
+pub(crate) fn credential_or_idle(
+    read: anyhow::Result<Option<Secret>>,
+    file: &Path,
+    source: &str,
+) -> Result<Credential, SourceError> {
+    match read {
+        Ok(Some(secret)) => Ok(Credential::Ready(secret)),
+        Ok(None) => Ok(Credential::Missing(Progress::Idle(format!(
+            "no sync credential in {}: source {source} is idle until one appears",
+            file.display()
+        )))),
+        Err(e) => Err(SourceError::Credential(format!("credential unreadable: {e:#}"))),
+    }
+}
+
+/// Shared operator notification for a source credential that the IdP refuses.
+///
+/// Adapters detect refusal differently but share its event, severity, and error class.
+pub(crate) struct CredentialAlarm {
+    notifier: Arc<Notifier>,
+    /// Event subject from [`DirectorySource::credential_subject`].
+    subject: String,
+}
+
+impl CredentialAlarm {
+    pub(crate) fn new(notifier: Arc<Notifier>, subject: String) -> Self {
+        Self { notifier, subject }
+    }
+
+    /// Resolve the notification after the IdP accepts the credential.
+    pub(crate) async fn resolved(&self) {
+        self.notifier.resolve_subject(CREDENTIAL_REFUSED, &self.subject).await;
+    }
+
+    /// Send the notification and return [`SourceError::CredentialRejected`] to
+    /// suppress a duplicate source-failure notification.
+    pub(crate) async fn rejected(&self, why: String) -> SourceError {
+        self.notifier
+            .send(
+                Event::new(CREDENTIAL_REFUSED, Severity::Error, why.clone()).subject(&self.subject),
+            )
+            .await;
+        SourceError::CredentialRejected(why)
     }
 }
 
@@ -409,4 +474,33 @@ pub fn build_desired(
 
     refused.sort();
     (Desired { users, groups, membership }, refused)
+}
+
+/// Closure roots from one source's configuration.
+///
+/// A configured device-grant group is an extra root, not an alternative admission
+/// root. A member held only by it gets a realm directory object but no ticket.
+pub(crate) struct Roots {
+    pub(crate) admission: Subject,
+    pub(crate) grant: Option<Subject>,
+    /// Additional closure roots.
+    pub(crate) extra: Vec<Subject>,
+}
+
+impl Roots {
+    pub(crate) fn new<S: Into<String>>(
+        admission: impl Into<String>,
+        grant: Option<S>,
+        allowlist: impl IntoIterator<Item = S>,
+    ) -> Self {
+        let grant = grant.map(Subject::new);
+        let mut extra: Vec<Subject> = allowlist.into_iter().map(Subject::new).collect();
+        extra.extend(grant.clone());
+        Self { admission: Subject::new(admission), grant, extra }
+    }
+
+    pub(crate) fn narrow(self, read: Enumeration) -> SourceSnapshot {
+        let (desired, refused) = build_desired(read, &self.admission, &self.extra);
+        SourceSnapshot { desired, admission: self.admission, grant: self.grant, refused }
+    }
 }

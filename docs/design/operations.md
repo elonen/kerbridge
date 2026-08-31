@@ -390,7 +390,7 @@ condition can clear it:
 |---|---|
 | `sync-not-configured` | the credential file having content |
 | `sync-credential-expiring` | a deadline back beyond 30 days |
-| `sync-credential-expired` | a token acquisition that succeeds |
+| `sync-credential-expired` | a cycle in which the IdP accepts the credential |
 | `admission-group-missing` | a plan that built with no admission-group alert (sync); a realm directory lookup that completed (broker) |
 | `admission-group-ambiguous` | a realm directory lookup that completed |
 | `grant-group-missing`, `grant-group-ambiguous` | a realm directory lookup that completed |

@@ -167,6 +167,14 @@ because it is where a mistake is an authentication bypass rather than a wrong
 answer; what the claims then have to *say* is never shared, and is why
 `identify` still receives an opaque credential.
 
+The IdP directory face keeps three of its own in `src/sync/mod.rs`, beside
+`build_desired`: `credential_or_idle`, the answer for a source whose credential
+the operator has not pasted in yet; `CredentialAlarm`, the standing
+`sync-credential-expired` problem; and `Roots`, the closure roots a
+configuration names. An adapter that reworded the first or mistyped the second
+would leave an operator a problem list that never clears, and nothing would fail
+at build time.
+
 Read the IdP's own documentation rather than assuming it resembles Entra's or
 authentik's. The interface is
 shaped so that the likely differences are absorbable inside your arm of the

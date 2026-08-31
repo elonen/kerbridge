@@ -10,25 +10,28 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use kerbridge_core::secret::Secret;
-use kerbridge_notify::{Event, Notifier, Severity};
+use kerbridge_notify::Notifier;
 
 use super::Settings;
 use super::client::AuthentikClient;
 use super::wire::assemble;
 use crate::sync::{
-    CredentialState, DirectorySource, Progress, SourceError, SourceSnapshot, Subject, build_desired,
+    Credential, CredentialAlarm, CredentialState, DirectorySource, Progress, Roots, SourceError,
+    SourceSnapshot, Subject, credential_or_idle,
 };
 
 /// Narrow one complete enumeration only when every configured root that lacks
 /// the admission root's planner freeze is visible.
 fn complete_snapshot(
     read: crate::sync::Enumeration,
-    admission: Subject,
-    grant: Option<Subject>,
-    roots: Vec<Subject>,
+    roots: Roots,
 ) -> Result<SourceSnapshot, String> {
-    let missing: Vec<&str> =
-        roots.iter().filter(|root| !read.groups.contains_key(*root)).map(Subject::as_str).collect();
+    let missing: Vec<&str> = roots
+        .extra
+        .iter()
+        .filter(|root| !read.groups.contains_key(*root))
+        .map(Subject::as_str)
+        .collect();
     if !missing.is_empty() {
         return Err(format!(
             "configured authentik group root(s) absent from the read: {}; the credential may have \
@@ -36,8 +39,7 @@ fn complete_snapshot(
             missing.join(", ")
         ));
     }
-    let (desired, refused) = build_desired(read, &admission, &roots);
-    Ok(SourceSnapshot { desired, admission, grant, refused })
+    Ok(roots.narrow(read))
 }
 
 /// One authentik instance, read over its REST API.
@@ -102,31 +104,23 @@ impl AuthentikSource {
     /// has the planner's no-operations freeze; these roots need the equivalent
     /// invariant here, before a snapshot exists.
     fn snapshot(&self, read: crate::sync::Enumeration) -> Result<SourceSnapshot, String> {
-        // The device-grant group joins the closure roots the way an allowlist
-        // entry does: someone held only by it gets a realm directory object and no
-        // admission, so the two groups are additive, never alternatives.
-        let mut roots: Vec<Subject> = self.allowlist.iter().cloned().map(Subject::new).collect();
-        let grant = self.grant_group_id.clone().map(Subject::new);
-        roots.extend(grant.clone());
-        let admission = Subject::new(self.admission_group_id.clone());
-        complete_snapshot(read, admission, grant, roots)
+        let roots = Roots::new(
+            self.admission_group_id.clone(),
+            self.grant_group_id.clone(),
+            self.allowlist.iter().cloned(),
+        );
+        complete_snapshot(read, roots)
     }
 }
 
 #[async_trait::async_trait]
 impl DirectorySource for AuthentikSource {
     async fn advance(&mut self) -> Result<Progress, SourceError> {
-        let credential = match self.credential() {
-            Ok(Some(token)) => token,
-            Ok(None) => {
-                return Ok(Progress::Idle(format!(
-                    "no sync credential in {}: source {} is idle until one appears",
-                    self.credential_file.display(),
-                    self.source
-                )));
-            }
-            Err(e) => return Err(SourceError::Credential(format!("credential unreadable: {e:#}"))),
-        };
+        let credential =
+            match credential_or_idle(self.credential(), &self.credential_file, &self.source)? {
+                Credential::Ready(token) => token,
+                Credential::Missing(idle) => return Ok(idle),
+            };
         // Rebuild the client to use a rotated token without a restart.
         let client = AuthentikClient::new(&self.url, credential)
             .map_err(|e| SourceError::Unreachable(format!("authentik client: {e:#}")))?;
@@ -138,7 +132,7 @@ impl DirectorySource for AuthentikSource {
             self.measured_days = Some(days);
         }
 
-        let subject = self.credential_subject();
+        let alarm = CredentialAlarm::new(self.notifier.clone(), self.credential_subject());
         let read = async {
             let users = client.read_users().await?;
             let groups = client.read_groups().await?;
@@ -148,19 +142,11 @@ impl DirectorySource for AuthentikSource {
         let (users, groups) = match read {
             Ok(pages) => {
                 // A successful read proves that the credential works.
-                self.notifier.resolve_subject("sync-credential-expired", &subject).await;
+                alarm.resolved().await;
                 pages
             }
             Err(e @ SourceError::CredentialRejected(_)) => {
-                // Use the credential event only. A second source-failure event
-                // would report the same condition.
-                self.notifier
-                    .send(
-                        Event::new("sync-credential-expired", Severity::Error, e.to_string())
-                            .subject(&subject),
-                    )
-                    .await;
-                return Err(e);
+                return Err(alarm.rejected(e.to_string()).await);
             }
             Err(e) => return Err(e),
         };
@@ -229,10 +215,7 @@ mod tests {
         grant: Option<&str>,
         allowlist: &[&str],
     ) -> Result<SourceSnapshot, String> {
-        let mut roots: Vec<Subject> = allowlist.iter().copied().map(Subject::new).collect();
-        let grant = grant.map(Subject::new);
-        roots.extend(grant.clone());
-        complete_snapshot(read, Subject::new(ADMISSION), grant, roots)
+        complete_snapshot(read, Roots::new(ADMISSION, grant, allowlist.iter().copied()))
     }
 
     #[test]
