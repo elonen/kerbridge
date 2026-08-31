@@ -18,15 +18,16 @@ use, and the records there can contain addresses to which your clients have no
 route. This split is intentional.
 
 ```
-kerbridge.example.site            A     <broker host LAN IP>
+kerbridge.example.site                A     <broker host LAN IP>
 
-_kerbridge._tcp.example.site      SRV   0 100 443 kerbridge.example.site.
+_kerbridge._tcp.example.site          SRV   0 100 443 kerbridge.example.site.
 
-_kerberos._udp.example.site       SRV   0 100 88  kerbridge.example.site.
-_kerberos._tcp.example.site       SRV   0 100 88  kerbridge.example.site.
+_kerberos._udp.example.site           SRV   0 100 88  kerbridge.example.site.
+_kerberos._tcp.example.site           SRV   0 100 88  kerbridge.example.site.
 
-_ldap._tcp.example.site           SRV   0 100 389 kerbridge.example.site.
-_ldap._tcp.dc._msdcs.example.site SRV   0 100 389 kerbridge.example.site.
+_ldap._tcp.example.site               SRV   0 100 389 kerbridge.example.site.
+_ldap._tcp.dc._msdcs.example.site     SRV   0 100 389 kerbridge.example.site.
+_kerberos._tcp.dc._msdcs.example.site SRV   0 100 88  kerbridge.example.site.
 ```
 
 - **`_kerbridge._tcp`** is KerBridge's own record. A client with no
@@ -34,10 +35,17 @@ _ldap._tcp.dc._msdcs.example.site SRV   0 100 389 kerbridge.example.site.
   push no registry value.
 - **`_kerberos._udp`** is the record that Windows queries. Publish
   `_kerberos._tcp` also. It has no cost, and other clients use it.
-- **The two `_ldap._tcp` records** are the DC-locator pair. The workstation of
-  step 7 is a foreign-realm Kerberos client, and it never queries them. Each
-  tool that must find the DC *as a DC* needs them: RSAT and ADUC on an unjoined
-  machine, and a domain member that resolves the realm through this zone.
+- **The three DC-locator records** let tools find the DC *as a DC*. The
+  workstation of step 7 is a foreign-realm Kerberos client, and it never queries
+  them. RSAT and ADUC need these records on an unjoined machine. A domain member
+  also needs them when it resolves the realm through this zone.
+- **`net ads` queries `_kerberos._tcp.dc._msdcs` for a KDC.** Samba's DC locator
+  does not use the `dns_lookup_kdc` of `krb5.conf`, and it does not query
+  `_kerberos._tcp.<realm>`. Without this record the join stops:
+
+  ```
+  get_kdc_ip_string: get_kdc_list fail NT_STATUS_NO_LOGON_SERVERS
+  ```
 - **Your file server is not in this list, and this is intentional.** It needs
   an A record that resolves to itself, and a machine that already serves files
   almost always has one. It needs no SRV record: the client builds
@@ -66,8 +74,8 @@ an answer.
 <details>
 <summary>The full DC-locator set, if a tool still cannot find the domain</summary>
 
-The two `_ldap._tcp` records above are not the full locator set. The
-site-scoped, global-catalog and `_kpasswd` records are in
+The three locator records above are not the full locator set. The site-scoped,
+global-catalog and `_kpasswd` records are in
 [Give the client the DC locator records
 (`rsat-and-kerbridge-management.md`)](../rsat-and-kerbridge-management.md#2-give-the-client-the-dc-locator-records).
 
@@ -96,7 +104,9 @@ aws route53 change-resource-record-sets --hosted-zone-id Z123 --change-batch '{
     {"Action":"UPSERT","ResourceRecordSet":{"Name":"_ldap._tcp.example.site","Type":"SRV","TTL":300,
       "ResourceRecords":[{"Value":"0 100 389 kerbridge.example.site."}]}},
     {"Action":"UPSERT","ResourceRecordSet":{"Name":"_ldap._tcp.dc._msdcs.example.site","Type":"SRV","TTL":300,
-      "ResourceRecords":[{"Value":"0 100 389 kerbridge.example.site."}]}}
+      "ResourceRecords":[{"Value":"0 100 389 kerbridge.example.site."}]}},
+    {"Action":"UPSERT","ResourceRecordSet":{"Name":"_kerberos._tcp.dc._msdcs.example.site","Type":"SRV","TTL":300,
+      "ResourceRecords":[{"Value":"0 100 88 kerbridge.example.site."}]}}
   ]}'
 ```
 
@@ -112,6 +122,7 @@ srv-host=_kerberos._tcp.example.site,kerbridge.example.site,88,0,100
 srv-host=_kerbridge._tcp.example.site,kerbridge.example.site,443,0,100
 srv-host=_ldap._tcp.example.site,kerbridge.example.site,389,0,100
 srv-host=_ldap._tcp.dc._msdcs.example.site,kerbridge.example.site,389,0,100
+srv-host=_kerberos._tcp.dc._msdcs.example.site,kerbridge.example.site,88,0,100
 ```
 
 `address=` answers both A and AAAA. If the host has an IPv6 address in
@@ -124,12 +135,13 @@ answer.
 <summary>BIND zone file</summary>
 
 ```
-kerbridge               IN A    192.0.2.10
-_kerberos._udp          IN SRV  0 100 88  kerbridge.example.site.
-_kerberos._tcp          IN SRV  0 100 88  kerbridge.example.site.
-_kerbridge._tcp         IN SRV  0 100 443 kerbridge.example.site.
-_ldap._tcp              IN SRV  0 100 389 kerbridge.example.site.
-_ldap._tcp.dc._msdcs    IN SRV  0 100 389 kerbridge.example.site.
+kerbridge                IN A    192.0.2.10
+_kerberos._udp           IN SRV  0 100 88  kerbridge.example.site.
+_kerberos._tcp           IN SRV  0 100 88  kerbridge.example.site.
+_kerbridge._tcp          IN SRV  0 100 443 kerbridge.example.site.
+_ldap._tcp               IN SRV  0 100 389 kerbridge.example.site.
+_ldap._tcp.dc._msdcs     IN SRV  0 100 389 kerbridge.example.site.
+_kerberos._tcp.dc._msdcs IN SRV  0 100 88  kerbridge.example.site.
 ```
 
 </details>
@@ -143,9 +155,9 @@ Create the `kerbridge` A record in the usual manner. For each SRV record, use
 to `100`, Port to `88`, `443` or `389`, and *Host offering this service* to
 `kerbridge.example.site`.
 
-Before you create `_ldap._tcp.dc._msdcs`, create the `_msdcs.example.site` and
-`dc._msdcs.example.site` domains with *New Domain…*, two times. Then put the
-SRV record in the inner domain.
+Before you create the two `dc._msdcs` records, create the `_msdcs.example.site`
+and `dc._msdcs.example.site` domains with *New Domain…*, two times. Then put
+both SRV records in the inner domain.
 
 </details>
 

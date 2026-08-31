@@ -278,6 +278,7 @@ Samba DNS. Each SRV record uses priority 0 and weight 100:
 | `_kerberos._tcp.example.site SRV` | `88 kerbridge.example.site.` | Kerberos discovery |
 | `_ldap._tcp.example.site SRV` | `389 kerbridge.example.site.` | DC locator |
 | `_ldap._tcp.dc._msdcs.example.site SRV` | `389 kerbridge.example.site.` | DC locator |
+| `_kerberos._tcp.dc._msdcs.example.site SRV` | `88 kerbridge.example.site.` | KDC locator, `net ads` |
 
 Do not publish an AAAA record for these names. The Compose path publishes Samba
 on IPv4 only. A measured Windows workstation waited without an error when DNS

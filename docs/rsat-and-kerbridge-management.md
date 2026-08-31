@@ -264,9 +264,10 @@ avoids by using host networking in production.
 ### 2. Give the client the DC-locator records
 
 The LAN resolver set in [`../SETUP.md`](../SETUP.md#3-publish-the-dns-records)
-carries `_ldap._tcp.<domain>` and `_ldap._tcp.dc._msdcs.<domain>`, which is the
-minimum ADUC needs. The rest of the locator set a domain member expects is not
-there, and some ADUC operations want it. Verify with:
+carries `_ldap._tcp.<domain>`, `_ldap._tcp.dc._msdcs.<domain>` and
+`_kerberos._tcp.dc._msdcs.<domain>`, which is the minimum ADUC needs. The rest
+of the locator set a domain member expects is not there, and some ADUC
+operations want it. Verify with:
 
 ```
 nltest /dsgetdc:example.site
@@ -282,8 +283,8 @@ zone by hand.
 In dnsmasq, `srv-host=<name>,<target>,<port>,<priority>,<weight>`:
 
 ```
-srv-host=_ldap._tcp.example.site,kerbridge.example.site,389,0,100          # in SETUP.md
-srv-host=_ldap._tcp.dc._msdcs.example.site,kerbridge.example.site,389,0,100  # in SETUP.md
+srv-host=_ldap._tcp.example.site,kerbridge.example.site,389,0,100
+srv-host=_ldap._tcp.dc._msdcs.example.site,kerbridge.example.site,389,0,100
 srv-host=_kerberos._tcp.dc._msdcs.example.site,kerbridge.example.site,88,0,100
 srv-host=_kpasswd._tcp.example.site,kerbridge.example.site,464,0,100
 srv-host=_kpasswd._udp.example.site,kerbridge.example.site,464,0,100
@@ -291,8 +292,8 @@ srv-host=_gc._tcp.example.site,kerbridge.example.site,3268,0,100
 srv-host=_ldap._tcp.gc._msdcs.example.site,kerbridge.example.site,3268,0,100
 ```
 
-- The first two are already in the `SETUP.md` set; the rest are **additions** to
-  it, not a replacement.
+- The first three are already in the `SETUP.md` set; the rest are **additions**
+  to it, not a replacement.
 - A full DC-locator set also includes the site-scoped
   `_ldap._tcp.<site>._sites.dc._msdcs` and `_gc._tcp.<site>._sites`, and the
   domain-GUID `_ldap._tcp.<domain-guid>.domains._msdcs`; `nltest` reports both

@@ -64,8 +64,10 @@ agree. Use the names that your site already uses.
     you can, run the same distribution package as the DC.
 - **DNS through the DC.** The file server must resolve the AD zone's SRV and A
   records from the KerBridge DC. Set `nameserver <DC address>` and
-  `search example.site`. This makes `dns_lookup_kdc` work, and it makes the
-  join's own A-record registration work. See
+  `search example.site`. The DC's zone is locator-complete, and it makes the
+  join's own A-record registration work. A resolver that serves the LAN zone
+  instead answers only the records that you published there, and the join needs
+  `_kerberos._tcp.dc._msdcs.example.site` among them. See
   [Give the file server the realm zone
   (`dns-and-firewall.md`)](dns-and-firewall.md#give-the-file-server-the-realm-zone).
 - **Time within 300 seconds** of the DC. This is the Kerberos authenticator
@@ -460,3 +462,4 @@ works from an unjoined workstation, through
 | Access is denied for the user who created the file | The idmap range differs between members. See §2 |
 | `NT_STATUS_LOGON_FAILURE` with a TGT that looks valid | The clock difference is more than 300 s. `kinit` hides it; the service does not |
 | The join reports `ERROR_DNS_UPDATE_FAILED` | Usually not a problem. Check that the A record exists; if it is missing, run `net ads dns register` |
+| `net ads join` reports `get_kdc_list fail NT_STATUS_NO_LOGON_SERVERS` | The resolver serves no `_kerberos._tcp.dc._msdcs.example.site`. Samba's DC locator needs that record. It does not use `_kerberos._tcp.example.site` or `dns_lookup_kdc` in `krb5.conf`. Resolve through the DC, or publish the record. See [Prerequisites](#prerequisites) |

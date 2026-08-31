@@ -206,7 +206,7 @@ source.
 
 ## 3. Publish the DNS records
 
-Publish one A record and five SRV records in the zone that your **workstations**
+Publish one A record and six SRV records in the zone that your **workstations**
 use. Do not publish them in Samba's internal DNS.
 
 Go to **→ [dns-and-firewall.md](docs/setup/dns-and-firewall.md)** for the
