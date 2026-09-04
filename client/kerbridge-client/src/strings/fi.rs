@@ -138,7 +138,7 @@ pub(super) static FI: Strings = Strings {
     unenroll_incomplete: "Poisto ei päättynyt siististi. Loki sisältää tiedot.",
 
     dlg_grant_off_question: "Poistetaanko tämän laitteen valtuutus?",
-    dlg_grant_off_body: "Tämän laitteen TPM-piirissä oleva avain poistetaan ja peruutetaan palvelimella {broker}. Poistoa ei voi kumota — uusi valtuutus luo uuden avaimen.",
+    dlg_grant_off_body: "Tämän laitteen laitteistopohjaisessa avainsäilössä oleva avain poistetaan ja peruutetaan palvelimella {broker}. Poistoa ei voi kumota — uusi valtuutus luo uuden avaimen.",
     dlg_grant_off_body_own: "Käyttöoikeutesi alueen {realm} verkkoasemiin ei muutu. Tämä laite kirjautuu sisään samalla tavalla kuin ennen valtuutusta.",
     dlg_grant_off_body_delegated: "Tämä laite toimii tunnuksella {target} eikä voi kirjautua sisään kenenkään muun nimissä. Sen käyttöoikeus alueen {realm} verkkoasemiin toimii vielä {remaining} ja päättyy sitten. Käynnistääkseen sen uudelleen jonkun, jolla on oikeus valtuuttaa {target}, on kirjauduttava täällä sisään.",
     dlg_grant_off_commit: "Poista valtuutus",
@@ -148,7 +148,7 @@ pub(super) static FI: Strings = Strings {
     dlg_grant_off_result_stale: "Avain poistettu tästä laitteesta · {broker} luetteloi sen yhä, ja järjestelmänvalvoja poistaa sen komennolla `kbmanage device revoke`",
     dlg_grant_unsaved: "Tämä laite ei voinut päivittää omaa tietuettaan.",
 
-    grant_confirm: "Tämä laite pääsee verkkoasemiisi ilman selainkirjautumista, tällä laitteella olevalla tililläsi. Voimassa {days}.\r\n\r\nAvain pysyy tämän laitteen TPM-piirissä, eikä sitä voi kopioida pois. Järjestelmänvalvoja voi peruuttaa sen milloin tahansa.",
+    grant_confirm: "Tämä laite pääsee verkkoasemiisi ilman selainkirjautumista, tällä laitteella olevalla tililläsi. Voimassa {days}.\r\n\r\nAvain pysyy tämän laitteen laitteistopohjaisessa avainsäilössä, eikä sitä voi kopioida pois. Järjestelmänvalvoja voi peruuttaa sen milloin tahansa.",
     dlg_grant_commit: "Valtuuta käyttöoikeus",
     dlg_grant_working: "Valtuutetaan tätä laitetta…",
     grant_done: "Valmis. Tämä laite ei tarvitse selainkirjautumista {days} aikana.",

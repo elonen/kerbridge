@@ -215,7 +215,7 @@ doors_lead = "它们听起来相似，效果却各不相同。整页只有这一
 tech_doors_hint = "每扇门实际做了什么"
 tech_doors = [
   "<strong>从身份提供方退出登录</strong>会结束颁发机构那边的 SSO 会话，并丢弃内存中的刷新令牌。它无法把你从 Windows 本身注销；一个应用只能释放自己的会话。",
-  "<strong>移除授权</strong>会<em>先</em>从此设备的 TPM 中删除设备授权那把不可导出的 ECDSA P-256 密钥，然后才在代理服务器上吊销它 — 正是这个顺序让它离线也能工作。",
+  "<strong>移除授权</strong>会<em>先</em>从此设备的硬件密钥存储中删除设备授权那把不可导出的 ECDSA P-256 密钥，然后才在代理服务器上吊销它 — 正是这个顺序让它离线也能工作。",
   "<strong>注销</strong>是一次以领域为范围的票据缓存清除 — 只清这个领域的 TGT 和服务票据。其他领域的票据原封不动，这正是它在 cloud trust 租户上安全的原因。已经建立的 SMB 会话会在空缓存之上继续提供文件，不产生任何 Kerberos 流量，所以任何只作用于票据的操作都无法诚实地承诺连接会断开。",
 ]
 
@@ -241,7 +241,8 @@ authorizing_notes = [
 
 tech_grant_hint = "设备授权"
 tech_grant = [
-  "这是 KerBridge 的<strong>设备授权</strong> — TPM 中一把不可导出的 ECDSA P-256 密钥，通过 CNG 的 platform crypto provider 在用户范围内创建，因此不需要提升权限，并随用户配置文件一起消失。代理服务器保存对应的公钥并执行自己的天数上限，所以调低上限会缩短所有已发出的授权。",
+  "这是 KerBridge 的<strong>设备授权</strong> — 此设备硬件密钥存储中一把不可导出的 ECDSA P-256 密钥。在 Windows 上那就是 TPM，密钥通过 CNG 的 platform crypto provider 在用户范围内创建，因此不需要提升权限，并随用户配置文件一起消失。代理服务器保存对应的公钥并执行自己的天数上限，所以调低上限会缩短所有已发出的授权。",
+  "在 Mac 上，它是一把临时的 Secure Enclave 密钥。留下来的是被 Enclave 包裹的数据块，以 <code>0600</code> 的文件存放在应用设置旁边；换一台 Mac 就没用了。Enclave 并不在本地账户之间划界，所以在那台 Mac 上，文件权限是唯一挡在这份授权与另一个能读到该文件的账户之间的东西。",
 ]
 
 everything_else_title = "其余的一切"

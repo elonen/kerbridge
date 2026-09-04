@@ -217,7 +217,7 @@ doors_lead = "Sembrano simili ma hanno effetti diversi. È l'unica tabella di qu
 tech_doors_hint = "che cosa fa davvero ciascuna porta"
 tech_doors = [
   "<strong>Disconnettersi dall'identity provider</strong> termina la sessione SSO presso l'authority e scarta il refresh token in memoria. Non può disconnetterti da Windows stesso; un'applicazione può rilasciare solo la propria sessione.",
-  "<strong>Rimuovere l'autorizzazione</strong> elimina <em>prima</em> la chiave ECDSA P-256 non esportabile della concessione dispositivo dal TPM di questo dispositivo, e solo dopo la revoca sul broker — è quell'ordine a farla funzionare anche offline.",
+  "<strong>Rimuovere l'autorizzazione</strong> elimina <em>prima</em> la chiave ECDSA P-256 non esportabile della concessione dispositivo dall'archivio chiavi hardware di questo dispositivo, e solo dopo la revoca sul broker — è quell'ordine a farla funzionare anche offline.",
   "<strong>Chiudere l'accesso</strong> è uno svuotamento della cache dei ticket limitato al realm — il TGT e i ticket di servizio di questo realm soltanto. I ticket degli altri realm restano intatti, ed è questo a renderlo sicuro su un tenant con cloud trust. Una sessione SMB già stabilita continua a servire file sopra una cache vuota, senza alcun traffico Kerberos, quindi nessuna operazione limitata ai ticket può promettere onestamente che le connessioni terminino.",
 ]
 
@@ -243,7 +243,8 @@ authorizing_notes = [
 
 tech_grant_hint = "la concessione dispositivo"
 tech_grant = [
-  "È una <strong>concessione dispositivo</strong> di KerBridge — una chiave ECDSA P-256 non esportabile nel TPM, creata tramite il platform crypto provider di CNG con ambito utente, quindi non richiede elevazione e muore con il profilo. Il broker conserva la chiave pubblica corrispondente e applica il proprio tetto di giorni, quindi abbassare quel tetto accorcia ogni concessione in essere.",
+  "È una <strong>concessione dispositivo</strong> di KerBridge — una chiave ECDSA P-256 non esportabile nell'archivio chiavi hardware di questo dispositivo. Su Windows è il TPM, e la chiave è creata tramite il platform crypto provider di CNG con ambito utente, quindi non richiede elevazione e muore con il profilo. Il broker conserva la chiave pubblica corrispondente e applica il proprio tetto di giorni, quindi abbassare quel tetto accorcia ogni concessione in essere.",
+  "Su un Mac è una chiave Secure Enclave transitoria. A persistere è il blob avvolto dall'Enclave, in un file con modo <code>0600</code> accanto alle impostazioni dell'app; su qualsiasi altro Mac non serve a nulla. L'Enclave non traccia alcun confine tra account locali, quindi su quel Mac i permessi del file sono l'unica cosa fra la concessione e un altro account in grado di leggerlo.",
 ]
 
 everything_else_title = "Tutto il resto"

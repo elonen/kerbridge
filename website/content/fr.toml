@@ -206,7 +206,7 @@ doors_lead = "Elles se ressemblent mais n'ont pas le même effet. S'il faut rete
 tech_doors_hint = "ce que chaque porte fait réellement"
 tech_doors = [
   "<strong>La déconnexion du fournisseur d'identité</strong> met fin à la session SSO chez l'autorité et jette le jeton de rafraîchissement conservé en mémoire. Elle ne peut pas vous déconnecter de Windows lui-même ; une application ne peut libérer que sa propre session.",
-  "<strong>Le retrait de l'autorisation</strong> supprime <em>d'abord</em>, dans le TPM de cet appareil, la clé ECDSA P-256 non exportable de l'autorisation d'appareil, puis la révoque auprès du broker — c'est cet ordre qui lui permet de fonctionner hors ligne.",
+  "<strong>Le retrait de l'autorisation</strong> supprime <em>d'abord</em>, dans le magasin de clés matériel de cet appareil, la clé ECDSA P-256 non exportable de l'autorisation d'appareil, puis la révoque auprès du broker — c'est cet ordre qui lui permet de fonctionner hors ligne.",
   "<strong>La déconnexion</strong> est une purge du cache de tickets limitée au royaume — le TGT et les tickets de service de ce royaume seulement. Les tickets des autres royaumes sont laissés intacts, ce qui la rend sûre sur un locataire en cloud trust. Une session SMB déjà établie continue de servir des fichiers depuis un cache vide sans trafic Kerberos : aucune commande limitée aux tickets ne peut donc honnêtement promettre la fin des connexions.",
 ]
 
@@ -232,7 +232,8 @@ authorizing_notes = [
 
 tech_grant_hint = "l'autorisation d'appareil"
 tech_grant = [
-  "C'est une <strong>autorisation d'appareil</strong> KerBridge — une clé ECDSA P-256 non exportable dans le TPM, créée via le platform crypto provider de CNG à portée utilisateur, donc sans élévation et disparaissant avec le profil. Le broker détient la clé publique correspondante et applique son propre plafond en jours : abaisser ce plafond raccourcit toutes les autorisations en cours.",
+  "C'est une <strong>autorisation d'appareil</strong> KerBridge — une clé ECDSA P-256 non exportable dans le magasin de clés matériel de cet appareil. Sous Windows, c'est le TPM, la clé étant créée via le platform crypto provider de CNG à portée utilisateur, donc sans élévation et disparaissant avec le profil. Le broker détient la clé publique correspondante et applique son propre plafond en jours : abaisser ce plafond raccourcit toutes les autorisations en cours.",
+  "Sur un Mac, c'est une clé Secure Enclave transitoire. Ce qui persiste, c'est le blob chiffré par l'Enclave, dans un fichier en mode <code>0600</code> à côté des réglages de l'application ; il est inutilisable sur tout autre Mac. L'Enclave ne trace aucune limite entre comptes locaux : sur ce Mac, les droits du fichier sont donc la seule chose qui sépare l'autorisation d'un autre compte capable de le lire.",
 ]
 
 everything_else_title = "Tout le reste"

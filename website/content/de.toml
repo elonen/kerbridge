@@ -206,7 +206,7 @@ doors_lead = "Diese drei klingen ähnlich, bewirken aber Verschiedenes. Das ist 
 tech_doors_hint = "was jede Tür tatsächlich tut"
 tech_doors = [
   "<strong>Die Abmeldung beim Identitätsanbieter</strong> beendet die SSO-Sitzung bei der Authority und verwirft das Refresh-Token im Speicher. Sie kann Sie nicht von Windows selbst abmelden; eine Anwendung kann nur ihre eigene Sitzung freigeben.",
-  "<strong>Das Entfernen der Autorisierung</strong> löscht <em>zuerst</em> den nicht exportierbaren ECDSA-P-256-Schlüssel der Gerätegenehmigung aus dem TPM dieses Geräts und widerruft ihn erst dann beim Broker — genau diese Reihenfolge lässt es auch offline funktionieren.",
+  "<strong>Das Entfernen der Autorisierung</strong> löscht <em>zuerst</em> den nicht exportierbaren ECDSA-P-256-Schlüssel der Gerätegenehmigung aus dem Hardware-Schlüsselspeicher dieses Geräts und widerruft ihn erst dann beim Broker — genau diese Reihenfolge lässt es auch offline funktionieren.",
   "<strong>Das Abmelden</strong> ist eine auf den Realm begrenzte Leerung des Ticket-Caches — nur das TGT und die Service-Tickets dieses Realms. Tickets anderer Realms bleiben unberührt, was es in einem Cloud-Trust-Tenant sicher macht. Eine bereits aufgebaute SMB-Sitzung liefert weiter Dateien aus einem leeren Cache, ohne Kerberos-Verkehr — kein auf Tickets begrenztes Kommando kann also ehrlich versprechen, dass Verbindungen enden.",
 ]
 
@@ -232,7 +232,8 @@ authorizing_notes = [
 
 tech_grant_hint = "die Gerätegenehmigung"
 tech_grant = [
-  "Das ist eine KerBridge-<strong>Gerätegenehmigung</strong> — ein nicht exportierbarer ECDSA-P-256-Schlüssel im TPM, erzeugt über den Platform Crypto Provider von CNG im Benutzerkontext, sodass er keine Rechteerhöhung braucht und mit dem Profil verschwindet. Der Broker hält den passenden öffentlichen Schlüssel und setzt seine eigene Tagesobergrenze durch — wird diese gesenkt, verkürzt das jede ausstehende Genehmigung.",
+  "Das ist eine KerBridge-<strong>Gerätegenehmigung</strong> — ein nicht exportierbarer ECDSA-P-256-Schlüssel im Hardware-Schlüsselspeicher dieses Geräts. Unter Windows ist das das TPM, erzeugt über den Platform Crypto Provider von CNG im Benutzerkontext, sodass er keine Rechteerhöhung braucht und mit dem Profil verschwindet. Der Broker hält den passenden öffentlichen Schlüssel und setzt seine eigene Tagesobergrenze durch — wird diese gesenkt, verkürzt das jede ausstehende Genehmigung.",
+  "Auf einem Mac ist es ein transienter Secure-Enclave-Schlüssel. Was bleibt, ist der von der Enclave verpackte Blob, in einer Datei mit Modus <code>0600</code> neben den Einstellungen der App; auf keinem anderen Mac ist er brauchbar. Die Enclave zieht keine Grenze zwischen lokalen Konten — auf diesem Mac sind daher die Dateirechte das Einzige, was zwischen der Genehmigung und einem anderen Konto steht, das die Datei lesen kann.",
 ]
 
 everything_else_title = "Alles Übrige"

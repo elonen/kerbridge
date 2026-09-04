@@ -216,7 +216,7 @@ doors_lead = "Nämä kuulostavat samanlaisilta, mutta vaikuttavat eri asioihin. 
 tech_doors_hint = "mitä kukin ovi todella tekee"
 tech_doors = [
   "<strong>Identiteetintarjoajalta uloskirjautuminen</strong> päättää SSO-istunnon auktoriteetin päässä ja hylkää muistissa olevan päivitystunnuksen. Se ei voi kirjata sinua ulos Windowsista itsestään; sovellus voi vapauttaa vain oman istuntonsa.",
-  "<strong>Valtuutuksen poistaminen</strong> poistaa laitevaltuutuksen ei-vietävissä olevan ECDSA P-256 -avaimen tämän laitteen TPM:stä <em>ensin</em> ja peruuttaa sen vasta sitten brokerilla — juuri tuo järjestys saa sen toimimaan myös verkotta.",
+  "<strong>Valtuutuksen poistaminen</strong> poistaa laitevaltuutuksen ei-vietävissä olevan ECDSA P-256 -avaimen tämän laitteen laitteistopohjaisesta avainsäilöstä <em>ensin</em> ja peruuttaa sen vasta sitten brokerilla — juuri tuo järjestys saa sen toimimaan myös verkotta.",
   "<strong>Poiskirjautuminen</strong> on realm-rajattu lipputaltion tyhjennys — vain tämän realmin TGT ja palveluliput. Muiden realmien liput jätetään rauhaan, mikä tekee siitä turvallisen cloud trust -tenantissa. Jo muodostettu SMB-istunto jatkaa tiedostojen tarjoamista tyhjän taltion päältä ilman Kerberos-liikennettä, joten mikään lippuihin rajattu toiminto ei voi rehellisesti luvata yhteyksien päättymistä.",
 ]
 
@@ -242,7 +242,8 @@ authorizing_notes = [
 
 tech_grant_hint = "laitevaltuutus"
 tech_grant = [
-  "Tämä on KerBridgen <strong>laitevaltuutus</strong> — ei-vietävissä oleva ECDSA P-256 -avain TPM:ssä, luotu CNG:n platform crypto providerilla käyttäjätasolle, joten se ei vaadi oikeuksien korotusta ja katoaa profiilin mukana. Broker pitää hallussaan vastaavaa julkista avainta ja valvoo omaa päiväkattoaan, joten katon laskeminen lyhentää kaikkia voimassa olevia valtuutuksia.",
+  "Tämä on KerBridgen <strong>laitevaltuutus</strong> — ei-vietävissä oleva ECDSA P-256 -avain tämän laitteen laitteistopohjaisessa avainsäilössä. Windowsissa säilö on TPM, ja avain luodaan CNG:n platform crypto providerilla käyttäjätasolle, joten se ei vaadi oikeuksien korotusta ja katoaa profiilin mukana. Broker pitää hallussaan vastaavaa julkista avainta ja valvoo omaa päiväkattoaan, joten katon laskeminen lyhentää kaikkia voimassa olevia valtuutuksia.",
+  "Macissa se on tilapäinen Secure Enclave -avain. Talteen jää Enclaven käärimä lohko, tiedostossa oikeuksin <code>0600</code> sovelluksen asetusten vierellä; millään toisella Macilla se ei kelpaa. Enclave ei erottele paikallisia käyttäjätilejä, joten tuolla Macilla tiedoston oikeudet ovat ainoa asia valtuutuksen ja toisen, tiedoston lukemaan pystyvän tilin välissä.",
 ]
 
 everything_else_title = "Kaikki muu"

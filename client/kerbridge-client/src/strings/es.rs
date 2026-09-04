@@ -138,7 +138,7 @@ pub(super) static ES: Strings = Strings {
     unenroll_incomplete: "La eliminación no terminó limpiamente. El registro tiene los detalles.",
 
     dlg_grant_off_question: "¿Quitar la autorización de este dispositivo?",
-    dlg_grant_off_body: "La clave del TPM de este dispositivo se elimina y se revoca en {broker}. Eliminarla no se puede deshacer: autorizar de nuevo crea una clave nueva.",
+    dlg_grant_off_body: "La clave del almacén de claves de hardware de este dispositivo se elimina y se revoca en {broker}. Eliminarla no se puede deshacer: autorizar de nuevo crea una clave nueva.",
     dlg_grant_off_body_own: "Tu acceso a las unidades de red de {realm} no se ve afectado. Este dispositivo inicia sesión como lo hacía antes de ser autorizado.",
     dlg_grant_off_body_delegated: "Este dispositivo funciona como {target} y no puede iniciar sesión como nadie más. Su acceso a las unidades de red de {realm} sigue funcionando hasta que venza dentro de {remaining}, y entonces se detiene. Para volver a activarlo, alguien con permiso para autorizar a {target} tiene que iniciar sesión aquí.",
     dlg_grant_off_commit: "Quitar la autorización",
@@ -148,7 +148,7 @@ pub(super) static ES: Strings = Strings {
     dlg_grant_off_result_stale: "Clave eliminada en este dispositivo · {broker} todavía lo tiene en la lista, y un administrador lo quita con `kbmanage device revoke`",
     dlg_grant_unsaved: "Este dispositivo no pudo actualizar su propio registro.",
 
-    grant_confirm: "Este dispositivo puede llegar a tus unidades de red sin iniciar sesión en el navegador, para tu cuenta en este dispositivo. Validez: {days}.\r\n\r\nLa clave permanece en el TPM de este dispositivo y no se puede copiar fuera de él. Tu administrador puede revocarla en cualquier momento.",
+    grant_confirm: "Este dispositivo puede llegar a tus unidades de red sin iniciar sesión en el navegador, para tu cuenta en este dispositivo. Validez: {days}.\r\n\r\nLa clave permanece en el almacén de claves de hardware de este dispositivo y no se puede copiar fuera de él. Tu administrador puede revocarla en cualquier momento.",
     dlg_grant_commit: "Autorizar el acceso",
     dlg_grant_working: "Autorizando este dispositivo…",
     grant_done: "Listo. Este dispositivo no necesitará iniciar sesión en el navegador durante {days}.",

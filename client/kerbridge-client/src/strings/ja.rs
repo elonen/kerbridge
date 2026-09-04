@@ -138,7 +138,7 @@ pub(super) static JA: Strings = Strings {
     unenroll_incomplete: "削除が正常に完了しませんでした。詳細はログにあります。",
 
     dlg_grant_off_question: "このデバイスの承認を削除しますか?",
-    dlg_grant_off_body: "このデバイスの TPM 内のキーが削除され、{broker} で取り消されます。削除は元に戻せません。もう一度承認すると新しいキーが作成されます。",
+    dlg_grant_off_body: "このデバイスのハードウェア キーストア内のキーが削除され、{broker} で取り消されます。削除は元に戻せません。もう一度承認すると新しいキーが作成されます。",
     dlg_grant_off_body_own: "{realm} のネットワーク ドライブへのアクセスは影響を受けません。このデバイスは承認前と同じ方法でサインインします。",
     dlg_grant_off_body_delegated: "このデバイスは {target} として動作し、ほかの人としてはサインインできません。{realm} のネットワーク ドライブへのアクセスは {remaining} 後の期限まで動作し、その後停止します。再開するには、{target} を承認できる人がここでサインインする必要があります。",
     dlg_grant_off_commit: "承認を削除",
@@ -148,7 +148,7 @@ pub(super) static JA: Strings = Strings {
     dlg_grant_off_result_stale: "このデバイスでキーを削除 · {broker} にはまだ登録が残っており、管理者が `kbmanage device revoke` で消します",
     dlg_grant_unsaved: "このデバイスは自身の記録を更新できませんでした。",
 
-    grant_confirm: "このデバイスは、このデバイス上のあなたのアカウントで、ブラウザーのサインインなしにネットワーク ドライブへアクセスできます。有効期間: {days}。\r\n\r\nキーはこのデバイスの TPM に保管され、外部にコピーすることはできません。管理者はいつでも取り消せます。",
+    grant_confirm: "このデバイスは、このデバイス上のあなたのアカウントで、ブラウザーのサインインなしにネットワーク ドライブへアクセスできます。有効期間: {days}。\r\n\r\nキーはこのデバイスのハードウェア キーストアに保管され、外部にコピーすることはできません。管理者はいつでも取り消せます。",
     dlg_grant_commit: "アクセスを承認",
     dlg_grant_working: "このデバイスを承認しています…",
     grant_done: "完了しました。このデバイスは {days} の間、ブラウザーでのサインインが不要になります。",

@@ -209,6 +209,7 @@ It belongs to one synchronized user and one key that the workstation holds and c
 The grant-authorizing user must be a member of [delegate group](#delegate-group). The grant can identify another user.
 This is why it's shown to end-users as *Authorize this device to work as user X*.
 <!-- refs: encoding `kbkey1|`, `kerbridge_core::grant`, `configs/main.toml` `device_grant_days` -->
+<!-- user-facing: hardware key store (where the key is kept); do not name a platform-specific store in shared text -->
 <!-- avoid: grant (bare), machine grant, TPM grant, device authorization -->
 
 ### device-grant group

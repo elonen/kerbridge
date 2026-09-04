@@ -217,7 +217,7 @@ doors_lead = "Elas soam parecidas, mas têm efeitos diferentes. Esta é a única
 tech_doors_hint = "o que cada porta realmente faz"
 tech_doors = [
   "<strong>Sair do provedor de identidade</strong> encerra a sessão SSO na autoridade e descarta o refresh token em memória. Não pode desconectar você do próprio Windows; um aplicativo só consegue liberar a própria sessão.",
-  "<strong>Remover a autorização</strong> exclui <em>primeiro</em> a chave ECDSA P-256 não exportável da concessão de dispositivo do TPM deste dispositivo, e só então a revoga no broker — essa ordem é o que a faz funcionar offline.",
+  "<strong>Remover a autorização</strong> exclui <em>primeiro</em> a chave ECDSA P-256 não exportável da concessão de dispositivo do armazenamento de chaves em hardware deste dispositivo, e só então a revoga no broker — essa ordem é o que a faz funcionar offline.",
   "<strong>Encerrar o acesso</strong> é uma limpeza do cache de tickets restrita ao reino — o TGT e os tickets de serviço deste reino apenas. Tickets de outros reinos ficam intactos, e é isso que a torna segura em um tenant com cloud trust. Uma sessão SMB já estabelecida continua servindo arquivos sobre um cache vazio, sem tráfego Kerberos, então nenhuma ação restrita a tickets pode prometer honestamente que as conexões terminam.",
 ]
 
@@ -243,7 +243,8 @@ authorizing_notes = [
 
 tech_grant_hint = "a concessão de dispositivo"
 tech_grant = [
-  "Esta é uma <strong>concessão de dispositivo</strong> do KerBridge — uma chave ECDSA P-256 não exportável no TPM, criada pelo platform crypto provider do CNG no escopo do usuário, então não precisa de elevação e morre com o perfil. O broker guarda a chave pública correspondente e impõe seu próprio teto de dias, então baixar esse teto encurta todas as concessões em vigor.",
+  "Esta é uma <strong>concessão de dispositivo</strong> do KerBridge — uma chave ECDSA P-256 não exportável no armazenamento de chaves em hardware deste dispositivo. No Windows isso é o TPM, e a chave é criada pelo platform crypto provider do CNG no escopo do usuário, então não precisa de elevação e morre com o perfil. O broker guarda a chave pública correspondente e impõe seu próprio teto de dias, então baixar esse teto encurta todas as concessões em vigor.",
+  "Em um Mac é uma chave transitória do Secure Enclave. O que persiste é o blob embrulhado pelo Enclave, em um arquivo com modo <code>0600</code> ao lado das configurações do app; em nenhum outro Mac ele serve. O Enclave não traça linha alguma entre contas locais, então nesse Mac as permissões do arquivo são a única coisa entre a concessão e outra conta capaz de lê-lo.",
 ]
 
 everything_else_title = "Todo o resto"

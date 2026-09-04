@@ -219,7 +219,7 @@ doors_lead = "Suenan parecidas pero hacen cosas distintas. Si en esta página ha
 tech_doors_hint = "qué hace realmente cada puerta"
 tech_doors = [
   "<strong>Cerrar sesión en el proveedor de identidad</strong> termina la sesión SSO en la autoridad y descarta el token de actualización en memoria. No puede cerrar tu sesión de Windows en sí; una aplicación solo puede liberar su propia sesión.",
-  "<strong>Quitar la autorización</strong> elimina <em>primero</em> la clave ECDSA P-256 no exportable de la concesión de dispositivo del TPM de este dispositivo, y después la revoca en el bróker — ese orden es lo que hace que funcione sin conexión.",
+  "<strong>Quitar la autorización</strong> elimina <em>primero</em> la clave ECDSA P-256 no exportable de la concesión de dispositivo del almacén de claves de hardware de este dispositivo, y después la revoca en el bróker — ese orden es lo que hace que funcione sin conexión.",
   "<strong>Cerrar el acceso</strong> es una purga de la caché de tickets limitada al reino — el TGT y los tickets de servicio de este reino, nada más. Los tickets de otros reinos se dejan en paz, que es lo que lo hace seguro en un tenant con cloud trust. Una sesión SMB ya establecida sigue sirviendo archivos con la caché vacía y sin tráfico Kerberos, así que ningún verbo limitado a los tickets puede prometer honestamente que las conexiones terminan.",
 ]
 
@@ -245,7 +245,8 @@ authorizing_notes = [
 
 tech_grant_hint = "la concesión de dispositivo"
 tech_grant = [
-  "Esto es una <strong>concesión de dispositivo</strong> de KerBridge — una clave ECDSA P-256 no exportable en el TPM, creada mediante el platform crypto provider de CNG en el ámbito del usuario, así que no necesita elevación y muere con el perfil. El bróker guarda la clave pública correspondiente y aplica su propio tope de días, de modo que bajar ese tope acorta todas las concesiones vigentes.",
+  "Esto es una <strong>concesión de dispositivo</strong> de KerBridge — una clave ECDSA P-256 no exportable en el almacén de claves de hardware de este dispositivo. En Windows ese almacén es el TPM, y la clave se crea mediante el platform crypto provider de CNG en el ámbito del usuario, así que no necesita elevación y muere con el perfil. El bróker guarda la clave pública correspondiente y aplica su propio tope de días, de modo que bajar ese tope acorta todas las concesiones vigentes.",
+  "En un Mac es una clave transitoria del Secure Enclave. Lo que persiste es el blob envuelto por el Enclave, en un archivo con modo <code>0600</code> junto a los ajustes de la app; no sirve en ningún otro Mac. El Enclave no traza ninguna línea entre cuentas locales, así que en ese Mac los permisos del archivo son lo único que separa la concesión de otra cuenta capaz de leerlo.",
 ]
 
 everything_else_title = "Todo lo demás"

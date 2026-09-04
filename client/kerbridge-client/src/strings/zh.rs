@@ -138,7 +138,7 @@ pub(super) static ZH: Strings = Strings {
     unenroll_incomplete: "移除未能干净地完成。日志中有详细信息。",
 
     dlg_grant_off_question: "要移除此设备的授权吗？",
-    dlg_grant_off_body: "此设备 TPM 中的密钥将被删除，并在 {broker} 上吊销。删除后无法撤销 — 重新授权会创建新的密钥。",
+    dlg_grant_off_body: "此设备硬件密钥存储中的密钥将被删除，并在 {broker} 上吊销。删除后无法撤销 — 重新授权会创建新的密钥。",
     dlg_grant_off_body_own: "你对 {realm} 网络驱动器的访问不受影响。此设备将按获得授权之前的方式登录。",
     dlg_grant_off_body_delegated: "此设备以 {target} 身份运行，无法以其他人身份登录。它对 {realm} 网络驱动器的访问会一直有效到 {remaining} 后到期，然后停止。要重新启用，需要有权为 {target} 授权的人在此登录。",
     dlg_grant_off_commit: "移除授权",
@@ -148,7 +148,7 @@ pub(super) static ZH: Strings = Strings {
     dlg_grant_off_result_stale: "已在此设备上删除密钥 · {broker} 仍列出该设备，管理员可用 `kbmanage device revoke` 清除",
     dlg_grant_unsaved: "此设备无法更新自身的记录。",
 
-    grant_confirm: "此设备无需浏览器登录即可访问你的网络驱动器，使用你在此设备上的账户。有效期：{days}。\r\n\r\n密钥保存在此设备的 TPM 中，无法复制出去。管理员可以随时吊销它。",
+    grant_confirm: "此设备无需浏览器登录即可访问你的网络驱动器，使用你在此设备上的账户。有效期：{days}。\r\n\r\n密钥保存在此设备的硬件密钥存储中，无法复制出去。管理员可以随时吊销它。",
     dlg_grant_commit: "授权访问",
     dlg_grant_working: "正在授权此设备…",
     grant_done: "完成。此设备在 {days} 内无需浏览器登录。",

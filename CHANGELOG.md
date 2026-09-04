@@ -26,6 +26,8 @@ names the tag, and it stops if that section is absent or empty.
 
 ## Unreleased
 
+- Every sentence about the device grant's key now says "hardware key store"
+  rather than "TPM", in all eleven languages and on the help website.
 - `kbmanage cloud list --json` now reports `uidNumber`, so you can find an
   admitted user that has none.
 

@@ -138,7 +138,7 @@ pub(super) static PT: Strings = Strings {
     unenroll_incomplete: "A remoção não terminou de forma limpa. O registro tem os detalhes.",
 
     dlg_grant_off_question: "Remover a autorização deste dispositivo?",
-    dlg_grant_off_body: "A chave no TPM deste dispositivo é excluída e revogada em {broker}. Excluí-la não pode ser desfeito — autorizar de novo cria uma chave nova.",
+    dlg_grant_off_body: "A chave no armazenamento de chaves em hardware deste dispositivo é excluída e revogada em {broker}. Excluí-la não pode ser desfeito — autorizar de novo cria uma chave nova.",
     dlg_grant_off_body_own: "Seu acesso às unidades de rede de {realm} não é afetado. Este dispositivo entra do jeito que entrava antes de ser autorizado.",
     dlg_grant_off_body_delegated: "Este dispositivo funciona como {target} e não pode entrar como outra pessoa. O acesso dele às unidades de rede de {realm} continua funcionando até expirar em {remaining}, e então para. Para reativá-lo, alguém com permissão para autorizar {target} precisa entrar aqui.",
     dlg_grant_off_commit: "Remover a autorização",
@@ -148,7 +148,7 @@ pub(super) static PT: Strings = Strings {
     dlg_grant_off_result_stale: "Chave excluída neste dispositivo · {broker} ainda o lista, e um administrador o remove com `kbmanage device revoke`",
     dlg_grant_unsaved: "Este dispositivo não conseguiu atualizar o próprio registro.",
 
-    grant_confirm: "Este dispositivo consegue alcançar suas unidades de rede sem login pelo navegador, para sua conta neste dispositivo. Validade: {days}.\r\n\r\nA chave fica no TPM deste dispositivo e não pode ser copiada para fora dele. Seu administrador pode revogá-la a qualquer momento.",
+    grant_confirm: "Este dispositivo consegue alcançar suas unidades de rede sem login pelo navegador, para sua conta neste dispositivo. Validade: {days}.\r\n\r\nA chave fica no armazenamento de chaves em hardware deste dispositivo e não pode ser copiada para fora dele. Seu administrador pode revogá-la a qualquer momento.",
     dlg_grant_commit: "Autorizar o acesso",
     dlg_grant_working: "Autorizando este dispositivo…",
     grant_done: "Pronto. Este dispositivo não vai precisar de login pelo navegador por {days}.",

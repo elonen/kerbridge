@@ -138,7 +138,7 @@ pub(super) static FR: Strings = Strings {
     unenroll_incomplete: "La suppression ne s'est pas terminée proprement. Le journal contient les détails.",
 
     dlg_grant_off_question: "Supprimer l'autorisation de cet appareil ?",
-    dlg_grant_off_body: "La clé dans le TPM de cet appareil est supprimée et révoquée sur {broker}. Cette suppression est irréversible — autoriser à nouveau crée une nouvelle clé.",
+    dlg_grant_off_body: "La clé dans le magasin de clés matériel de cet appareil est supprimée et révoquée sur {broker}. Cette suppression est irréversible — autoriser à nouveau crée une nouvelle clé.",
     dlg_grant_off_body_own: "Votre accès aux lecteurs réseau de {realm} n'est pas affecté. Cet appareil se connecte comme il le faisait avant d'être autorisé.",
     dlg_grant_off_body_delegated: "Cet appareil fonctionne en tant que {target} et ne peut pas se connecter en tant que quelqu'un d'autre. Son accès aux lecteurs réseau de {realm} continue de fonctionner jusqu'à son expiration dans {remaining}, puis s'arrête. Pour le relancer, quelqu'un autorisé à autoriser {target} doit se connecter ici.",
     dlg_grant_off_commit: "Supprimer l'autorisation",
@@ -148,7 +148,7 @@ pub(super) static FR: Strings = Strings {
     dlg_grant_off_result_stale: "Clé supprimée sur cet appareil · {broker} le répertorie toujours, et un administrateur l'efface avec `kbmanage device revoke`",
     dlg_grant_unsaved: "Cet appareil n'a pas pu mettre à jour son propre enregistrement.",
 
-    grant_confirm: "Cet appareil peut atteindre vos lecteurs réseau sans connexion via le navigateur, pour votre compte sur cet appareil. Validité : {days}.\r\n\r\nLa clé reste dans le TPM de cet appareil et ne peut pas en être copiée. Votre administrateur peut la révoquer à tout moment.",
+    grant_confirm: "Cet appareil peut atteindre vos lecteurs réseau sans connexion via le navigateur, pour votre compte sur cet appareil. Validité : {days}.\r\n\r\nLa clé reste dans le magasin de clés matériel de cet appareil et ne peut pas en être copiée. Votre administrateur peut la révoquer à tout moment.",
     dlg_grant_commit: "Autoriser l'accès",
     dlg_grant_working: "Autorisation de cet appareil…",
     grant_done: "Terminé. Cet appareil n'aura pas besoin de connexion via le navigateur pendant {days}.",

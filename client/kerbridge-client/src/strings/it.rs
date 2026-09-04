@@ -138,7 +138,7 @@ pub(super) static IT: Strings = Strings {
     unenroll_incomplete: "La rimozione non è terminata correttamente. Il registro contiene i dettagli.",
 
     dlg_grant_off_question: "Rimuovere l'autorizzazione di questo dispositivo?",
-    dlg_grant_off_body: "La chiave nel TPM di questo dispositivo viene eliminata e revocata su {broker}. L'eliminazione non può essere annullata: autorizzare di nuovo crea una chiave nuova.",
+    dlg_grant_off_body: "La chiave nell'archivio chiavi hardware di questo dispositivo viene eliminata e revocata su {broker}. L'eliminazione non può essere annullata: autorizzare di nuovo crea una chiave nuova.",
     dlg_grant_off_body_own: "Il tuo accesso alle unità di rete di {realm} non viene toccato. Questo dispositivo accede come faceva prima di essere autorizzato.",
     dlg_grant_off_body_delegated: "Questo dispositivo funziona come {target} e non può accedere come qualcun altro. Il suo accesso alle unità di rete di {realm} continua a funzionare fino alla scadenza tra {remaining}, poi si interrompe. Per riavviarlo, deve accedere qui qualcuno autorizzato ad autorizzare {target}.",
     dlg_grant_off_commit: "Rimuovi l'autorizzazione",
@@ -148,7 +148,7 @@ pub(super) static IT: Strings = Strings {
     dlg_grant_off_result_stale: "Chiave eliminata su questo dispositivo · {broker} lo elenca ancora, e un amministratore lo rimuove con `kbmanage device revoke`",
     dlg_grant_unsaved: "Questo dispositivo non è riuscito ad aggiornare il proprio record.",
 
-    grant_confirm: "Questo dispositivo può raggiungere le tue unità di rete senza accedere dal browser, per il tuo account su questo dispositivo. Validità: {days}.\r\n\r\nLa chiave resta nel TPM di questo dispositivo e non può esserne copiata. L'amministratore può revocarla in qualsiasi momento.",
+    grant_confirm: "Questo dispositivo può raggiungere le tue unità di rete senza accedere dal browser, per il tuo account su questo dispositivo. Validità: {days}.\r\n\r\nLa chiave resta nell'archivio chiavi hardware di questo dispositivo e non può esserne copiata. L'amministratore può revocarla in qualsiasi momento.",
     dlg_grant_commit: "Autorizza l'accesso",
     dlg_grant_working: "Autorizzazione di questo dispositivo…",
     grant_done: "Fatto. Questo dispositivo non avrà bisogno dell'accesso dal browser per {days}.",

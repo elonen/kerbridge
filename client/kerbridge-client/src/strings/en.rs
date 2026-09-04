@@ -138,7 +138,7 @@ pub(super) static EN: Strings = Strings {
     unenroll_incomplete: "Removal didn't finish cleanly. The log has the details.",
 
     dlg_grant_off_question: "Remove this device's authorization?",
-    dlg_grant_off_body: "The key in this device's TPM is deleted and revoked at {broker}. Deleting it can't be undone — authorizing again creates a new key.",
+    dlg_grant_off_body: "The key in this device's hardware key store is deleted and revoked at {broker}. Deleting it can't be undone — authorizing again creates a new key.",
     dlg_grant_off_body_own: "Your access to {realm} network drives is not affected. This device signs in the way it did before it was authorized.",
     dlg_grant_off_body_delegated: "This device works as {target} and can't sign in as anyone else. Its access to {realm} network drives keeps working until it expires in {remaining}, and then stops. To start it again, someone allowed to authorize {target} has to sign in here.",
     dlg_grant_off_commit: "Remove authorization",
@@ -148,7 +148,7 @@ pub(super) static EN: Strings = Strings {
     dlg_grant_off_result_stale: "Key deleted on this device · {broker} still lists it, and an administrator clears it with `kbmanage device revoke`",
     dlg_grant_unsaved: "This device couldn't update its own record.",
 
-    grant_confirm: "This device can reach your network drives without a browser sign-in, for your account on this device. Valid for {days}.\r\n\r\nThe key stays in this device's TPM and cannot be copied off it. Your administrator can revoke it at any time.",
+    grant_confirm: "This device can reach your network drives without a browser sign-in, for your account on this device. Valid for {days}.\r\n\r\nThe key stays in this device's hardware key store and cannot be copied off it. Your administrator can revoke it at any time.",
     dlg_grant_commit: "Authorize access",
     dlg_grant_working: "Authorizing this device…",
     grant_done: "Done. This device won't need a browser sign-in for {days}.",

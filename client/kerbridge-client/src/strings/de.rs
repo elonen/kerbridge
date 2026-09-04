@@ -138,7 +138,7 @@ pub(super) static DE: Strings = Strings {
     unenroll_incomplete: "Das Entfernen wurde nicht sauber abgeschlossen. Das Protokoll enthält die Details.",
 
     dlg_grant_off_question: "Autorisierung dieses Geräts entfernen?",
-    dlg_grant_off_body: "Der Schlüssel im TPM dieses Geräts wird gelöscht und bei {broker} widerrufen. Das Löschen lässt sich nicht rückgängig machen — eine erneute Autorisierung erzeugt einen neuen Schlüssel.",
+    dlg_grant_off_body: "Der Schlüssel im Hardware-Schlüsselspeicher dieses Geräts wird gelöscht und bei {broker} widerrufen. Das Löschen lässt sich nicht rückgängig machen — eine erneute Autorisierung erzeugt einen neuen Schlüssel.",
     dlg_grant_off_body_own: "Ihr Zugriff auf die Netzlaufwerke von {realm} ist davon nicht betroffen. Dieses Gerät meldet sich wieder so an wie vor der Autorisierung.",
     dlg_grant_off_body_delegated: "Dieses Gerät arbeitet als {target} und kann sich nicht als jemand anderes anmelden. Sein Zugriff auf die Netzlaufwerke von {realm} funktioniert noch {remaining} weiter und endet dann. Zum Fortsetzen muss sich hier jemand anmelden, der {target} autorisieren darf.",
     dlg_grant_off_commit: "Autorisierung entfernen",
@@ -148,7 +148,7 @@ pub(super) static DE: Strings = Strings {
     dlg_grant_off_result_stale: "Schlüssel auf diesem Gerät gelöscht · {broker} führt es weiterhin auf; eine Administration entfernt es mit `kbmanage device revoke`",
     dlg_grant_unsaved: "Dieses Gerät konnte seinen eigenen Eintrag nicht aktualisieren.",
 
-    grant_confirm: "Dieses Gerät erreicht Ihre Netzlaufwerke ohne Browser-Anmeldung, für Ihr Konto auf diesem Gerät. Gültig: {days}.\r\n\r\nDer Schlüssel bleibt im TPM dieses Geräts und lässt sich nicht daraus kopieren. Ihre Administration kann ihn jederzeit widerrufen.",
+    grant_confirm: "Dieses Gerät erreicht Ihre Netzlaufwerke ohne Browser-Anmeldung, für Ihr Konto auf diesem Gerät. Gültig: {days}.\r\n\r\nDer Schlüssel bleibt im Hardware-Schlüsselspeicher dieses Geräts und lässt sich nicht daraus kopieren. Ihre Administration kann ihn jederzeit widerrufen.",
     dlg_grant_commit: "Zugriff autorisieren",
     dlg_grant_working: "Gerät wird autorisiert…",
     grant_done: "Fertig. Dieses Gerät braucht {days} lang keine Browser-Anmeldung.",

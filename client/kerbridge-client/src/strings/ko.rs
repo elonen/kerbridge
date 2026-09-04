@@ -138,7 +138,7 @@ pub(super) static KO: Strings = Strings {
     unenroll_incomplete: "제거가 깔끔하게 끝나지 않았습니다. 자세한 내용은 로그에 있습니다.",
 
     dlg_grant_off_question: "이 장치의 승인을 제거할까요?",
-    dlg_grant_off_body: "이 장치의 TPM에 있는 키가 삭제되고 {broker}에서 해지됩니다. 삭제는 되돌릴 수 없습니다 — 다시 승인하면 새 키가 만들어집니다.",
+    dlg_grant_off_body: "이 장치의 하드웨어 키 저장소에 있는 키가 삭제되고 {broker}에서 해지됩니다. 삭제는 되돌릴 수 없습니다 — 다시 승인하면 새 키가 만들어집니다.",
     dlg_grant_off_body_own: "{realm} 네트워크 드라이브에 대한 액세스는 영향을 받지 않습니다. 이 장치는 승인 전과 같은 방식으로 로그인합니다.",
     dlg_grant_off_body_delegated: "이 장치는 {target}(으)로 동작하며 다른 사람으로는 로그인할 수 없습니다. {realm} 네트워크 드라이브에 대한 액세스는 {remaining} 후 만료될 때까지 유지되다가 중단됩니다. 다시 시작하려면 {target}을(를) 승인할 수 있는 사람이 여기서 로그인해야 합니다.",
     dlg_grant_off_commit: "승인 제거",
@@ -148,7 +148,7 @@ pub(super) static KO: Strings = Strings {
     dlg_grant_off_result_stale: "이 장치에서 키 삭제됨 · {broker}에는 아직 등록이 남아 있으며, 관리자가 `kbmanage device revoke`로 정리합니다",
     dlg_grant_unsaved: "이 장치가 자체 기록을 업데이트하지 못했습니다.",
 
-    grant_confirm: "이 장치는 이 장치의 사용자 계정으로, 브라우저 로그인 없이 네트워크 드라이브에 연결할 수 있습니다. 유효 기간: {days}.\r\n\r\n키는 이 장치의 TPM에 남아 있으며 밖으로 복사할 수 없습니다. 관리자가 언제든지 해지할 수 있습니다.",
+    grant_confirm: "이 장치는 이 장치의 사용자 계정으로, 브라우저 로그인 없이 네트워크 드라이브에 연결할 수 있습니다. 유효 기간: {days}.\r\n\r\n키는 이 장치의 하드웨어 키 저장소에 남아 있으며 밖으로 복사할 수 없습니다. 관리자가 언제든지 해지할 수 있습니다.",
     dlg_grant_commit: "액세스 승인",
     dlg_grant_working: "이 장치를 승인하는 중…",
     grant_done: "완료되었습니다. 이 장치는 {days} 동안 브라우저 로그인이 필요하지 않습니다.",

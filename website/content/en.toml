@@ -223,7 +223,7 @@ doors_lead = "These sound similar but have a different effect. This is the one t
 tech_doors_hint = "what each door actually does"
 tech_doors = [
   "<strong>Signing out of the identity provider</strong> ends the SSO session at the authority and drops the in-memory refresh token. It cannot sign you out of Windows itself; an application can only release its own session.",
-  "<strong>Removing the authorization</strong> deletes the device grant's non-exportable ECDSA P-256 key from this device's TPM <em>first</em>, then revokes it at the broker — that order is what makes it work offline.",
+  "<strong>Removing the authorization</strong> deletes the device grant's non-exportable ECDSA P-256 key from this device's hardware key store <em>first</em>, then revokes it at the broker — that order is what makes it work offline.",
   "<strong>Signing off</strong> is a realm-scoped purge of the ticket cache — the TGT and the service tickets for this realm only. Tickets for other realms are left alone, which is what makes it safe on a cloud-trust tenant. An SMB session already established keeps serving files off an empty cache with no Kerberos traffic, so no ticket-scoped verb can honestly promise that connections end.",
 ]
 
@@ -249,7 +249,8 @@ authorizing_notes = [
 
 tech_grant_hint = "the device grant"
 tech_grant = [
-  "This is a KerBridge <strong>device grant</strong> — a non-exportable ECDSA P-256 key in the TPM, created through CNG's platform crypto provider at user scope, so it needs no elevation and dies with the profile. The broker holds the matching public key and enforces its own day cap, so lowering that cap shortens every outstanding grant.",
+  "This is a KerBridge <strong>device grant</strong> — a non-exportable ECDSA P-256 key in this device's hardware key store. On Windows that is the TPM, created through CNG's platform crypto provider at user scope, so it needs no elevation and dies with the profile. The broker holds the matching public key and enforces its own day cap, so lowering that cap shortens every outstanding grant.",
+  "On a Mac it is a transient Secure Enclave key. What persists is the Enclave-wrapped blob, in a <code>0600</code> file beside the app's settings; it is not usable on any other Mac. The Enclave draws no line between local accounts, so on that Mac the file mode is what stands between the grant and another account able to read the file.",
 ]
 
 everything_else_title = "Everything else"
