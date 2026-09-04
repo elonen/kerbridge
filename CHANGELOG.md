@@ -26,6 +26,11 @@ names the tag, and it stops if that section is absent or empty.
 
 ## Unreleased
 
+- Device grants now work on macOS. The key is in the Secure Enclave, and the
+  menu bar offers *Authorize access...* like the Windows tray does. No
+  entitlement and no Developer ID are needed. On a Mac the key file's mode is
+  what keeps another local account from using the grant, so anything that
+  copies a home directory copies a working grant with it.
 - Every sentence about the device grant's key now says "hardware key store"
   rather than "TPM", in all eleven languages and on the help website.
 - `kbmanage cloud list --json` now reports `uidNumber`, so you can find an

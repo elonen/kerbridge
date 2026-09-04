@@ -12,8 +12,8 @@
 //!
 //! # What is not secret here
 //!
-//! The public key and the container name are not credentials, which is why
-//! `config.toml` is the right home for the container name.
+//! Public keys and key locators are not credentials. Each installation uses one
+//! fixed locator.
 
 use anyhow::Result;
 

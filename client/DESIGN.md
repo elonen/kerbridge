@@ -56,7 +56,8 @@ failure.
   Windows, the Secure Enclave on macOS. It stands in for a browser sign-in for a
   number of days that the deployment sets. The key is measured on real hardware
   on both platforms (research spikes `device-grant-tpm-key` and
-  `device-grant-enclave-key`).
+  `device-grant-enclave-key`). Both agents offer it; nothing about an
+  entitlement or a Developer ID is in the way on macOS.
   Two rules travel with it. **The release deletes the key locally *before* it
   tells the broker**, so it works offline. **The key is reused, not replaced.**
   If the client created a new key for each authorization, the server would add a
@@ -230,7 +231,7 @@ Inside the core, the parts group by subject:
 | `discovery.rs`, `oidc.rs`, `broker.rs`, `http.rs`, `tls.rs` | The network legs: `/config`, the browser sign-in, `/ticket`, and the one outbound HTTP agent. |
 | `krbcred.rs`, `tickets.rs`, `session.rs` | The ticket: the wire format, the injection and the purge, and the one "token in, TGT out" path that both binaries call. |
 | `srv.rs`, `config.rs`, `log.rs`, `time.rs`, `sys.rs` | How the agent finds the broker, what it stores, and the small calls into the OS. |
-| `enroll.rs`, `device.rs`, `repair.rs`, `elevate.rs` | Realm registration, the device-grant key, the NTLM-fallback repair, and elevation. Each is a Windows subject that macOS and Linux answer with a refusal. |
+| `enroll.rs`, `device.rs`, `repair.rs`, `elevate.rs` | Realm registration, the device-grant key, the NTLM-fallback repair, and elevation. Windows subjects, except `device.rs`: macOS holds the key in the Secure Enclave, and Linux answers all four with a refusal. |
 | `agent/` | The state machine, the schedule, the workers and the notifications. The seam inside it is the UI thread: `commands` is what the host calls, `status` is what it reads, `worker` is what blocks, and `failure` names what went wrong. |
 | `describe.rs`, `present.rs`, `icon.rs`, `strings/` | What the state means, the words it means it in, and what the state icon is made of. `strings/` holds every user-visible string in eleven languages. |
 | `main.rs`, `cli/` | The CLI. |
@@ -1111,7 +1112,7 @@ flowchart LR
 | Elevation | `--enroll` and `--repair` | none anywhere in the product |
 | NTLM fallback | detected, and repaired with the user's consent | none; the mount drops visibly and reconnects |
 | Native token source | WAM, on by default | none; `native_token` is `Unavailable`, so every sign-in is a browser sign-in |
-| Device grant | a TPM key through CNG | none yet; an Enclave key needs no entitlement. A signing identity buys the user boundary, not the key |
+| Device grant | a TPM key through CNG | an Enclave key, kept as a wrapped blob in a `0600` file; it needs no entitlement and no Developer ID. A signing identity buys the user boundary, not the key |
 | Status surface | a flyout window plus the tray menu | the menu, which is also the status window |
 | Autostart | a per-user `Run` value | `SMAppService` |
 

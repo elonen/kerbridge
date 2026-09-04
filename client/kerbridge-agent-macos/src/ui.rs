@@ -207,6 +207,25 @@ pub fn alert(caption: &str, body: &str, ok: bool) {
     alert.runModal();
 }
 
+/// Show a blocking main-thread confirmation. Off-thread calls cancel. Report
+/// progress after it closes.
+pub fn confirm(caption: &str, body: &str, commit: &str) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else {
+        log::warn("a confirmation was asked for off the main thread; treating it as cancelled");
+        return false;
+    };
+    NSApplication::sharedApplication(mtm).activate();
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str(caption));
+    alert.setInformativeText(&NSString::from_str(body));
+    alert.setAlertStyle(NSAlertStyle::Warning);
+    // AppKit makes the first button default. Escape selects the second.
+    alert.addButtonWithTitle(&NSString::from_str(commit));
+    alert.addButtonWithTitle(&NSString::from_str(tr().btn_cancel));
+    // `NSAlertFirstButtonReturn`.
+    alert.runModal() == 1000
+}
+
 /// Ask for permission to post notifications, once, at startup.
 ///
 /// Only a bundled application can: `UNUserNotificationCenter.current` throws for
@@ -268,13 +287,9 @@ pub fn notify(title: &str, body: &str, severity: Severity) {
     center.addNotificationRequest_withCompletionHandler(&request, None);
 }
 
-/// One of the core's hosted operations finished.
+/// Show this result as an alert because it answers user input.
 ///
-/// Unreachable as this platform stands: all six need an arm macOS does not have
-/// (`macos/elevate.rs`, `macos/repair.rs`, `macos/device.rs`), and nothing here
-/// derives an action that starts one. An alert rather than a notification, so
-/// that if one ever does arrive it lands in front of the person who asked for it
-/// instead of in a corner they have to notice.
+/// On macOS, only grant actions reach this callback.
 pub fn finished(action: Action, outcome: Outcome) {
     let (body, ok) = match outcome {
         // A decision rather than a fault: it returns in silence.

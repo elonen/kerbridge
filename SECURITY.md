@@ -83,7 +83,7 @@ The table shows what each part protects. Each row links to the full risk.
 | [The TLS certificate chain](#4-the-reply-carries-the-session-key) | Every ticket that passes over the wire, for one ticket lifetime. |
 | [The sync credential](#6-the-sync-credential) | Read access to your whole IdP directory, plus a way to admit an account into the realm. |
 | [The `kbmanage` credential](#7-the-kbmanage-credential-is-impersonation-grade) | The ability to act as any user in the device-grant group. |
-| [A device grant, on Windows](#8-device-grants-remove-the-browser-from-the-loop) | Tickets as one account, from that machine, until the grant expires. |
+| [A device grant](#8-device-grants-remove-the-browser-from-the-loop) | Tickets as one account, from that machine, until the grant expires. |
 | [A backup tarball](#10-one-backup-file-holds-the-whole-deployment) | All of the above, in one file. |
 
 One more threat is credible, but it is not specific to KerBridge. A supply-chain
@@ -496,6 +496,9 @@ key held in the machine's TPM.
 - A machine cannot enroll another machine, and cannot revoke another device.
 - On Windows the key uses the platform TPM provider with an export policy of
   nothing. The owning process cannot read the private key out.
+- On macOS the key is created in the Secure Enclave and persists as an
+  Enclave-wrapped blob in a `0600` file. The private half never leaves the
+  machine, and the blob signs nothing on any other Mac.
 - The grant end is **absolute**, stamped at creation. It never slides on use.
   Lowering `device_grant_days` clamps every outstanding grant on the next
   exchange. Setting it to 0 stops every device.
@@ -505,8 +508,12 @@ tell a TPM key from a software key, and deliberately does not try.
 
 **Things to weigh.**
 
-1. **macOS has no device grants.** The key creation path is not implemented. The
-   TPM-binding property is Windows-only today.
+1. **On macOS the file mode is the account boundary.** The Enclave imposes no
+   user boundary of its own, so a local account able to read the blob file can
+   use the grant. The mode is a barrier on top of a key that cannot leave the
+   machine at all, not the only thing standing anywhere. Releasing a grant
+   unlinks that file, which destroys the key **only if no copy survives**: a
+   backup, or a copied home directory, is a working grant on that same Mac.
 2. **Removal of a person from a delegate group stops no existing grant.** It
    stops only new authorizations. Every machine that person already authorized
    runs to its absolute expiry. Any remaining delegate can renew it. Find those
@@ -666,7 +673,7 @@ as every Rust program's do, and nothing here audits it.
 - **The macOS app is ad-hoc signed only.** There is no Developer ID. An Enclave
   key needs no entitlement, so this does not block Secure Enclave use (research
   spike `device-grant-enclave-key`). It does block confining a device grant to
-  one macOS account, and macOS grants do not exist yet.
+  one macOS account; the key file's mode is that boundary instead.
 - Release artifacts carry a `SHA256SUMS` file and **no cryptographic signature**.
   A hash proves integrity against corruption, not against a substituted release.
 - Nothing is published to crates.io.

@@ -152,10 +152,13 @@ yourself. There is no `.pkg`, no `.dmg` and no MDM payload.
 from unidentified developer*, and a bundle that arrives from a different
 machine is quarantined until a person permits it in Privacy & Security.
 
-Ad-hoc signing does not cost you the Secure Enclave. An Enclave key needs no
-entitlement: research spike `device-grant-enclave-key`. It costs you the account
-boundary. To confine a device grant to one macOS account needs the
-data-protection keychain, and that needs a real signing identity.
+Ad-hoc signing does not cost you the Secure Enclave, and it does not block a
+device grant: the whole arm was measured under ad-hoc-signed, entitlement-free
+binaries, in research spike `device-grant-enclave-key`. What it costs you is the
+account boundary. Any local account that can read the key file can use the
+grant; the file's `0600` mode is the barrier. To confine a device grant to one
+macOS account needs the data-protection keychain, and that needs a real signing
+identity.
 
 The repair is a Developer ID signature and notarization. Like the MSI, that is
 a release-time act by the publisher.

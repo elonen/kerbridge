@@ -19,8 +19,6 @@
 //!
 //! 1. Enrollment: Heimdal resolves the realm from DNS.
 //! 2. NTLM-fallback repair: The mount recovers automatically.
-//! 3. Device grant: Requires Secure Enclave key. Needs entitlement and
-//!    signing identity.
 //!
 //! The core library excludes these features from the model. See
 //! `kerbridge_client::describe::Facts`.
@@ -40,8 +38,8 @@ use kerbridge_client::agent::{self, NativeToken, Outcome, Raise, Severity, Statu
 use kerbridge_client::describe::{Action, Blocker, Condition};
 use kerbridge_client::discovery::OidcConfig;
 use kerbridge_client::log;
-use kerbridge_client::present::headline;
-use kerbridge_client::strings::tr;
+use kerbridge_client::present::{action_label, days_until, headline};
+use kerbridge_client::strings::{days, duration, fill, tr};
 
 mod icon;
 mod menu;
@@ -261,9 +259,6 @@ pub fn perform(command: menu::Command) {
     refresh();
 }
 
-/// Start one action. Every one of these is a verb the core already owns: nothing
-/// here needs a confirmation, because the six operations that do are the ones
-/// this platform has no arm for.
 fn start_action(act: Action) {
     match act {
         Action::SignIn => agent::sign_in(),
@@ -272,13 +267,52 @@ fn start_action(act: Action) {
         Action::DropKrbTicket => agent::drop_ticket(),
         Action::SignOutIdp => agent::sign_out_idp(),
         Action::OpenSettings => ui::settings_sheet(),
-        Action::CreateGrant
-        | Action::GiveUpGrant
-        | Action::Enroll
-        | Action::Reenroll
-        | Action::Unenroll
-        | Action::RestartWorkstation => {
+        Action::CreateGrant => {
+            if confirm_create_grant() {
+                agent::create_grant();
+            }
+        }
+        Action::GiveUpGrant => {
+            if confirm_give_up_grant() {
+                agent::give_up_grant_now();
+            }
+        }
+        Action::Enroll | Action::Reenroll | Action::Unenroll | Action::RestartWorkstation => {
             log::warn(&format!("{act:?} has no macOS arm; nothing to start"));
         }
     }
+}
+
+fn confirm_create_grant() -> bool {
+    let s = tr();
+    let st = agent::status();
+    let left = st.grant_expiry.map_or_else(
+        || days(i64::from(agent::settings_view().grant_days)),
+        |d| days(days_until(d)),
+    );
+    ui::confirm(
+        &action_label(Action::CreateGrant, &st),
+        &fill(s.grant_confirm, &[("days", &left)]),
+        s.dlg_grant_commit,
+    )
+}
+
+fn confirm_give_up_grant() -> bool {
+    let s = tr();
+    let st = agent::status();
+    let mut body = vec![fill(s.dlg_grant_off_body, &[("broker", &st.broker_host)])];
+    // Delegated devices cannot sign in. Describe their ticket only while it is live.
+    if st.grant_target.is_empty() {
+        body.push(fill(s.dlg_grant_off_body_own, &[("realm", &st.realm)]));
+    } else if let Some(t) = st.ticket.as_ref().filter(|t| t.remaining > 0) {
+        body.push(fill(
+            s.dlg_grant_off_body_delegated,
+            &[
+                ("target", &st.grant_target),
+                ("realm", &st.realm),
+                ("remaining", &duration(t.remaining)),
+            ],
+        ));
+    }
+    ui::confirm(s.dlg_grant_off_question, &body.join("\n\n"), s.dlg_grant_off_commit)
 }

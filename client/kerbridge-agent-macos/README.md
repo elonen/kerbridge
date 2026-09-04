@@ -151,14 +151,15 @@ defaults to on. It travels with `config.toml`. Reading it raw would make this
 platform claim a capability that does not exist. One accessor owns the flag. The
 platform check cannot be forgotten at other call sites.
 
-**No device grant yet. Signing does not block it.** Secure Enclave key is the
-macOS counterpart of Windows TPM key. It needs no entitlement. It needs no
+**Device grants work here. Signing does not block them.** Secure Enclave key is
+the macOS counterpart of Windows TPM key. It needs no entitlement. It needs no
 Developer ID. A transient Enclave key persists as a wrapped blob in a file. The
-broker's own verifier accepts what it signs. Measured on two Macs: research spike
-`device-grant-enclave-key`. `device::AVAILABLE` is false because the arm is not
-written. A grants-enabled deployment does not offer authorization to this Mac.
-The Mac would refuse it. *Remove authorization…* is unreachable. Nothing can
-create the grant to remove.
+broker's own verifier accepts what it signs. Measured on two Macs: research
+spike `device-grant-enclave-key`. A grants-enabled deployment draws *Authorize
+access…* and *Remove authorization…* in the menu bar, each behind a question.
+
+The working phase has no box of its own. `NSAlert` blocks the main thread, so
+the item that started the work carries the working sentence while it runs.
 
 **Signing gates the user boundary, not the key.** The Enclave imposes no user
 boundary. Any local account that can read a stored key blob can use it. A file

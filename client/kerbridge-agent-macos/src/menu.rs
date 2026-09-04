@@ -28,24 +28,37 @@ use kerbridge_client::present::{
 };
 use kerbridge_client::strings::{days, duration, fill, tr};
 
-/// The order this surface offers what the model allows
-const ORDER: [Action; 6] = [
+/// Menu order: access, authorization, ticket, grant, IdP exit.
+const ORDER: [Action; 8] = [
     Action::Cancel,
     Action::OpenSettings,
     Action::ReinjectTicket,
     Action::SignIn,
+    Action::CreateGrant,
     Action::DropKrbTicket,
+    Action::GiveUpGrant,
     Action::SignOutIdp,
 ];
+
+pub const CONFIRMED: [Action; 2] = [Action::CreateGrant, Action::GiveUpGrant];
+
+/// `NSAlert` blocks; show grant progress on the disabled item.
+fn running_label(act: Action) -> Option<&'static str> {
+    let s = tr();
+    match act {
+        Action::CreateGrant => Some(s.dlg_grant_working),
+        Action::GiveUpGrant => Some(s.dlg_grant_off_working),
+        _ => None,
+    }
+}
 
 /// One offer, as the menu will draw it.
 #[derive(PartialEq, Eq)]
 pub struct Offer {
     pub action: Action,
     label: String,
-    /// Running already, so the item is disabled rather than absent -- it stays
-    /// where the user last saw it.
-    running: bool,
+    /// Keep disabled items visible to preserve their menu position.
+    disabled: bool,
 }
 
 /// How wide a status line may get before it is broken, in columns.
@@ -193,13 +206,22 @@ pub fn plan(st: &Status) -> Plan {
         lines.push(Line::info(&st.message));
     }
 
+    // The busy slot blocks confirmation, not revocation.
+    let slot_taken = st.in_flight.iter().any(|a| !a.outside_busy_slot());
     let actions: Vec<Offer> = ORDER
         .into_iter()
         .filter(|act| st.actions.contains(act))
-        .map(|act| Offer {
-            action: act,
-            label: action_label(act, st),
-            running: st.in_flight.contains(&act),
+        .map(|act| {
+            let running = st.in_flight.contains(&act);
+            Offer {
+                action: act,
+                label: match running_label(act).filter(|_| running) {
+                    Some(working) => working.to_owned(),
+                    None => action_label(act, st),
+                },
+                disabled: running
+                    || (slot_taken && CONFIRMED.contains(&act) && !act.outside_busy_slot()),
+            }
         })
         .collect();
 
@@ -359,7 +381,7 @@ pub fn build(mtm: MainThreadMarker, plan: &Plan) -> Retained<NSMenu> {
     }
     for (i, offer) in plan.actions.iter().enumerate() {
         let item = item(mtm, &menu, &offer.label, Command::Offer(i), &target);
-        item.setEnabled(!offer.running);
+        item.setEnabled(!offer.disabled);
     }
 
     separator(mtm, &menu);
@@ -458,7 +480,80 @@ fn separator(mtm: MainThreadMarker, menu: &NSMenu) {
 
 #[cfg(test)]
 mod tests {
+    use kerbridge_client::describe::Supply;
+
     use super::*;
+
+    fn offering(actions: &[Action]) -> Status {
+        Status {
+            condition: Condition::Working,
+            blockers: Vec::new(),
+            actions: actions.to_vec(),
+            in_flight: Vec::new(),
+            supply: Supply::BrowserSignIn,
+            usable: true,
+            realm: "EXAMPLE.SITE".into(),
+            source: String::new(),
+            broker_host: "kerbridge.example.site".into(),
+            help_url: String::new(),
+            idp_name: String::new(),
+            principal: String::new(),
+            ticket: None,
+            next_attempt_at_earliest: None,
+            message: String::new(),
+            fault: false,
+            holds_grant: false,
+            grant_expiry: None,
+            grant_target: String::new(),
+            just_authorized: false,
+        }
+    }
+
+    fn offered(plan: &Plan) -> Vec<Action> {
+        plan.actions.iter().map(|o| o.action).collect()
+    }
+
+    #[test]
+    fn both_grant_actions_reach_the_menu() {
+        let st = offering(&[Action::CreateGrant, Action::GiveUpGrant, Action::SignIn]);
+        let offered = offered(&plan(&st));
+        assert!(offered.contains(&Action::CreateGrant), "{offered:?}");
+        assert!(offered.contains(&Action::GiveUpGrant), "{offered:?}");
+    }
+
+    #[test]
+    fn the_menu_reads_top_to_bottom_in_the_order_the_help_page_uses() {
+        let st = offering(&ORDER);
+        assert_eq!(offered(&plan(&st)), ORDER);
+    }
+
+    #[test]
+    fn a_sign_in_in_flight_holds_only_the_action_that_needs_the_slot() {
+        let mut st = offering(&[Action::CreateGrant, Action::GiveUpGrant]);
+        st.in_flight = vec![Action::SignIn];
+        let plan = plan(&st);
+        let disabled =
+            |act: Action| plan.actions.iter().find(|o| o.action == act).unwrap().disabled;
+        assert!(disabled(Action::CreateGrant));
+        assert!(!disabled(Action::GiveUpGrant));
+    }
+
+    #[test]
+    fn a_running_grant_action_says_so_on_its_own_item() {
+        let mut st = offering(&[Action::CreateGrant]);
+        st.in_flight = vec![Action::CreateGrant];
+        let plan = plan(&st);
+        let offer = &plan.actions[0];
+        assert!(offer.disabled);
+        assert_eq!(offer.label, tr().dlg_grant_working);
+    }
+
+    #[test]
+    fn every_confirmed_action_is_in_the_order() {
+        for act in CONFIRMED {
+            assert!(ORDER.contains(&act), "{act:?}");
+        }
+    }
 
     /// The line that provoked this: a failure sentence with the URL that
     /// produced it, which unbroken set the width of the whole menu.

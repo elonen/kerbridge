@@ -114,6 +114,8 @@ renewal would use, and when that renewal is due.
 These files are per-user, at `~/Library/Application Support/KerBridge/`:
 
 - `config.toml` — the broker URL and two toggles.
+- `device-grant.key` — the device grant's wrapped key, mode `0600`. It is there
+  only while this machine holds a grant.
 - `kerbridge.log` — also reachable from the menu. When it is larger than 10 MB,
   it rotates at the next start into `kerbridge.log.1.gz` … `.3.gz`.
 
@@ -155,9 +157,11 @@ Only *forced* values count. A `defaults write` by the user is intentionally not
 policy. If it were policy, it would lock the Settings field against the person
 who set the value.
 
-The Windows-only keys — `WindowsSignIn`, `NtlmFallbackRecovery`, `GrantFor` —
-are read on this platform but decide nothing, because neither WAM, the NTLM
-fallback nor device grants exist here. Setting them does no harm and no work.
+The Windows-only keys — `WindowsSignIn` and `NtlmFallbackRecovery` — are read on
+this platform but decide nothing, because neither WAM nor the NTLM fallback
+exists here. Setting them does no harm and no work. `GrantFor` does decide
+something: device grants work on a Mac, and the key names the account this
+machine authorizes itself for.
 
 ### Without an MDM
 
@@ -176,12 +180,12 @@ machine whose user has never chosen. See
   counterpart is the Company Portal SSO extension. That extension is a
   deployment dependency and a spike of its own. Until that spike is measured,
   every sign-in goes through the browser.
-- **No device grant yet.** The Secure Enclave is the counterpart of the Windows
-  TPM key. It needs no entitlement, and it does not need the signature work
-  above. A Mac can hold such a key, and the broker accepts what it signs.
-  The arm is not written yet. The signature work would only confine a grant to
-  one macOS account. The Enclave does not do that by itself. Research spike
-  `device-grant-enclave-key`.
+- **A device grant is confined by the key file's mode, not by your account.**
+  The Secure Enclave is the counterpart of the Windows TPM key. It needs no
+  entitlement, and it does not need the signature work above; the menu bar
+  offers *Authorize access…* like the Windows tray does. The signature work
+  would confine a grant to one macOS account. The Enclave does not do that by
+  itself. Research spike `device-grant-enclave-key`.
 
 The state machine, the schedule and every user-visible string come from the
 core, not from this agent:
