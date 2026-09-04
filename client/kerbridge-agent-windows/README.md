@@ -249,8 +249,8 @@ emulation rather than a native build that would never ship.
 
 ## Running it the first time
 
-1. Start `kerbridge-agent.exe`. With nothing configured it opens the
-   flyout on **Setup needed**.
+1. Start `kerbridge-agent.exe`. It puts its icon in the tray and opens
+   nothing; with nothing configured the icon reads **Setup needed**. Click it.
 2. Settings → broker address (type `broker.example.site`; `https://` is prepended
    for you, and plaintext `http://` is still refused) → OK. Skip this if DNS
    publishes `_kerbridge._tcp.<your domain>`: the field is already filled in with

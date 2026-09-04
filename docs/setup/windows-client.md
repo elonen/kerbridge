@@ -74,8 +74,8 @@ The source of the installer is
 
 ## First run
 
-1. **Run NAS Access.** With no configuration, it opens the flyout on *Setup
-   needed*.
+1. **Run NAS Access.** It adds its tray icon and opens nothing. With no
+   configuration the icon reads *Setup needed*; click it for the flyout.
 2. **Sign in.** With an Entra source on an Entra-joined machine, the agent can
    use Windows sign-in, with no browser or user action. Otherwise, the browser
    opens; complete the sign-in there. authentik always uses browser sign-in.

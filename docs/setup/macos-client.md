@@ -62,8 +62,8 @@ that holds no app.
 
 ## First run
 
-1. **Open NAS Access.** The menu-bar icon appears and opens its menu, which
-   says *Broker URL not configured*.
+1. **Open NAS Access.** The menu-bar icon appears; nothing opens. Click the
+   icon: with nothing configured the menu says *Broker URL not configured*.
 2. **Sign in.** The browser opens. Complete the sign-in there.
 3. **Tick *Start at login*** in Settings. On this platform the ticket goes into
    the login session's own credential cache, and that cache is the only one

@@ -35,6 +35,10 @@ names the tag, and it stops if that section is absent or empty.
   the address arrives. Before, a machine that adopted a ticket at start never
   read it: the menu offered no *Authorize access...*, the Help link kept its
   built-in address, and no `client_defaults` reached that session.
+- The agent no longer opens its flyout or menu when it starts. It adds its
+  icon and stays there, whatever it has to report. A machine that gets its
+  broker address from DNS opened one at every login, because the lookup lands
+  after the start; the icon and its tooltip say *Setup needed* either way.
 - Every sentence about the device grant's key now says "hardware key store"
   rather than "TPM", in all eleven languages and on the help website.
 - `kbmanage cloud list --json` now reports `uidNumber`, so you can find an

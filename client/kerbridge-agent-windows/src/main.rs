@@ -60,7 +60,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use kerbridge_client::agent::{self, NativeToken, Outcome, Raise, Severity};
-use kerbridge_client::describe::{Action, Blocker};
+use kerbridge_client::describe::Action;
 use kerbridge_client::discovery::OidcConfig;
 use kerbridge_client::present::action_label;
 use kerbridge_client::strings::tr;
@@ -282,22 +282,9 @@ fn main() {
             kerbridge_client::log::error("could not start the 1 Hz timer: nothing will re-inject");
         }
 
-        // A machine with nothing configured, or one Windows does not know the
-        // realm for, has something to be told; the flyout is the only affordance
-        // that says what. Anything else starts quietly in the tray, which is what
-        // an autostarted agent should do.
-        let status = agent::status();
-        if status
-            .blockers
-            .iter()
-            .any(|b| matches!(b, Blocker::NoBrokerUrl | Blocker::RealmNotRegistered))
-        {
-            flyout::show();
-        } else {
-            // …and "quietly" includes signing in, when Windows can serve the
-            // credential without asking. Nothing opens if it cannot.
-            agent::autostart_sign_in();
-        }
+        // Autostart opens no windows: DNS can name a broker later.
+        // `autostart_sign_in` uses only a credential that needs no prompt.
+        agent::autostart_sign_in();
 
         let mut msg: MSG = std::mem::zeroed();
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {

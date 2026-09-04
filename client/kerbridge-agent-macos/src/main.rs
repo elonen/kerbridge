@@ -35,7 +35,7 @@ use objc2_app_kit::{
 use objc2_foundation::NSString;
 
 use kerbridge_client::agent::{self, NativeToken, Outcome, Raise, Severity, Status};
-use kerbridge_client::describe::{Action, Blocker, Condition};
+use kerbridge_client::describe::{Action, Condition};
 use kerbridge_client::discovery::OidcConfig;
 use kerbridge_client::log;
 use kerbridge_client::present::{action_label, days_until, headline};
@@ -86,17 +86,9 @@ fn main() {
     ui::request_notification_permission();
     refresh();
 
-    // A machine with nothing configured has something to be told, and the menu is
-    // the only affordance that says what. Anything else starts quietly, which is
-    // what an agent launched at login should do -- including signing in, on the
-    // same terms as Windows: it may use a credential already held, and it may not
-    // open a window.
-    if agent::status().blockers.contains(&Blocker::NoBrokerUrl) {
-        // Not here: there is no run loop yet to track a menu in.
-        ui::show_status_later();
-    } else {
-        agent::autostart_sign_in();
-    }
+    // Do not open UI at login: DNS can name the broker later. Autostart sign-in
+    // uses held credentials only.
+    agent::autostart_sign_in();
 
     ui::every(mtm, TICK_SECONDS, || {
         agent::tick();
