@@ -603,12 +603,7 @@ pub fn init(h: &'static dyn Host) {
         worker::start_worker(Trigger::Startup);
     }
 
-    // The device-grant button is drawn from what the broker says the deployment
-    // allows, and nothing else asks -- discovery otherwise happens only inside a
-    // sign-in. Both agents that never run one are left with no way to authorize
-    // the machine: the one that adopted a ticket, until the next real sign-in
-    // half a lifetime away, and the one sitting signed out, until the user signs
-    // in by hand -- which is the thing the button exists to stop needing.
+    // Ticket adoption and sign-out bypass sign-in; fetch the grant policy now.
     worker::discover_in_background();
 
     // Nothing named a broker, so ask the network whether it knows one. Off the

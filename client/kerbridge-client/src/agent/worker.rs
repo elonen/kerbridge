@@ -205,6 +205,7 @@ fn apply(ev: Event) {
     let mut finished: Option<(Action, Outcome)> = None;
     let mut grant_sign_in = false;
     let mut elevating = None;
+    let mut discover = false;
 
     // The UI thread owns the settings, so a worker's verdict on the stored grant
     // is applied here -- and before the event itself, so a `GrantCreated` in the
@@ -436,14 +437,12 @@ fn apply(ev: Event) {
                 if a.settings.broker_url().is_none() {
                     log::info(&format!("using the broker DNS advertises: {url}"));
                     a.settings.set_discovered(url);
-                    // Nothing else will ask. The startup `/config` read is gated on
-                    // a broker already being configured, which on the zero-touch
-                    // path it is not, and `autostart_sign_in` has already run and
-                    // refused for the same reason. Without this the machine sits at
-                    // "no settings from <host>" with an empty action list -- nothing
-                    // to press, nothing scheduled, and `discovered` is not persisted,
-                    // so the next start reproduces it exactly.
-                    a.startup_retry_at = Some(time::now());
+                    // Fetch `/config`: ticket adoption skips startup retry.
+                    discover = true;
+                    // Autostart ran before DNS discovery; retry only when signed out.
+                    if a.phase == Phase::SignedOut {
+                        a.startup_retry_at = Some(time::now());
+                    }
                 }
             }
             Event::GrantCreated { grant } => {
@@ -581,6 +580,10 @@ fn apply(ev: Event) {
         }
     });
 
+    // Run after the agent borrow: discovery reads settings.
+    if discover {
+        discover_in_background();
+    }
     // Before the dialog rather than after it: the modal pumps messages, so the
     // exchange lands while it is still on screen and dismissing it reveals a
     // connected agent instead of starting the wait.
