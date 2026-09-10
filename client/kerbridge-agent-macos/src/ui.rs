@@ -276,7 +276,7 @@ pub fn notify(title: &str, body: &str, severity: Severity) {
     content.setTitle(&NSString::from_str(title));
     content.setBody(&NSString::from_str(body));
     content.setInterruptionLevel(match severity {
-        Severity::Info => UNNotificationInterruptionLevel::Passive,
+        Severity::Info => return,
         Severity::Warning | Severity::Error => UNNotificationInterruptionLevel::Active,
     });
     // A stable identifier would replace the previous notification; a fresh one

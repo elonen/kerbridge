@@ -67,9 +67,6 @@ const MENU_QUIT: usize = 203;
 /// Actions occupy `MENU_ACTION_BASE + <action index>`.
 const MENU_ACTION_BASE: usize = 210;
 
-// Balloon flags. `NIIF_INFO` is deliberately absent: severity follows the
-// condition, and quiet time is respected on every one of them.
-const NIIF_NONE: u32 = 0x0000;
 const NIIF_WARNING: u32 = 0x0002;
 const NIIF_ERROR: u32 = 0x0003;
 const NIIF_RESPECT_QUIET_TIME: u32 = 0x0080;
@@ -347,7 +344,7 @@ pub(crate) fn notify(title: &str, body: &str, severity: Severity) {
         // urgent enough to talk over a presentation.
         nid.dwInfoFlags = NIIF_RESPECT_QUIET_TIME
             | match severity {
-                Severity::Info => NIIF_NONE,
+                Severity::Info => return,
                 Severity::Warning => NIIF_WARNING,
                 Severity::Error => NIIF_ERROR,
             };

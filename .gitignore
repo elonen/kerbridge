@@ -6,6 +6,7 @@
 /.env
 
 .DS_Store
+.*.swp
 target/
 dist/
 CLAUDE.md
