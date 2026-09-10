@@ -1,9 +1,8 @@
 # Changelog
 
-This file tells the operator what changed. Write one line for each change.
-
-The program `debian/make-changelog` reads this file. It finds the section for
+The `debian/make-changelog` script reads this file. It finds the section for
 the version of the build. Then it writes that section to `debian/changelog`.
+
 These rules apply:
 
 - Write a version heading as `## <version>`. Use the git tag, but do not write
@@ -14,6 +13,8 @@ These rules apply:
   that heading to the version.
 - Keep each line shorter than 79 characters. The program adds two characters to
   each line, and lintian refuses a line longer than 80 characters.
+- Debian changelog is for software's users, not its developers; keep the
+  log terse and relevant to users.
 
 Some changes need work from the operator. Write those changes in
 `debian/kerbridge-config.NEWS.in__disabled` also, and rename the file to
@@ -24,25 +25,14 @@ version of the build, so a note left in it is shown a second time.
 A push of a `v*` tag starts the release. The release reads the section that
 names the tag, and it stops if that section is absent or empty.
 
-## Unreleased
+## 1.0.1
 
-- Device grants now work on macOS. The key is in the Secure Enclave, and the
-  menu bar offers *Authorize access...* like the Windows tray does. No
-  entitlement and no Developer ID are needed. On a Mac the key file's mode is
-  what keeps another local account from using the grant, so anything that
-  copies a home directory copies a working grant with it.
-- An agent that finds its broker in DNS now reads `GET /config` as soon as
-  the address arrives. Before, a machine that adopted a ticket at start never
-  read it: the menu offered no *Authorize access...*, the Help link kept its
-  built-in address, and no `client_defaults` reached that session.
-- The agent no longer opens its flyout or menu when it starts. It adds its
-  icon and stays there, whatever it has to report. A machine that gets its
-  broker address from DNS opened one at every login, because the lookup lands
-  after the start; the icon and its tooltip say *Setup needed* either way.
-- Every sentence about the device grant's key now says "hardware key store"
-  rather than "TPM", in all eleven languages and on the help website.
-- `kbmanage cloud list --json` now reports `uidNumber`, so you can find an
-  admitted user that has none.
+- Agents now show notifications only for warnings and errors.
+- Device grants now work on macOS.
+- Agents now load broker configuration after finding the broker through DNS.
+- Agents now start without opening their flyout or menu.
+- Device-grant text now says "hardware key store" instead of "TPM".
+- `kbmanage cloud list --json` now includes `uidNumber`.
 
 ## 1.0.0
 
