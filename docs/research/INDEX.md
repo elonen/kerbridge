@@ -397,6 +397,30 @@ binaries throughout.
 `SECURITY.md` and the macOS setup pages carry the conclusions; this is the
 evidence. The Windows counterpart is spike `device-grant-tpm-key`.
 
+## 16. Windows SMB NTLM fallback — spike `windows-smb-ntlm-fallback`
+
+Archive: `windows-smb-ntlm-fallback.zst`.
+
+Measured on one disposable Windows 11 Pro 25H2 VM. Suspend means VM suspend,
+not physical S3 or Modern Standby.
+
+- Result at a glance, including the conflict with the older joined-box result →
+  :18-54
+- Bench, evidence boundaries and setup traps → :56-137
+- Explorer across TGT expiry, immediate network restoration and fresh-TGT
+  recovery → :138-193
+- `NET USE /BLOCKNTLM` and `New-SmbMapping -BlockNTLM`: both fail closed but do
+  not obtain a CIFS TGS from an injected TGT → :194-273
+- Unblocked mapped drive across expiry and fresh-TGT recovery → :274-295
+- Held-open write: post-resume append lost; Flush and Dispose fail → :296-335
+- Unelevated target-specific evidence: NTLM Operational 4020 and blocked event
+  4015; no 4021 → :336-399
+- Answer matrix → :400-416
+- Not run: delayed network restoration, physical Sleep, other Windows builds and
+  the remaining false-positive/reason-code controls → :417-437
+- Product implications: no BlockNTLM guidance, no disruptive-repair gate, resume
+  retry interval still unmeasured → :438-454
+
 ## Cross-topic narrative — [`windows-kerberos-findings.md`](../windows-kerberos-findings.md)
 
 Prose synthesis; its headings are already phrased as questions.
@@ -412,33 +436,36 @@ Prose synthesis; its headings are already phrased as questions.
    - Which Graph permissions sufficed? → :247-278
    - Which full-read/delta behaviors can silently corrupt sync? → :279-323
    - Which objects/groups were suitable to project? → :324-337
-   - How should nested admission be represented? → :338-365
-   - How does the gate survive rename/cursor-loss/deletion/ambiguity? → :366-378
-   - Could sync run entirely through delegated LDAPS? → :379-437
-   - How should names/passwords be managed? → :438-456
-   - How should deleted/disabled objects be represented? → :457-471
+   - How should nested admission be represented? → :338-371
+   - How does the gate survive rename/cursor-loss/deletion/ambiguity? → :372-384
+   - Could sync run entirely through delegated LDAPS? → :385-443
+   - How should names/passwords be managed? → :444-462
+   - How should deleted/disabled objects be represented? → :463-477
 3. TGT injection into Windows
-   - Does injection work in an Entra-joined logon session? → :474-516
-   - Which logon session must perform injection? → :517-535
-   - What cache shape did Windows assign? → :536-569
+   - Does injection work in an Entra-joined logon session? → :480-522
+   - Which logon session must perform injection? → :523-541
+   - What cache shape did Windows assign? → :542-575
 4. Realm registration and Kerberos transport
-   - Can DNS SRV replace external-realm registration? → :572-607
-   - What made transport reliable for a `ksetup` realm? → :608-694
-   - Will SPNEGO select the injected realm for passwordless SMB? → :695-718
-   - Which service-ticket types were proven? → :719-730
+   - Can DNS SRV replace external-realm registration? → :578-613
+   - What made transport reliable for a `ksetup` realm? → :614-700
+   - Will SPNEGO select the injected realm for passwordless SMB? → :701-724
+   - Which service-ticket types were proven? → :725-736
 5. Ticket lifecycle and failure recovery
-   - Does Windows renew a `KerbSubmitTicketMessage` TGT? → :747-774
-   - Do broker/issuer availability affect cached-ticket use? → :775-791
-   - What happens to SMB when the KDC is unavailable? → :792-816
-   - Can Windows get stuck on NTLM after a Kerberos failure? → :817-858
-   - Can a failed diagnostic alter the ticket cache? → :859-876
-   - Is ticket purge sufficient for sign-out? → :926-947
+   - Does Windows renew a `KerbSubmitTicketMessage` TGT? → :753-780
+   - Do broker/issuer availability affect cached-ticket use? → :781-797
+   - What happens to SMB when the KDC is unavailable? → :798-822
+   - Can Windows get stuck on NTLM after a Kerberos failure? → :823-864
+   - Can per-target NTLM blocking prevent the fallback? → :865-900
+   - Can a failed diagnostic alter the ticket cache? → :901-918
+   - Does a successful `klist get` alter the ticket cache? → :919-938
+   - Can an injected TGT authenticate LDAP? → :939-967
+   - Is ticket purge sufficient for sign-out? → :968-989
 6. Revocation timing and cache layers
-   - How fast does disabling the account revoke access? → :963-995
-   - When do group removals take effect? → :996-1034
-   - Does key rotation revoke existing tickets? → :1035-1047
-   - Which cache layers determine revocation/outage behavior? → :1048-1066
+   - How fast does disabling the account revoke access? → :1005-1037
+   - When do group removals take effect? → :1038-1076
+   - Does key rotation revoke existing tickets? → :1077-1089
+   - Which cache layers determine revocation/outage behavior? → :1090-1108
 7. Test methodology
-   - Which findings changed unjoined vs Entra-joined? → :1069-1086
-   - Which observations are trustworthy? → :1087-1137
-- Implementation implications (consolidated) → :1138-1160
+   - Which findings changed unjoined vs Entra-joined? → :1111-1128
+   - Which observations are trustworthy? → :1129-1178
+- Implementation implications (consolidated) → :1179-1201

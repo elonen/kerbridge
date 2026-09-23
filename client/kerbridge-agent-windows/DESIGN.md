@@ -77,6 +77,13 @@ unprivileged parent: an unelevated caller can enumerate them in the same session
 where `SERVICE_STOP` is refused with error 5. That is what makes the split
 between the parent and the elevated child necessary and not merely tidy.
 
+**Rejected: per-target NTLM blocking.** On the measured Windows 11 Pro 25H2
+build, both `NET USE /BLOCKNTLM` and `New-SmbMapping -BlockNTLM` blocked NTLM
+but also prevented Windows from requesting a CIFS service ticket from a fresh
+injected TGT. Neither form is a supported prevention path, and setup guidance
+must not recommend them. Reconsider this only after a new measured spike proves
+a usable Kerberos path.
+
 ## The WAM token source
 
 The mechanism was measured end to end on an Entra-joined box

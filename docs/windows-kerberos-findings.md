@@ -59,7 +59,7 @@ Except where a **Limits** note says otherwise, conclusions came from live tests,
 
 Scope limits:
 
-- Windows: one unjoined Windows 11 24H2 VM; one Entra-joined Windows 11 25H2 workstation (LSA protection on, VBS/HVCI on, Credential Guard off, Entra Cloud Kerberos off).
+- Windows: one unjoined Windows 11 24H2 VM; one unjoined Windows 11 Pro 25H2 VM (build 26200.8875); one Entra-joined Windows 11 25H2 workstation (LSA protection on, VBS/HVCI on, Credential Guard off, Entra Cloud Kerberos off).
 - The joined workstation belonged to a real tenant, but no production tenant object was changed; its Entra identity and the disposable Samba identity were deliberately unrelated.
 - Samba 4.22.10 at functional level 2008 R2, Heimdal KDC, a separate file server (SMB file share), nested entra-global-to-domain-local resource groups.
 - Entra/Graph: a small disposable Entra Free tenant. Dynamic groups needed a higher license and could not be tested.
@@ -862,6 +862,42 @@ The stuck fallback is a purely client-side loop — the file server never got to
 
 **Limits.** Whether the stuck fallback self-clears after a longer idle interval was not established.
 
+### Can per-target NTLM blocking prevent the fallback?
+
+**Test.** Each command ran after a clean reboot on the unjoined Windows 11 Pro
+25H2 VM (build 26200.8875):
+
+```powershell
+NET USE \\nas1.example.site\share /BLOCKNTLM
+New-SmbMapping -RemotePath \\nas1.example.site\share -BlockNTLM $true -Persistent $false
+```
+
+Each control had the same initial state:
+
+- a new logon ID
+- no tickets, mappings, or server sessions
+- a fresh injected TGT
+- no cached CIFS service ticket
+
+Both commands used a deviceless mapping.
+
+**Found.**
+
+- Both commands sent SMB NEGOTIATE but requested no CIFS service ticket. Windows
+  emitted NTLM event 4015 and reset the connection. No mapping or Samba session
+  existed after the attempt.
+- `NET USE` requested credentials. `New-SmbMapping` returned system error 1265.
+- An unblocked mapping with the same TGT immediately obtained a CIFS service
+  ticket, authenticated with Kerberos, and read the share. This control isolated
+  the failure to the per-target block.
+- Both controls blocked NTLM but did not produce a usable Kerberos SMB
+  connection. KerBridge does not publish operator guidance for either form.
+
+**Limits.** These tests cover one Windows build, an unjoined VM, and deviceless
+mappings. They do not establish behavior for drive-letter mappings, other
+Windows builds, or global NTLM policy. A new measured spike must show a usable
+Kerberos path before KerBridge reconsiders either form.
+
 ### Can a failed diagnostic alter the Windows ticket cache?
 
 **Test.** In the same unregistered-realm state, failed service-ticket retrieval was invoked through `klist get cifs/nas1.example.site` and through Explorer, with cache snapshots immediately before and after. Both callers hit the identical local SSP failure:
@@ -1152,6 +1188,7 @@ Subject to the scope limits above:
 - Re-inject before TGT end time; do not depend on Windows installing renewal of a submitted TGT.
 - Never use `klist get` as a health check or blanket `klist purge` as sign-out.
 - Treat sign-out as selective ticket purge plus SMB-session teardown; treat redirector restart as a disruptive last-resort recovery for a confirmed stuck NTLM fallback.
+- Do not recommend either measured per-target NTLM block. Both blocked NTLM but also prevented a usable Kerberos SMB connection. Reconsider only after a new measured spike proves a usable path.
 - Model revocation by layer: disable blocks new AS/TGS exchanges, domain-local changes affect the next TGS, global changes affect the next TGT, and existing service tickets and SMB sessions survive until their own boundaries.
 - Diagnose from correlated client, wire and server evidence; identify the successful Kerberos SMB SessionId before interpreting an adjacent NTLM exchange or `ACCESS_DENIED`.
 
