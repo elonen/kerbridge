@@ -1,6 +1,6 @@
-//! Restarting the redirector is destructive in a way the user must consent to
-//! first: **every SMB session on the machine drops**, not just the realm's. The
-//! caller owns that warning; this module owns doing it correctly.
+//! Restarting the redirector is destructive: **every SMB session on the machine
+//! drops**, not only the realm's. The caller must have interactive confirmation
+//! or operator authorization through an already elevated `--repair --yes`.
 //!
 //! "Correctly" means handling dependents. `LanmanWorkstation` normally has
 //! running dependents (on a domain-joined machine, `Netlogon`), and SCM refuses

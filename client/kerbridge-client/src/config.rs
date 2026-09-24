@@ -154,6 +154,9 @@ pub struct FileConfig {
     /// Windows and nowhere else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ntlm_fallback_recovery: Option<bool>,
+    /// Suppress every OS notification and every unsolicited status surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub silent: Option<bool>,
     /// Let the OS's own token store (WAM/WHfB on Windows) issue the broker
     /// token before the browser is tried. Built-in answer is on; turning it off
     /// forces the browser flow. `None` as above.
@@ -195,6 +198,7 @@ struct Policy {
     grant_for: Option<String>,
     autostart: Option<bool>,
     ntlm_fallback_recovery: Option<bool>,
+    silent: Option<bool>,
     windows_sign_in: Option<bool>,
 }
 
@@ -210,13 +214,15 @@ pub struct Settings {
     /// What the broker's `/config` says this deployment prefers, as of this
     /// run. Memory-only for the same reason as `discovered`: the deployment
     /// stays the authority, and a value pinned here would outlive the operator
-    /// changing their mind. Empty until the first discovery of a run, so the
-    /// built-in answer is what a machine starting offline uses.
+    /// changing their mind. `None` until this broker has supplied a document;
+    /// `Some` with every field absent is a complete answer with no opinion.
     ///
     /// Autostart is the exception and is written, because applying it is an act
     /// on the operating system rather than a value read back -- see
     /// [`FileConfig::autostart`] and [`Settings::enforce_autostart`].
-    defaults: Defaults,
+    defaults: Option<Defaults>,
+    #[cfg(test)]
+    persist: bool,
 }
 
 impl Settings {
@@ -241,9 +247,28 @@ impl Settings {
             grant_for: imp::policy_string("GrantFor").filter(|s| !s.trim().is_empty()),
             autostart: imp::policy_bool("Autostart"),
             ntlm_fallback_recovery: imp::policy_bool("NtlmFallbackRecovery"),
+            silent: imp::policy_bool("Silent"),
             windows_sign_in: imp::policy_bool("WindowsSignIn"),
         };
-        Settings { file, policy, discovered: None, defaults: Defaults::default() }
+        Settings {
+            file,
+            policy,
+            discovered: None,
+            defaults: None,
+            #[cfg(test)]
+            persist: true,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(file: FileConfig) -> Settings {
+        Settings {
+            file,
+            policy: Policy::default(),
+            discovered: None,
+            defaults: None,
+            persist: false,
+        }
     }
 
     /// Broker URL in precedence order: HKLM policy > `config.toml` > DNS > unset.
@@ -273,6 +298,14 @@ impl Settings {
     pub fn set_broker_url(&mut self, url: &str) {
         let url = url.trim();
         self.file.broker_url = (!url.is_empty()).then(|| with_https(url));
+    }
+
+    pub(crate) fn user_broker_url(&self) -> Option<String> {
+        self.file.broker_url.clone()
+    }
+
+    pub(crate) fn restore_user_broker_url(&mut self, url: Option<String>) {
+        self.file.broker_url = url;
     }
 
     /// Whom this machine authorizes itself for, machine-wide value first.
@@ -312,11 +345,18 @@ impl Settings {
         changed
     }
 
-    /// Record what the broker's `/config` said this deployment prefers. Sits
-    /// below both layers above, so a late discovery cannot move a machine whose
-    /// user or whose IT has already decided.
+    /// Replace the deployment defaults from one accepted discovery document.
     pub fn set_defaults(&mut self, defaults: Defaults) {
-        self.defaults = defaults;
+        self.defaults = Some(defaults);
+    }
+
+    /// Mark the current discovery document as unresolved.
+    pub fn clear_defaults(&mut self) {
+        self.defaults = None;
+    }
+
+    pub fn defaults_ready(&self) -> bool {
+        self.defaults.is_some()
     }
 
     /// Policy, then the file, then the deployment, then the built-in answer --
@@ -329,8 +369,31 @@ impl Settings {
                 .policy
                 .ntlm_fallback_recovery
                 .or(self.file.ntlm_fallback_recovery)
-                .or(self.defaults.ntlm_fallback_recovery)
+                .or(self.defaults.and_then(|defaults| defaults.ntlm_fallback_recovery))
                 .unwrap_or_else(ntlm_fallback_default)
+    }
+
+    /// The effective silent setting. `None` only when neither policy nor the
+    /// user's choice resolves it and the discovery document is unresolved. The
+    /// built-in `false` applies once the document has supplied its complete
+    /// defaults snapshot.
+    pub fn resolved_silent(&self) -> Option<bool> {
+        self.policy
+            .silent
+            .or(self.file.silent)
+            .or_else(|| self.defaults.map(|defaults| defaults.silent.unwrap_or(false)))
+    }
+
+    pub fn silent(&self) -> bool {
+        self.resolved_silent().unwrap_or(false)
+    }
+
+    pub fn silent_locked(&self) -> bool {
+        self.policy.silent.is_some()
+    }
+
+    pub fn set_silent(&mut self, on: bool) {
+        self.file.silent = Some(on);
     }
 
     /// Both halves: the stored preference, **and** a platform with a credential
@@ -348,7 +411,7 @@ impl Settings {
                 .policy
                 .windows_sign_in
                 .or(self.file.windows_sign_in)
-                .or(self.defaults.windows_sign_in)
+                .or(self.defaults.and_then(|defaults| defaults.windows_sign_in))
                 .unwrap_or(true)
     }
 
@@ -391,7 +454,7 @@ impl Settings {
         let (want, seed) = match (self.policy.autostart, self.file.autostart) {
             (Some(policy), _) => (policy, false),
             (None, Some(_)) => return false,
-            (None, None) => match self.defaults.autostart {
+            (None, None) => match self.defaults.and_then(|defaults| defaults.autostart) {
                 Some(default) => (default, true),
                 None => return false,
             },
@@ -456,6 +519,12 @@ impl Settings {
         self.file.grant.as_ref()
     }
 
+    pub(crate) fn clear_broker_state(&mut self) {
+        self.file.cache = Cache::default();
+        self.file.grant = None;
+        self.file.browser_session = false;
+    }
+
     /// Record, or forget, this machine's device grant. Forgetting is what
     /// giving the grant up does after the TPM key is already gone.
     pub fn set_grant(&mut self, grant: Option<Grant>) {
@@ -487,6 +556,10 @@ impl Settings {
     /// Write `config.toml`. Only the file layer is written, so a policy-supplied
     /// broker URL is never baked into the user's file.
     pub fn save(&self) -> Result<()> {
+        #[cfg(test)]
+        if !self.persist {
+            return Ok(());
+        }
         let path = config_path().context("locating the application directory")?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).context("creating the config directory")?;
@@ -553,6 +626,7 @@ mod tests {
             }),
             autostart: Some(true),
             ntlm_fallback_recovery: Some(true),
+            silent: Some(true),
             windows_sign_in: Some(false),
             browser_session: true,
             cache: Cache {
@@ -570,26 +644,39 @@ mod tests {
         assert_eq!(back.grant_for.as_deref(), Some("svc-builder"));
         assert_eq!(back.expected_working_as.as_deref(), Some("EXAMPLE.SITE|svc-builder"));
         assert_eq!(back.windows_sign_in, Some(false));
+        assert_eq!(back.silent, Some(true));
         assert_eq!(back.autostart, Some(true));
         assert_eq!(back.cache.realm, "EXAMPLE.SITE");
     }
 
-    /// A grant written before this build carries no principal, and reading one
-    /// must not fail -- an agent that refused its own `config.toml` after an
-    /// update would need a browser sign-in to recover a working grant.
+    /// State written by 1.0.1 remains usable after the new client settings are
+    /// added. The upgrade must not purge tickets or discard a device grant.
     #[test]
-    fn a_grant_from_an_older_build_still_loads() {
+    fn a_1_0_1_config_keeps_its_broker_state() {
         let older = r#"
             broker_url = "https://broker.example.site"
+            expected_working_as = "EXAMPLE.SITE|"
+            browser_session = true
+
             [grant]
             grant_id = "1a2b3c4d"
             identity = "kb1|entra|33334444-dddd-5555-eeee-6666ffff7777"
             audience = "kerbridge://EXAMPLE.SITE"
             sign_in_required_by = 1785000000
+
+            [cache]
+            realm = "EXAMPLE.SITE"
+            kdcs = ["kerbridge.example.site"]
         "#;
         let back: FileConfig = toml::from_str(older).expect("parses");
-        assert!(back.grant.expect("the grant is read").principal.is_none());
-        assert!(back.grant_for.is_none());
+        let settings = settings(back);
+
+        assert_eq!(settings.broker_url(), Some("https://broker.example.site"));
+        assert_eq!(settings.cache().realm, "EXAMPLE.SITE");
+        assert!(settings.grant().is_some());
+        assert!(settings.grant().unwrap().principal.is_none());
+        assert!(settings.browser_session());
+        assert_eq!(settings.expected_working_as(), Some("EXAMPLE.SITE|"));
     }
 
     fn settings(file: FileConfig) -> Settings {
@@ -597,8 +684,23 @@ mod tests {
             file,
             policy: Policy::default(),
             discovered: None,
-            defaults: Defaults::default(),
+            defaults: None,
+            persist: false,
         }
+    }
+
+    #[test]
+    fn restoring_an_unset_user_broker_returns_to_dns() {
+        let mut settings = settings(FileConfig::default());
+        settings.set_discovered("https://dns.example.site".into());
+        let before = settings.user_broker_url();
+
+        settings.set_broker_url("https://typed.example.site");
+        assert_eq!(settings.broker_url(), Some("https://typed.example.site"));
+        settings.restore_user_broker_url(before);
+
+        assert_eq!(settings.broker_url(), Some("https://dns.example.site"));
+        assert!(settings.user_broker_url().is_none());
     }
 
     /// The order the whole feature rests on: what IT decided, then what the
@@ -656,6 +758,71 @@ mod tests {
         assert_eq!(s.ntlm_fallback_recovery(), cfg!(windows));
     }
 
+    #[test]
+    fn resolved_silent_waits_for_the_broker_when_no_higher_layer_answers() {
+        let mut s = settings(FileConfig::default());
+        assert!(!s.defaults_ready());
+        assert_eq!(s.resolved_silent(), None);
+        assert!(!s.silent(), "silent() uses the built-in false while unresolved");
+
+        s.set_defaults(Defaults { silent: Some(false), ..Defaults::default() });
+        assert!(s.defaults_ready());
+        assert_eq!(s.resolved_silent(), Some(false));
+
+        s.set_defaults(Defaults { silent: Some(true), ..Defaults::default() });
+        assert_eq!(s.resolved_silent(), Some(true));
+
+        s.set_defaults(Defaults::default());
+        assert_eq!(s.resolved_silent(), Some(false), "an absent broker value is a complete answer");
+
+        s.file.autostart = Some(false);
+        s.clear_defaults();
+        assert!(!s.defaults_ready());
+        assert_eq!(s.resolved_silent(), None);
+        assert_eq!(s.file.autostart, Some(false), "an applied autostart choice remains stored");
+    }
+
+    #[test]
+    fn policy_and_user_values_resolve_silent_without_the_broker() {
+        for value in [false, true] {
+            let mut user = settings(FileConfig { silent: Some(value), ..FileConfig::default() });
+            assert_eq!(user.resolved_silent(), Some(value));
+            user.set_defaults(Defaults { silent: Some(!value), ..Defaults::default() });
+            assert_eq!(user.resolved_silent(), Some(value));
+            user.clear_defaults();
+            assert_eq!(user.resolved_silent(), Some(value));
+
+            let mut policy = settings(FileConfig { silent: Some(!value), ..FileConfig::default() });
+            policy.policy.silent = Some(value);
+            assert_eq!(policy.resolved_silent(), Some(value));
+            policy.set_defaults(Defaults { silent: Some(!value), ..Defaults::default() });
+            assert_eq!(policy.resolved_silent(), Some(value));
+            policy.clear_defaults();
+            assert_eq!(policy.resolved_silent(), Some(value));
+        }
+    }
+
+    #[test]
+    fn silent_precedence_is_builtin_then_broker_then_user_then_policy() {
+        let mut s = settings(FileConfig::default());
+        s.set_defaults(Defaults { silent: Some(true), ..Defaults::default() });
+        s.set_silent(false);
+        s.policy.silent = Some(true);
+
+        assert_eq!(s.resolved_silent(), Some(true));
+        assert!(s.silent_locked());
+
+        s.policy.silent = None;
+        assert_eq!(s.resolved_silent(), Some(false));
+
+        s.file.silent = None;
+        assert_eq!(s.resolved_silent(), Some(true));
+
+        s.set_defaults(Defaults::default());
+        assert_eq!(s.resolved_silent(), Some(false));
+        assert!(!s.silent());
+    }
+
     /// The template and the code have to name the same registry values. A
     /// policy an administrator sets and the agent never reads is worse than no
     /// template at all: the Settings window keeps offering the setting, so
@@ -671,8 +838,14 @@ mod tests {
         let admx = strip_xml_comments(ADMX_SRC);
         let admx = admx.as_str();
 
-        for value in ["BrokerUrl", "GrantFor", "Autostart", "NtlmFallbackRecovery", "WindowsSignIn"]
-        {
+        for value in [
+            "BrokerUrl",
+            "GrantFor",
+            "Autostart",
+            "NtlmFallbackRecovery",
+            "Silent",
+            "WindowsSignIn",
+        ] {
             assert!(
                 admx.contains(&format!("valueName=\"{value}\"")),
                 "{value} is read by Settings::load but no policy writes it"
@@ -681,7 +854,7 @@ mod tests {
         // Every policy writes the branch the agent reads first.
         assert_eq!(
             admx.matches("key=\"Software\\Policies\\KerBridge\"").count(),
-            5,
+            6,
             "a policy writing anywhere else would never be read"
         );
         // Intune refuses a template that names a namespace it does not already
@@ -727,7 +900,8 @@ mod tests {
             file: FileConfig::default(),
             policy: Policy::default(),
             discovered: None,
-            defaults: Defaults::default(),
+            defaults: None,
+            persist: false,
         };
         assert!(s.set_expected_working_as(Some("EXAMPLE.SITE|")));
         assert!(!s.set_expected_working_as(Some("EXAMPLE.SITE|")));

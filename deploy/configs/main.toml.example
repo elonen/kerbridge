@@ -72,7 +72,7 @@
 
 
 # --- Client defaults: what a workstation agent does where nobody has said ---
-# Served in the broker's /config document, which every agent already reads for
+# Served in the broker's discovery document, which every agent already reads for
 # the realm and the KDCs. It reaches the machines no management system owns.
 #
 # Below the machine policy (HKLM\Software\Policies\KerBridge on Windows, an MDM
@@ -97,6 +97,10 @@
 # by a reboot or by IT. Windows only, macOS clears it by itself.
 # Example: true
 #ntlm_fallback_recovery =
+
+# Suppress OS notifications and unsolicited status surfaces.
+# Example: false
+#silent =
 
 
 # --- Operator notification ---

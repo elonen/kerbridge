@@ -174,6 +174,11 @@ pub(crate) fn finished(action: Action, outcome: Outcome) {
         // A decision, not a fault: back to the question, unchanged and silent.
         Outcome::Declined if mine => to_phase(Phase::Confirm),
         Outcome::Declined => {}
+        Outcome::Done { .. } if action == Action::RestartWorkstation => {
+            if mine {
+                close();
+            }
+        }
         Outcome::Done { message, detail } => {
             report(mine, action, true, message, detail);
         }

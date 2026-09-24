@@ -364,14 +364,11 @@ is approximately *half of a ticket lifetime*: five hours at the 10-hour default,
 thirty minutes at one hour. When you make the lifetime shorter to harden a build
 farm, you make the farm fail more easily.
 
-The tray tries to repair this condition itself. When the tray finds the NTLM
-fallback, it restarts the connection service without a prompt. This succeeds
-immediately if that account is a local administrator. The tray makes one attempt
-for each episode, and no more attempts until a ticket exchange succeeds. Retries
-without a limit during a broker outage would overload the machine.
+The agent does not repair automatically. An unattended machine needs an operator
+to run [`kerbridge.exe --repair`](troubleshooting.md#smb-stops-working-after-a-ticket-expires)
+or restart Windows Workstation service after an NTLM fallback.
 
-An unattended machine needs two more things. The feature does not supply them
-automatically:
+An unattended machine needs two more things:
 
 - The tray must run in the auto-login interactive session. A service that injects
   into the session of a different user is not supported. The ticket must go into
@@ -380,6 +377,5 @@ automatically:
 - The tray needs restart-on-failure. If the tray stops at 03:00, the ticket
   lapses, and a lapse while a build holds a share open is the worst case above.
 
-Nothing reports an NTLM-degraded machine to you. If the automatic repair fails, a
-build system usually finds the problem when a publish fails. KerBridge does not
-report the condition remotely.
+Nothing reports an NTLM-degraded machine to you. A build system usually finds the
+problem when a publish fails. KerBridge does not report the condition remotely.

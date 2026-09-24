@@ -126,6 +126,7 @@ it — and nothing cleans that one up.
 | `Autostart` | REG_DWORD | `1` starts the agent at sign-in, `0` forbids it |
 | `WindowsSignIn` | REG_DWORD | `0` forces the browser flow instead of WAM |
 | `NtlmFallbackRecovery` | REG_DWORD | `0` disables the SMB repair mechanism |
+| `Silent` | REG_DWORD | `1` suppresses OS notifications and automatic flyouts |
 | `GrantFor` | REG_SZ | The account a device grant works as — [device-grants.md](device-grants.md) |
 
 `Autostart` is applied, not only recorded: the login entry is per-user, so the
@@ -164,6 +165,7 @@ owns:
 [client_defaults]
 autostart = true
 windows_sign_in = true
+silent = false
 ```
 
 These are defaults and not policy: they decide a machine whose user has never

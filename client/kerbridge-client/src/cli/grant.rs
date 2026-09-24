@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use kerbridge_client::broker::{AuthScheme, BrokerError};
 use kerbridge_client::{config, device, discovery, session};
 
-use super::resolve::{obtain_token, resolve_broker, resolve_target};
+use super::resolve::{obtain_token, resolve_broker, resolve_target, stored_state_applies};
 use crate::Args;
 
 /// Authorize this machine to obtain tickets without a browser sign-in.
@@ -19,6 +19,13 @@ use crate::Args;
 /// additionally requires the signer to be one of its delegates. The ticket this
 /// machine later obtains is then the target's; this run gets none at all.
 pub(crate) fn do_grant(args: &Args, broker: &str) -> Result<()> {
+    let requested_broker = broker.to_owned();
+    let settings = config::Settings::load();
+    if !stored_state_applies(args.broker.as_deref(), broker, settings.broker_url()) {
+        bail!(
+            "the configured device state may belong to another broker; change the broker URL in NAS Access Settings before creating a device grant"
+        );
+    }
     let target = resolve_target(args)?;
     let config = discovery::discover(broker).context("discovering the broker's grant policy")?;
     // The registration below goes to the source the broker confirmed, which a
@@ -29,7 +36,7 @@ pub(crate) fn do_grant(args: &Args, broker: &str) -> Result<()> {
     if !config.device_grant.enabled() {
         bail!("this deployment does not offer device grants (DEVICE_GRANT_DAYS is 0)");
     }
-    if let Some(existing) = config::Settings::load().grant().cloned() {
+    if let Some(existing) = settings.grant().cloned() {
         // Says "renewing" because the key stays and the id with it. This used to
         // warn that the key went at once, which was true then and is a promise
         // worth not breaking quietly: a refused renewal now leaves the grant
@@ -41,10 +48,14 @@ pub(crate) fn do_grant(args: &Args, broker: &str) -> Result<()> {
     }
 
     if let Some(target) = &target {
-        println!("[kerbridge] authorizing this device for {target}, not for you");
+        println!("[kerbridge] creating a device grant for {target}, not for you");
     }
 
     let (broker, token) = obtain_token(args, broker)?;
+    let current = config::Settings::load();
+    if !stored_state_applies(args.broker.as_deref(), &requested_broker, current.broker_url()) {
+        bail!("the broker URL changed during authorization; no device grant was created");
+    }
     let grant = session::create_grant(
         &broker,
         token.expose(),
@@ -59,14 +70,31 @@ pub(crate) fn do_grant(args: &Args, broker: &str) -> Result<()> {
             if why == kerbridge_client::broker::REFUSED_NOT_DELEGATE =>
         {
             anyhow!(
-                "authorizing this device: {e}. You are signed in and admitted -- someone has to \
+                "creating a device grant: {e}. You are signed in and admitted -- someone has to \
                  add you to that account's delegate group; signing in again will not help"
             )
         }
-        _ => anyhow!("authorizing this device: {e}"),
+        _ => anyhow!("creating a device grant: {e}"),
     })?;
+    let mut settings = config::Settings::load();
+    if !stored_state_applies(args.broker.as_deref(), &requested_broker, settings.broker_url()) {
+        let cleanup = kerbridge_client::broker::revoke_device(
+            &broker,
+            AuthScheme::Bearer(token.expose()),
+            &grant.grant_id,
+            target.as_deref(),
+        );
+        return Err(match cleanup {
+            Ok(()) => anyhow!(
+                "the broker URL changed during authorization; the new device grant was revoked"
+            ),
+            Err(e) => anyhow!(
+                "the broker URL changed during authorization; the new device grant was not recorded and revocation failed: {e}"
+            ),
+        });
+    }
     println!(
-        "[kerbridge] this device is authorized as grant {}; it needs a browser sign-in again by {}",
+        "[kerbridge] device grant {} created; it needs a browser sign-in again by {}",
         grant.grant_id,
         kerbridge_client::time::local_stamp(grant.sign_in_required_by)
     );
@@ -74,12 +102,11 @@ pub(crate) fn do_grant(args: &Args, broker: &str) -> Result<()> {
     // run learns it: the caller presented their own token and never spelled it.
     println!("  identity  {}", grant.identity);
 
-    // Loaded after the sign-in, never before: `obtain_token` saves the realm it
-    // discovered, and a copy read earlier would write that back out stale.
-    let mut settings = config::Settings::load();
+    // The accepted discovery document and device grant are one record.
+    settings.set_cache(&config.kerberos);
     settings.set_grant(Some(grant));
     settings.save().context("recording the device grant in config.toml")?;
-    println!("[kerbridge] the tray uses it too -- both read the same config.toml");
+    println!("[kerbridge] the agent uses it too -- both read the same config.toml");
     Ok(())
 }
 
@@ -93,8 +120,9 @@ pub(crate) fn do_grant_status() -> Result<()> {
     let settings = config::Settings::load();
     let key = device::open();
     let held = matches!(key, Ok(Some(_)));
+    let grant = settings.grant();
 
-    match settings.grant() {
+    match grant {
         Some(grant) => {
             println!("[kerbridge] this device holds device grant {}", grant.grant_id);
             println!("  identity             {}", grant.identity);
@@ -127,7 +155,7 @@ pub(crate) fn do_grant_status() -> Result<()> {
         Err(e) => println!("  TPM key              unreadable ({e:#})"),
     }
 
-    match (settings.grant().is_some(), held) {
+    match (grant.is_some(), held) {
         (true, false) => println!(
             "\n[kerbridge] the grant names a key this machine no longer has, so the next ticket \
              needs a browser sign-in. --grant authorizes this device again."
@@ -146,7 +174,7 @@ pub(crate) fn do_grant_status() -> Result<()> {
     // different accounts, and the machine is not broken when they do -- it keeps
     // working as the grant it holds and migrates by itself the next time
     // somebody authorizes it, when a human is at the keyboard anyway.
-    if settings.grant().is_some() && settings.grant_for().is_some() {
+    if grant.is_some() && settings.grant_for().is_some() {
         println!(
             "\n[kerbridge] the pin decides only who the next authorization names; this machine \
              keeps working as the grant above until --grant is run again."
@@ -172,7 +200,12 @@ fn remaining(deadline: i64) -> String {
 pub(crate) fn do_grant_list(args: &Args, broker: &str) -> Result<()> {
     let target = resolve_target(args)?;
     let whose = target.clone().unwrap_or_else(|| "this account".to_owned());
-    let mine = config::Settings::load().grant().map(|g| g.grant_id.clone());
+    let settings = config::Settings::load();
+    let mine = if stored_state_applies(args.broker.as_deref(), broker, settings.broker_url()) {
+        settings.grant().map(|grant| grant.grant_id.clone())
+    } else {
+        None
+    };
     let (broker, token) = obtain_token(args, broker)?;
     let devices =
         kerbridge_client::broker::list_devices(&broker, token.expose(), target.as_deref())
@@ -248,7 +281,14 @@ pub(crate) fn do_grant_revoke(args: &Args, id: &str) -> Result<()> {
     // Only when the id really is this machine's *and* nothing else was named: a
     // `--for` here says "one of that account's other devices", and the offline
     // path cannot serve it -- an assertion may name no account but its own.
-    if args.target.is_none() && config::Settings::load().grant().is_some_and(|g| g.grant_id == id) {
+    let settings = config::Settings::load();
+    let requested = args.broker.as_deref().or_else(|| settings.broker_url()).unwrap_or_default();
+    let mine = if stored_state_applies(args.broker.as_deref(), requested, settings.broker_url()) {
+        settings.grant()
+    } else {
+        None
+    };
+    if args.target.is_none() && mine.is_some_and(|grant| grant.grant_id == id) {
         return do_grant_give_up(args);
     }
 

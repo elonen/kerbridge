@@ -8,13 +8,14 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::describe::{Action, Fault};
-use crate::discovery::{DeviceGrantConfig, KerberosConfig};
+use crate::describe::Fault;
 use crate::strings::tr;
-use crate::{config, discovery, enroll, log, oidc, tickets, time};
+use crate::{config, log, time};
 
-use super::worker::{self, Event, Trigger};
-use super::{Agent, CANCEL, Phase, REFRESH_TOKEN, STARTUP_RETRIES, host, with};
+use super::worker::{self, Trigger};
+use super::{
+    BUSY, CANCEL, GRANT_CLEANUP, Phase, STARTUP_RETRIES, host, purge_realm, retarget, with,
+};
 
 /// Start a sign-in the user asked for. No-op while another worker is running.
 ///
@@ -104,7 +105,8 @@ pub fn cancel_sign_in() {
 /// Which clients hold one open is theirs to decide, so the note that follows says *may*.
 pub fn drop_ticket() {
     with(|a| {
-        let purged = purge_realm(a);
+        let realm = a.kerberos.realm.clone();
+        let purged = purge_realm(&realm);
         a.reset_session();
         a.expect(false);
         // After the reset, which clears it.
@@ -128,59 +130,7 @@ pub fn drop_ticket() {
 /// That retires no session -- the Windows account was there before and stays
 /// after -- so it buys nothing for the silent renewal it spends.
 pub fn sign_out_idp() {
-    let broker = with(|a| {
-        *REFRESH_TOKEN.lock().unwrap() = None;
-        let broker = a
-            .settings
-            .browser_session()
-            .then(|| a.settings.broker_url().map(str::to_owned))
-            .flatten();
-        if broker.is_some() {
-            a.started(Action::SignOutIdp);
-        }
-        broker
-    });
-    let Some(broker) = broker else {
-        return;
-    };
-    // Discovery is a network round trip, so the logout page opens off the UI
-    // thread. Best effort for the token, which is already forgotten -- but the
-    // recorded session is only forgotten if the authority was reached, so an
-    // unreachable one leaves the offer standing rather than losing the session.
-    std::thread::spawn(move || {
-        let asked = match discovery::discover(&broker) {
-            Ok(cfg) => oidc::logout(&cfg.oidc),
-            Err(e) => {
-                log::warn(&format!("cloud sign-out: discovery failed: {e:#}"));
-                false
-            }
-        };
-        worker::post(Event::CloudSignedOut { asked });
-    });
-}
-
-/// Drop this realm's tickets, logging (but not failing on) a refusal.
-///
-/// The device grant deliberately survives this. Signing out is the person at the
-/// keyboard leaving; the grant is the account this machine works *as*, which
-/// somebody -- possibly somebody else -- authorized it for, and which every later
-/// ticket depends on. Giving it up is [`give_up_grant`], and it is a separate
-/// thing the user asks for by name.
-fn purge_realm(a: &mut Agent) -> bool {
-    let realm = a.kerberos.realm.clone();
-    if realm.is_empty() {
-        return true;
-    }
-    match tickets::purge_realm(&realm) {
-        Ok(n) => {
-            log::info(&format!("signed out of {realm} ({n} ticket(s) purged)"));
-            true
-        }
-        Err(e) => {
-            log::warn(&format!("sign-out purge failed: {e:#}"));
-            false
-        }
-    }
+    worker::begin_cloud_sign_out();
 }
 
 /// Give up the grant this machine holds, at the broker that issued it.
@@ -228,6 +178,8 @@ pub struct SettingsView {
     pub windows_sign_in: bool,
     /// True when machine policy decides the Windows sign-in, same rule.
     pub windows_sign_in_locked: bool,
+    pub silent: bool,
+    pub silent_locked: bool,
     /// The realm the Advanced actions target; empty until it has been discovered.
     pub realm: String,
     /// How many days a device grant would last here. 0 means the deployment has
@@ -254,6 +206,8 @@ pub fn settings_view() -> SettingsView {
         autostart_locked: machine_wide || a.settings.autostart_managed(),
         windows_sign_in: a.settings.windows_sign_in(),
         windows_sign_in_locked: a.settings.windows_sign_in_locked(),
+        silent: a.settings.silent(),
+        silent_locked: a.settings.silent_locked(),
         realm: a.kerberos.realm.clone(),
         grant_days: if a.device_grant.enabled() { a.device_grant.days } else { 0 },
         grant_deadline: a.settings.grant().map_or(0, |g| g.sign_in_required_by),
@@ -262,86 +216,101 @@ pub fn settings_view() -> SettingsView {
     })
 }
 
-/// Apply and persist the Settings window. A changed broker URL invalidates the
-/// cached realm and the enrollment verdict: they described a different server.
+/// Whether unsolicited platform surfaces are disabled.
+pub fn silent() -> bool {
+    with(|a| a.settings.silent())
+}
+
+/// Whether macOS may ask for notification permission. `None` means neither
+/// policy nor the user resolves silent mode and the discovery document is
+/// unresolved.
+pub fn notification_authorization_eligible() -> Option<bool> {
+    with(|a| a.settings.resolved_silent().map(|silent| !silent))
+}
+
+/// `None` leaves a setting unchanged and does not persist its effective value.
+#[derive(Default)]
+pub struct SettingsChange<'a> {
+    pub broker_url: Option<&'a str>,
+    pub autostart: Option<bool>,
+    pub windows_sign_in: Option<bool>,
+    pub silent: Option<bool>,
+    pub grant_for: Option<&'a str>,
+}
+
+/// Apply and persist settings changes. A changed broker URL invalidates all
+/// outstanding discovery and clears the old broker snapshot.
 ///
 /// A changed pin invalidates nothing. It decides who the *next* authorization
 /// names and does not touch the grant this machine already holds, which keeps
 /// working as the account it was issued for until somebody authorizes the
 /// machine again -- at which point a human is at the keyboard anyway.
-pub fn apply_settings(
-    broker_url: Option<&str>,
-    autostart: bool,
-    windows_sign_in: bool,
-    grant_for: &str,
-) {
+pub fn apply_settings(change: SettingsChange<'_>) {
     with(|a| {
         let before = a.settings.broker_url().unwrap_or_default().to_string();
+        let before_user = a.settings.user_broker_url();
+        let old_broker = (!before.is_empty()).then(|| before.clone());
         // `None` is "the user did not touch the field", which is not the same as
         // an empty one. It matters because `broker_url()` resolves *through* the
         // address DNS volunteered, which `config.rs` keeps deliberately in memory
         // only -- so a caller that read the field back and handed it here would
         // pin a machine that was following DNS, and the `before != after` guard
         // below would compare equal and say nothing happened.
-        if let Some(url) = broker_url
+        let broker_change_blocked = change.broker_url.is_some()
+            && (BUSY.load(Ordering::Relaxed)
+                || GRANT_CLEANUP.load(Ordering::Relaxed)
+                || a.cloud_sign_out.is_some());
+        if broker_change_blocked {
+            log::warn("broker URL change ignored while agent work is in progress");
+        }
+        if let Some(url) = change.broker_url
+            && !broker_change_blocked
             && !a.settings.broker_url_locked()
         {
             a.settings.set_broker_url(url);
         }
-        if !a.settings.grant_for_locked() {
-            a.settings.set_grant_for(grant_for);
+        if a.settings.broker_url().unwrap_or_default() != before {
+            log::info("broker URL changed; ending the previous realm's session");
+            if retarget(a, old_broker) {
+                // Try the new address at once, silently. The old broker payload
+                // and every old fault are already gone.
+                a.startup_retry_at = Some(time::now());
+            } else {
+                a.settings.restore_user_broker_url(before_user);
+                log::warn("broker URL change cancelled because old realm tickets remain");
+            }
         }
-        if !a.settings.windows_sign_in_locked() {
-            a.settings.set_windows_sign_in(windows_sign_in);
+        if let Some(target) = change.grant_for
+            && !a.settings.grant_for_locked()
+        {
+            a.settings.set_grant_for(target);
+        }
+        if let Some(on) = change.windows_sign_in
+            && !a.settings.windows_sign_in_locked()
+        {
+            a.settings.set_windows_sign_in(on);
+        }
+        if let Some(on) = change.silent
+            && !a.settings.silent_locked()
+        {
+            a.settings.set_silent(on);
         }
         // Under a machine-wide entry or a policy value the checkbox is disabled
         // and reads the decided value, so what comes back here is not a choice
         // anyone made: writing it back would leave a per-user entry that
         // outlives the deployment's, and a `config.toml` line that outlives the
         // policy.
-        if !config::autostart_machine_wide() && !a.settings.autostart_managed() {
-            a.settings.set_autostart_choice(autostart);
-            if let Err(e) = config::set_autostart(autostart) {
+        if let Some(on) = change.autostart
+            && !config::autostart_machine_wide()
+            && !a.settings.autostart_managed()
+        {
+            a.settings.set_autostart_choice(on);
+            if let Err(e) = config::set_autostart(on) {
                 log::warn(&format!("could not update the autostart entry: {e:#}"));
             }
         }
         if let Err(e) = a.settings.save() {
             log::warn(&format!("could not save config.toml: {e:#}"));
-        }
-        if a.settings.broker_url().unwrap_or_default() != before {
-            log::info("broker URL changed; ending the previous realm's session");
-            // Drop the old realm's tickets *before* forgetting its name -- otherwise
-            // they stay in the cache with nothing left able to name, show or purge
-            // them. Retargeting the agent is a deliberate act; the session that
-            // belonged to the old broker does not survive it, and neither does a
-            // device grant the old broker issued -- unlike a sign-out, which is
-            // somebody leaving a machine that keeps its job.
-            worker::give_up_grant(a, (!before.is_empty()).then(|| before.clone()));
-            purge_realm(a);
-            *REFRESH_TOKEN.lock().unwrap() = None;
-            // The session belongs to the authority the *old* broker named, so it
-            // is not something the new one can offer to sign out of.
-            a.settings.set_browser_session(false);
-            a.reset_session();
-            a.kerberos = KerberosConfig::default();
-            a.enroll_state = enroll::State::NotEnrolled;
-            a.device_grant = DeviceGrantConfig::default();
-            a.help_url = None;
-            // The cached realm goes too, not just the in-memory one. It is the
-            // *old* broker's answer, and leaving it on disk means the next start
-            // reads it back and reports this machine as belonging to a realm the
-            // configured broker has never mentioned.
-            a.settings.set_cache(&KerberosConfig::default());
-            if let Err(e) = a.settings.save() {
-                log::warn(&format!("could not clear the cached realm: {e:#}"));
-            }
-            // Try the new address at once, silently. `reset_session` has just
-            // cleared the realm and every fault with it, so without this the
-            // agent sits idle saying only "no settings from <host>" -- which is
-            // the same thing it would say about an address that works, and gives
-            // someone who has just mistyped one nothing to tell them so. The
-            // silent path reaches discovery and stops short of a browser.
-            a.startup_retry_at = Some(time::now());
         }
     })
 }

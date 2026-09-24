@@ -103,6 +103,7 @@ const CMD_GIVE_UP: u16 = 406;
 const CMD_REENROLL: u16 = 407;
 const CMD_UNENROLL: u16 = 408;
 const CMD_OPEN_LOG: u16 = 409;
+const CMD_SILENT: u16 = 410;
 /// `EN_CHANGE`, in the high word of a WM_COMMAND from an EDIT.
 const EN_CHANGE: u16 = 0x0300;
 
@@ -127,6 +128,7 @@ pub(crate) struct State {
     save: Cell<HWND>,
     autostart: Cell<HWND>,
     wam: Cell<HWND>,
+    silent: Cell<HWND>,
     /// What the two text fields held when the page was built. Save is what turns
     /// an edit into a change, so it stays disabled until one differs.
     committed: RefCell<(String, String)>,
@@ -146,6 +148,7 @@ impl Default for State {
             save: null(),
             autostart: null(),
             wam: null(),
+            silent: null(),
             committed: RefCell::new((String::new(), String::new())),
         }
     }
@@ -487,6 +490,20 @@ fn page_basic(col: &mut Col, view: &agent::SettingsView) {
     if view.windows_sign_in_locked {
         col.wrap(s.settings_broker_managed, ROLE_SUB);
     }
+
+    col.separator();
+    col.heading(s.settings_section_behavior);
+    col.gap(4);
+    let silent = checkbox(col, s.settings_silent_label, CMD_SILENT);
+    set_checked(silent, view.silent);
+    if view.silent_locked {
+        unsafe { EnableWindow(silent, 0) };
+    }
+    a.settings.silent.set(silent);
+    col.wrap(s.settings_silent_sub, ROLE_SUB);
+    if view.silent_locked {
+        col.wrap(s.settings_broker_managed, ROLE_SUB);
+    }
 }
 
 /// **Presence rules, no text branches.** No broker or no realm yet →
@@ -724,29 +741,26 @@ fn save() {
     } else {
         window_text(a.settings.grant_for.get())
     };
-    agent::apply_settings(
-        Some(&broker),
-        is_checked(a.settings.autostart.get()),
-        is_checked(a.settings.wam.get()),
-        &grant_for,
-    );
+    agent::apply_settings(agent::SettingsChange {
+        broker_url: Some(&broker),
+        grant_for: Some(&grant_for),
+        ..agent::SettingsChange::default()
+    });
     crate::refresh_ui();
     layout_pages();
 }
 
-/// Apply the checkboxes on the spot, leaving the text fields to their Save.
-fn apply_toggles() {
+/// Apply one checkbox immediately; Save commits the text fields.
+fn apply_toggle(id: u16) {
     let a = app();
-    let view = agent::settings_view();
-    // The broker field is not part of a toggle. Passing the value back would
-    // write the DNS-discovered address into `config.toml` and pin a machine that
-    // was meant to keep following the SRV record.
-    agent::apply_settings(
-        None,
-        is_checked(a.settings.autostart.get()),
-        is_checked(a.settings.wam.get()),
-        &view.grant_for,
-    );
+    let mut change = agent::SettingsChange::default();
+    match id {
+        CMD_AUTOSTART => change.autostart = Some(is_checked(a.settings.autostart.get())),
+        CMD_WAM => change.windows_sign_in = Some(is_checked(a.settings.wam.get())),
+        CMD_SILENT => change.silent = Some(is_checked(a.settings.silent.get())),
+        _ => return,
+    }
+    agent::apply_settings(change);
     crate::refresh_ui();
 }
 
@@ -772,10 +786,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             0
         }
         WM_CLOSE => {
-            // Leaving Settings lands the user back on the status flyout, not on
-            // an empty desktop with the agent only in the tray.
+            // Silent mode allows the flyout only after an icon click, so Settings
+            // closes to the desktop.
             unsafe { ShowWindow(hwnd, SW_HIDE) };
-            crate::flyout::show();
+            if !agent::silent() {
+                crate::flyout::show();
+            }
             0
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
@@ -788,7 +804,7 @@ fn on_command(wparam: WPARAM) {
     let notify = hiword(wparam);
     match (id, notify) {
         (CMD_SAVE, BN_CLICKED) => save(),
-        (CMD_AUTOSTART | CMD_WAM, BN_CLICKED) => apply_toggles(),
+        (CMD_AUTOSTART | CMD_WAM | CMD_SILENT, BN_CLICKED) => apply_toggle(id),
         (CMD_BROKER | CMD_GRANT_FOR, EN_CHANGE) => {
             let save = a.settings.save.get();
             if !save.is_null() {

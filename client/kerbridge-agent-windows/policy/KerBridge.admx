@@ -74,6 +74,15 @@
       <disabledValue><decimal value="0" /></disabledValue>
     </policy>
 
+    <policy name="Silent" class="Machine" displayName="$(string.Silent)"
+            explainText="$(string.Silent_Help)"
+            key="Software\Policies\KerBridge" valueName="Silent">
+      <parentCategory ref="NasAccess" />
+      <supportedOn ref="SUPPORTED_NAS_ACCESS_1_0" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+
     <policy name="GrantFor" class="Machine" displayName="$(string.GrantFor)"
             explainText="$(string.GrantFor_Help)" presentation="$(presentation.GrantFor)"
             key="Software\Policies\KerBridge">

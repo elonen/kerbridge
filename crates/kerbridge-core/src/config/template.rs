@@ -477,7 +477,7 @@ const MAIN_SRC: &str = r#"# KerBridge, entry point.
 
 
 # --- Client defaults: what a workstation agent does where nobody has said ---
-# Served in the broker's /config document, which every agent already reads for
+# Served in the broker's discovery document, which every agent already reads for
 # the realm and the KDCs. It reaches the machines no management system owns.
 #
 # Below the machine policy (HKLM\Software\Policies\KerBridge on Windows, an MDM
@@ -491,6 +491,8 @@ const MAIN_SRC: &str = r#"# KerBridge, entry point.
 {{windows_sign_in}}
 
 {{ntlm_fallback_recovery}}
+
+{{silent}}
 
 
 # --- Operator notification ---

@@ -152,6 +152,9 @@ pub struct ClientDefaults {
     /// by a reboot or by IT. Windows only, macOS clears it by itself.
     #[cfg_attr(feature = "schema", schemars(example = true))]
     pub ntlm_fallback_recovery: Option<bool>,
+    /// Suppress OS notifications and unsolicited status surfaces.
+    #[cfg_attr(feature = "schema", schemars(example = false))]
+    pub silent: Option<bool>,
 }
 
 /// `[notify]`: where the conditions only a human can fix are sent.

@@ -670,9 +670,10 @@ deletes the [realm](#realm).
 
 ### repair
 
-The user-approved action that restarts the Windows Workstation service to clear
+The action that restarts the Windows Workstation service to clear
 [NTLM fallback](#ntlm-fallback). It disconnects all SMB sessions on the
-[workstation](#workstation).
+[workstation](#workstation). It runs after interactive confirmation, or after an
+operator authorizes the already elevated `kerbridge --repair --yes` command.
 <!-- refs: service `LanmanWorkstation`, `kerbridge_client::repair::restart_workstation` -->
 <!-- avoid: restartworkstation, restart workstation, restart the redirector, service restart, fix drives -->
 

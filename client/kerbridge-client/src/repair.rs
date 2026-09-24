@@ -14,7 +14,7 @@
 mod imp;
 
 /// Stop and restart the Workstation service, taking its running dependents with
-/// it. Returns a human-readable transcript for the log and the result dialog.
+/// it. Returns a human-readable transcript for the log.
 pub fn restart_workstation() -> anyhow::Result<Vec<String>> {
     imp::restart_workstation()
 }

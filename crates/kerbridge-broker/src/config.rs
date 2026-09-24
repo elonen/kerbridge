@@ -139,6 +139,8 @@ pub struct ClientDefaultsDiscovery {
     pub windows_sign_in: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ntlm_fallback_recovery: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub silent: Option<bool>,
 }
 
 impl ClientDefaultsDiscovery {
@@ -146,6 +148,7 @@ impl ClientDefaultsDiscovery {
         self.autostart.is_none()
             && self.windows_sign_in.is_none()
             && self.ntlm_fallback_recovery.is_none()
+            && self.silent.is_none()
     }
 }
 
@@ -197,6 +200,7 @@ impl Config {
                 autostart: self.client_defaults.autostart,
                 windows_sign_in: self.client_defaults.windows_sign_in,
                 ntlm_fallback_recovery: self.client_defaults.ntlm_fallback_recovery,
+                silent: self.client_defaults.silent,
             },
         }
     }
@@ -299,6 +303,21 @@ fn require_loopback(listen: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_defaults_keep_explicit_false_values() {
+        let empty = ClientDefaultsDiscovery::default();
+        assert!(empty.is_empty());
+        assert_eq!(serde_json::to_value(&empty).unwrap(), serde_json::json!({}));
+
+        let defaults =
+            ClientDefaultsDiscovery { silent: Some(false), ..ClientDefaultsDiscovery::default() };
+        assert!(!defaults.is_empty());
+        assert_eq!(
+            serde_json::to_value(&defaults).unwrap(),
+            serde_json::json!({ "silent": false })
+        );
+    }
 
     #[test]
     fn the_listener_stays_on_loopback() {

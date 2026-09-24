@@ -44,7 +44,8 @@ pub(crate) fn do_enroll_status(args: &Args) -> Result<()> {
     let kerberos = match resolve_broker(args) {
         Ok(broker) => discovery::discover(&broker).context("discovering the realm")?.kerberos,
         Err(no_broker) => {
-            let realm = config::Settings::load().cache().realm.clone();
+            let settings = config::Settings::load();
+            let realm = settings.cache().realm.clone();
             if realm.is_empty() {
                 return Err(no_broker);
             }
@@ -84,7 +85,7 @@ fn report_elevated(outcome: elevate::Elevated, step: &str) -> Result<()> {
     }
 }
 
-/// The tray's dialog uses this to leave its "waiting for permission" phase. A
+/// The agent's dialog uses this to leave its "waiting for permission" phase. A
 /// console has nothing to move on.
 fn ignore_start() {}
 

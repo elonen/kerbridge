@@ -7,7 +7,7 @@ use kerbridge_client::secret::Secret;
 use kerbridge_client::session::{InjectError, Injected};
 use kerbridge_client::{config, session};
 
-use super::resolve::resolve_realm;
+use super::resolve::{resolve_realm, stored_state_applies};
 use crate::Args;
 
 /// What this run proves its identity with. The two are interchangeable
@@ -55,21 +55,26 @@ pub(crate) fn granted_injection(
         }
         return Ok(None);
     }
-    let Some(grant) = config::Settings::load().grant().cloned() else {
+    let settings = config::Settings::load();
+    if !stored_state_applies(args.broker.as_deref(), broker, settings.broker_url()) {
+        return Ok(None);
+    }
+    let Some(grant) = settings.grant().cloned() else {
         return Ok(None);
     };
 
     println!(
-        "[kerbridge] this device holds grant {}; proving it with the TPM key instead of \
+        "[kerbridge] this device holds device grant {}; proving it with the TPM key instead of \
          signing in (--no-grant to sign in anyway)",
         grant.grant_id
     );
     // Not `discover`: a granted machine must reach a ticket with the IdP down.
+    let requested_broker = broker;
     let broker = kerbridge_client::discovery::source_base(broker)
         .context("asking the broker which source this address reaches")?;
     match session::inject_with_grant(&broker, &grant) {
         Ok(injected) => {
-            record_grant_principal(&injected.principal);
+            record_grant_principal(requested_broker, &injected.principal);
             Ok(Some((Proof::Grant(grant), injected, broker)))
         }
         // Expired, clamped, revoked, or the key is gone. All four are the same
@@ -98,26 +103,29 @@ pub(crate) fn granted_injection(
 /// The ticket this run injects is the caller's, so anything written with it is
 /// owned by them and not by the account the machine works as -- which is
 /// invisible until somebody reads a Security tab weeks later. And it does not
-/// last: the tray re-injects from the grant at its next cycle.
+/// last: the agent starts re-injection from the device grant at its next cycle.
 fn warn_ticket_is_yours() {
     let settings = config::Settings::load();
     let Some(target) = settings
         .grant()
-        .and_then(|g| g.principal.clone())
+        .and_then(|grant| grant.principal.clone())
         .or_else(|| settings.grant_for().map(str::to_owned))
     else {
         return;
     };
     println!(
         "[kerbridge] --no-grant: the ticket this injects is YOURS, not {target}'s. Files written \
-         with it are owned by you, and the tray re-injects as {target} at its next cycle."
+         with it are owned by you, and the agent starts re-injection as {target} at its next cycle."
     );
 }
 
-/// Remember what the grant just worked as, so a later run -- and the tray's
-/// startup -- can tell this machine's own ticket from anybody else's.
-fn record_grant_principal(principal: &str) {
+/// Remember what the device grant just worked as, so a later run -- and the
+/// agent's startup -- can tell this machine's own ticket from anybody else's.
+fn record_grant_principal(broker_url: &str, principal: &str) {
     let mut settings = config::Settings::load();
+    if settings.broker_url().is_some_and(|configured| configured != broker_url) {
+        return;
+    }
     if settings.set_grant_principal(principal)
         && let Err(e) = settings.save()
     {
@@ -125,7 +133,7 @@ fn record_grant_principal(principal: &str) {
     }
 }
 
-/// Purge the realm's tickets. The device grant survives, as it does in the tray.
+/// Purge the realm's tickets. The device grant survives, as it does in the agent.
 ///
 /// Uses the cached realm name so it works offline -- the point of signing off is
 /// that it works when nothing else does. The grant is the account this machine

@@ -83,7 +83,6 @@ fn main() {
     }
     STATUS_ITEM.with(|s| *s.borrow_mut() = Some(item));
 
-    ui::request_notification_permission();
     refresh();
 
     // Do not open UI at login: DNS can name the broker later. Autostart sign-in
@@ -188,7 +187,9 @@ impl agent::Host for MacHost {
     /// One surface answers both targets, and only one of them is reachable: the
     /// NTLM-fallback episode that raises `Repair` is switched off on macOS.
     fn raise(&self, _target: Raise) {
-        ui::show_status_later();
+        if !agent::silent() {
+            ui::show_status_later();
+        }
     }
 
     fn open_path(&self, path: &str) {

@@ -136,6 +136,7 @@ profile writes it to
 |---|---|---|
 | `BrokerUrl` | string | Takes priority over every source below it |
 | `Autostart` | boolean | `true` starts the agent at login, `false` forbids it |
+| `Silent` | boolean | `true` suppresses notifications and automatic menu opening |
 
 Each one makes its control in the Settings window show the managed value
 instead of offering to change it. A boolean may be `<true/>` or
@@ -145,6 +146,7 @@ instead of offering to change it. A boolean may be `<true/>` or
 <key>PayloadType</key>          <string>org.kerbridge.agent</string>
 <key>BrokerUrl</key>            <string>https://kerbridge.example.site</string>
 <key>Autostart</key>            <true/>
+<key>Silent</key>               <true/>
 ```
 
 `Autostart` is applied, not only recorded: the agent registers itself as a login
@@ -159,18 +161,18 @@ who set the value.
 
 The Windows-only keys — `WindowsSignIn` and `NtlmFallbackRecovery` — are read on
 this platform but decide nothing, because neither WAM nor the NTLM fallback
-exists here. Setting them does no harm and no work. `GrantFor` does decide
-something: device grants work on a Mac, and the key names the account this
-machine authorizes itself for.
+exists here. Setting them does no harm and no work.
+`GrantFor` does decide something: device grants work on a Mac, and the key names
+the account this machine authorizes itself for.
 
 ### Without an MDM
 
 A deployment can publish the same defaults from the broker instead:
 `[client_defaults]` in `main.toml` is served in `GET /config`, which the agent
-already reads for the realm and the KDCs. `autostart` is the key that means
-anything on a Mac. These are defaults, not policy — a managed preference and the
-user's own choice both win over them, and `autostart` is applied once, to a
-machine whose user has never chosen. See
+already reads for the realm and the KDCs. `autostart` and `silent` are the keys
+that mean anything on a Mac. These are defaults, not policy — a managed
+preference and the user's own choice both win over them, and `autostart` is
+applied once, to a machine whose user has never chosen. See
 [windows-client.md](windows-client.md#without-a-management-system).
 
 ## Not here yet

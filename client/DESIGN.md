@@ -28,7 +28,7 @@ broker.
 **No platform installs a renewed TGT.** Windows asks the KDC to renew at
 T−15 minutes, the KDC grants it, and Windows never installs the result. A TGT
 that expires while an SMB session is open then puts the Windows redirector into a
-stuck NTLM fallback that only an elevated `LanmanWorkstation` restart clears —
+stuck NTLM fallback that only a privileged `LanmanWorkstation` restart clears —
 and that fallback can never succeed, because the realm holds no password for a
 cloud identity. So the lifecycle is **timed re-injection that must land before
 the End Time**. It is not a convenience. It is what prevents the worst measured
@@ -49,8 +49,8 @@ failure.
 - Sign-out as a realm-scoped ticket purge plus the release of the in-memory
   refresh token. The agent owns the ticket cache. It does not own live SMB
   sessions.
-- A recovery path for the measured NTLM fallback, entered by detection and
-  completed only with the user's consent. Windows only.
+- A recovery path for the measured NTLM fallback. Windows raises the repair
+  offer by default. Windows only.
 - **Device grants**, off unless the deployment enables them. A device grant is a
   non-exportable ECDSA P-256 key. This machine's hardware holds it: the TPM on
   Windows, the Secure Enclave on macOS. It stands in for a browser sign-in for a
@@ -168,11 +168,43 @@ extra authorization parameters.
   "client_defaults": {                       // optional; each key optional, absent = no opinion
     "autostart": true,                       // applied once, to a machine whose user never chose
     "windows_sign_in": true,
-    "ntlm_fallback_recovery": true
+    "ntlm_fallback_recovery": true,
+    "silent": false
   },
   "help_url": ""                             // optional; the client uses its own when empty
 }
 ```
+
+The agent treats each `/config` reply as one snapshot: Kerberos configuration,
+device-grant configuration, deployment defaults, help URL, IdP display name and
+source. An accepted reply replaces every field, including absent fields and
+values that disable a feature. It does not fill gaps in an older snapshot.
+
+Each request carries the exact effective broker URL that the client asked and a
+local monotonically increasing generation allocated before the request starts.
+The agent accepts the reply only when that URL and generation are still current.
+The returned `base_url` routes the rest of that run; it is not the request
+identity.
+A broker URL change invalidates every outstanding reply and clears the old
+snapshot and cache until the new broker supplies one.
+
+The client applies the snapshot before it asks the IdP for OIDC metadata. Thus
+an IdP outage cannot discard the broker's realm, silent mode or other workstation
+defaults. Agent sign-in, device-grant creation and cloud sign-out use this same
+two-leg order. The requested broker URL and generation also travel with the
+terminal result. Refresh-token, browser-session and stored device-grant changes
+apply only to a current result.
+
+A worker asks the UI thread whether its stamp is still current before it injects
+a ticket, registers a device grant or opens the sign-out page. The check and the
+external side effect cannot be one atomic operation. If retargeting lands in that
+gap, the terminal event compensates before it releases the busy slot: it purges
+a stale injected ticket, or deletes a stale device key and asks the old broker to
+revoke the device grant. Device-grant cleanup runs before new-broker ticket or
+device-grant work; local deletion and broker revocation both report failures, and
+broker revocation remains best effort when the old broker is unreachable. Retargeting also cancels
+a browser leg, but an IdP session that completed in the same gap can remain at the
+old authority. No token or local browser-session marker from that leg is kept.
 
 Whichever help page is in force, the client opens it with `?lang=<tag>&os=win|mac`
 appended — the OS display language it is already drawing itself in, and the
@@ -457,19 +489,19 @@ no `\\host\IPC$` probe, and none is wanted.
 The check is skipped while a worker holds the busy slot, because a re-injection
 purges the realm before it submits and that window looks exactly like a fallback.
 
-**One raised status window per episode.** An episode opens on the signal above
-and closes only when a ticket exchange lands, or an elevated repair succeeds, or
-the agent restarts. Without that rate limit a broker outage would have the agent
-raise the surface in a loop.
+**One response per episode.** An episode opens on the signal above and closes
+only when a ticket exchange lands, or the agent restarts. Detection opens the
+status surface once. A successful repair refreshes and dismisses that surface,
+but leaves the episode open.
 
-**The agent never restarts `LanmanWorkstation` by itself.** That restart drops
-every SMB session on the machine and not only the realm's, and nothing in the
-agent can tell whether that is safe. The mechanics are in
-[`kerbridge-agent-windows/DESIGN.md`](kerbridge-agent-windows/DESIGN.md).
+A repair restarts `LanmanWorkstation` after interactive confirmation, or when an
+operator runs the already elevated `kerbridge --repair --yes` command. It
+disconnects all SMB sessions on the machine, not only the realm's.
 
-`ntlm_fallback_recovery` gates all of this machinery — the detector, the episode,
-`--repair` and the menu item. It defaults to `cfg!(windows)`, which switches the
-whole thing off on macOS in one line and keeps `#[cfg]` out of the agent.
+`ntlm_fallback_recovery` gates the agent machinery — the detector, the episode
+and the menu item. The operator's explicit `kerbridge --repair` one-shot remains
+available. The setting defaults to `cfg!(windows)`, which switches the agent path
+off on macOS in one line and keeps `#[cfg]` out of the agent.
 
 ## The status model
 
@@ -706,8 +738,13 @@ and share one label, *Retry* can wear *Authorize this PC for svc-builder*. So
 A list of actions, named in the vocabulary the surface already has. An action
 that is available *and* running stays in `actions` and also appears here, so the
 surface disables the control instead of hiding it. A list and not an option,
-because the cloud logout runs on its own thread, outside the busy slot, and can
-overlap a sign-in.
+because retargeting can clean up the old device grant while the invalidated operation
+still owns the busy slot. New-broker ticket and device-grant work waits until local key
+deletion finishes. Cloud sign-out also has its own worker, but it does not start
+while ticket or device-grant work holds that slot: its `/config` request would supersede
+the operation between the final generation check and the external side effect.
+While cloud sign-out is active, probes, renewals, startup sign-in and device-grant
+creation likewise wait, so none can supersede cloud sign-out before its page opens.
 
 This subsumes what an activity enum could not: `create_grant` runs a whole
 browser sign-in inside itself, and an elevated one-shot holds the slot for as
@@ -908,6 +945,10 @@ are standing facts that do not decay, so an unread toast costs nothing and the
 surface itself tells the monthly visitor. There is no persistent row, no unread
 badge and no "while you were out" list.
 
+**Silent mode is the outer gate.** The core still emits and logs every event, but
+the platform delivers no OS notification and honors no machine-raised status
+request. An explicit icon click still opens the status surface.
+
 Two gates, in order.
 
 **Gate 1 — is it worth an announcement at all?** Do not announce a successful
@@ -938,6 +979,7 @@ emits and logs unconditionally. Each platform judges its own surface.
 | → `Stopped` | yes | an action failed |
 | → `NotStarted` | no | not a fault; a healthy autonomous box must not be reported as one |
 | an elevated one-shot finished | gate 2 only | detached → notification, attached → the dialog |
+| a repair succeeded | no | the repaired path is the result; dismiss the manual dialog |
 | the grant deadline is inside the window | yes, presence-gated | below |
 | a grant was created or failed | gate 2 only | the dialog reports it |
 
@@ -1011,7 +1053,7 @@ mechanism are per-platform and are in each agent's document.
 
 | File | Contents |
 |---|---|
-| `config.toml` | `broker_url`; `grant_for`; `autostart`, `windows_sign_in` and `ntlm_fallback_recovery`, each written only once the user or a deployment default has settled it (built-in answers: on, on, and on for Windows and off for macOS); `browser_session`; `expected_working_as`; `[cache]`, the last discovered configuration; and `[grant]`, this machine's device grant with the principal it last obtained. |
+| `config.toml` | `broker_url`; `grant_for`; `browser_session`; `[cache]`; `[grant]`; `expected_working_as`; and optional user choices: `autostart` (built-in default: on), `windows_sign_in` (on), `ntlm_fallback_recovery` (on on Windows only), and `silent` (off). Autostart also records a deployment default after applying it once. |
 | `kerbridge.log` | The log. It rotates at start once past 10 MB, into three gzipped generations. |
 
 **Broker URL precedence:**
@@ -1054,12 +1096,23 @@ flowchart LR
   broker's own zone serve clients in per-site subdomains, and a copy published in
   the subdomain is refused, because its target is then outside the domain that
   answered.
+- **Discovery state has a run-local owner.** Every request carries the exact
+  requested broker URL and a monotonic generation. A result applies only when
+  both still match, so an old target or an older request for the same target
+  cannot replace the active snapshot.
+- **Persisted broker state keeps the 1.0.1 format.** Existing cache, grant and
+  browser-session state loads unchanged. A broker change through Settings clears
+  it. State has no historical URL, so this release does not guess one and does not
+  add a destructive migration. An accepted snapshot replaces the cached broker
+  document; the broker still validates every grant use.
 - **`ntlm_fallback_recovery`** gates the entire NTLM-fallback machinery, and a
   machine policy value overrides the file. When it is `false` the agent does no
   elevated restart: a stuck fallback is then recoverable only by a reboot or by
   IT, and the agent does not name it. Windows only whatever any layer says: a
   deployment-wide `true` may not arm on macOS a repair that macOS neither needs
   nor offers a switch for.
+- **`silent`** suppresses OS notifications and unsolicited status surfaces. It
+  does not suppress the icon, log, or a surface opened by an icon click.
 - **Autostart is applied, not only recorded.** The login entry is per-user on
   both platforms, so a policy value or a `client_defaults` answer means nothing
   until the agent writes one — it does that at startup for policy, and after the
@@ -1069,9 +1122,15 @@ flowchart LR
   seed for a profile that has never decided, and a later choice then wins. The
   MSI's machine-wide `Run` value is the third route and needs no agent
   cooperation at all, and no per-user setting can countermand it.
-- **A change of broker URL purges the realm, releases the grant and drops the
-  refresh token.** This is why the Settings field commits explicitly and never on
-  focus loss.
+- **A change of broker URL invalidates every outstanding `/config` reply and
+  clears all broker-owned values at once.** The agent refuses the change while a
+  worker, cloud sign-out or grant cleanup is active, and when the old realm's
+  tickets cannot be purged. Realm, KDCs, services, the cache, enrollment verdict,
+  device-grant configuration, deployment defaults, help URL, IdP display name
+  and source stay absent until the new broker supplies one snapshot. Policy, user
+  choices and an autostart default that was already applied stay. The change also
+  gives up the old device grant and drops the refresh token. This is why the
+  Settings field commits explicitly and never on focus loss.
 - **No token or secret is persisted.** The refresh token is lost on quit, logoff
   or reboot; autostart then has nothing to renew with, and a sign-in is one click.
 
@@ -1110,7 +1169,7 @@ flowchart LR
 | Wire format | the ccache is converted to KRB-CRED | the MIT ccache v4 is read natively; `krbcred.rs` supplies the times only |
 | Realm registration | `ksetup`, elevated, one time | none; Heimdal resolves the realm from DNS |
 | Elevation | `--enroll` and `--repair` | none anywhere in the product |
-| NTLM fallback | detected, and repaired with the user's consent | none; the mount drops visibly and reconnects |
+| NTLM fallback | detected; repair is confirmed and elevated | none; the mount drops visibly and reconnects |
 | Native token source | WAM, on by default | none; `native_token` is `Unavailable`, so every sign-in is a browser sign-in |
 | Device grant | a TPM key through CNG | an Enclave key, kept as a wrapped blob in a `0600` file; it needs no entitlement and no Developer ID. A signing identity buys the user boundary, not the key |
 | Status surface | a flyout window plus the tray menu | the menu, which is also the status window |

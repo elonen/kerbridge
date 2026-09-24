@@ -43,13 +43,14 @@ document that a client needs to start from a broker URL. Example with Entra as a
   "client_defaults": {
     "autostart": true,
     "windows_sign_in": true,
-    "ntlm_fallback_recovery": true
+    "ntlm_fallback_recovery": true,
+    "silent": false
   }
 }
 ```
 
 The broker omits `oidc.extra_auth_params` when it is empty. It omits each unset
-`client_defaults` key and omits the block when all three keys are unset. The
+`client_defaults` key and omits the block when all four keys are unset. The
 `device_grant` block is always present. A `days` value of 0 disables device
 grants.
 
@@ -71,7 +72,10 @@ The fields have these rules:
   contain. The broker derives it from the realm. The client does not derive it.
 - `client_defaults` contains deployment defaults. Policy has first priority. The
   user settings have second priority. A deployment default applies only when
-  neither layer has a value.
+  neither layer has a value. Each setting is an optional typed key. Adding a key
+  is backward-compatible because older clients ignore keys they do not know. The
+  client applies these defaults before OIDC discovery, so an IdP outage does not
+  discard them.
 
 #### `GET /config`, without a segment
 

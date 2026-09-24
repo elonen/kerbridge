@@ -1,8 +1,8 @@
 //! AppKit plumbing with no better home: tick timer, getting onto the main
 //! thread, alerts, Notification Center, opening a path, and the sheets.
 //!
-//! Nothing here decides anything. Every function is a verb the core asked for
-//! through [`kerbridge_client::agent::Host`], or the loop that drives it.
+//! The core decides what to announce. This file applies macOS delivery gates and
+//! owns AppKit and UserNotifications integration.
 
 use std::cell::RefCell;
 use std::sync::Mutex;
@@ -34,6 +34,111 @@ const WEBSITE: &str = "https://kerbridge.org/";
 /// as the Windows agent's `PostMessageW`, which also carries nothing and reads
 /// the state on arrival.
 static MAIN_QUEUE: Mutex<Vec<Job>> = Mutex::new(Vec::new());
+static NOTIFICATIONS: Mutex<AuthorizationCoordinator> = Mutex::new(AuthorizationCoordinator::new());
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Notice {
+    title: String,
+    body: String,
+    severity: Severity,
+}
+
+impl Notice {
+    fn new(title: &str, body: &str, severity: Severity) -> Self {
+        Self { title: title.to_owned(), body: body.to_owned(), severity }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum AuthorizationState {
+    Unasked,
+    Requesting(Notice),
+    Granted,
+    Denied,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct AuthorizationCoordinator {
+    state: AuthorizationState,
+}
+
+#[derive(Clone, Copy)]
+struct NotificationEligibility {
+    /// `None` until policy, user settings, or a broker snapshot resolves silence.
+    /// `Some(true)` permits an interruption.
+    configuration_allows: Option<bool>,
+    menu_open: bool,
+    bundled: bool,
+}
+
+impl NotificationEligibility {
+    fn allows(self, severity: Severity) -> bool {
+        self.configuration_allows == Some(true)
+            && !self.menu_open
+            && self.bundled
+            && matches!(severity, Severity::Warning | Severity::Error)
+    }
+
+    fn allows_pending(self) -> bool {
+        self.configuration_allows == Some(true) && !self.menu_open
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AuthorizationResult {
+    Granted,
+    Denied,
+    Error,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum AuthorizationEffect {
+    Request,
+    Deliver(Notice),
+}
+
+impl AuthorizationCoordinator {
+    const fn new() -> Self {
+        Self { state: AuthorizationState::Unasked }
+    }
+
+    fn submit(
+        &mut self,
+        notice: Notice,
+        eligibility: NotificationEligibility,
+    ) -> Option<AuthorizationEffect> {
+        if !eligibility.allows(notice.severity) {
+            return None;
+        }
+        match &self.state {
+            AuthorizationState::Unasked => {
+                self.state = AuthorizationState::Requesting(notice);
+                Some(AuthorizationEffect::Request)
+            }
+            AuthorizationState::Requesting(_) | AuthorizationState::Denied => None,
+            AuthorizationState::Granted => Some(AuthorizationEffect::Deliver(notice)),
+        }
+    }
+
+    fn complete(
+        &mut self,
+        result: AuthorizationResult,
+        pending_eligible: bool,
+    ) -> Option<AuthorizationEffect> {
+        let state = std::mem::replace(&mut self.state, AuthorizationState::Denied);
+        let AuthorizationState::Requesting(pending) = state else {
+            self.state = state;
+            return None;
+        };
+        match result {
+            AuthorizationResult::Granted => {
+                self.state = AuthorizationState::Granted;
+                pending_eligible.then_some(AuthorizationEffect::Deliver(pending))
+            }
+            AuthorizationResult::Denied | AuthorizationResult::Error => None,
+        }
+    }
+}
 
 enum Job {
     /// Drain the core's event queue and repaint.
@@ -42,6 +147,8 @@ enum Job {
     Redraw,
     /// Show the status menu.
     ShowStatus,
+    /// Finish the UserNotifications callback on the UI thread.
+    AuthorizationCompleted(AuthorizationResult),
     Alert {
         caption: String,
         body: String,
@@ -86,6 +193,7 @@ define_class!(
                     }
                     Job::Redraw => crate::redraw(),
                     Job::ShowStatus => crate::show_status(),
+                    Job::AuthorizationCompleted(result) => complete_notification_authorization(result),
                     Job::Alert { caption, body, ok } => alert(&caption, &body, ok),
                 }
             }
@@ -226,59 +334,85 @@ pub fn confirm(caption: &str, body: &str, commit: &str) -> bool {
     alert.runModal() == 1000
 }
 
-/// Ask for permission to post notifications, once, at startup.
-///
-/// Only a bundled application can: `UNUserNotificationCenter.current` throws for
-/// a bare executable, which is why the Makefile builds an `.app` and ad-hoc
-/// signs it. A refusal is not an error -- the state is always in the menu bar,
-/// and a notification is the extra.
-pub fn request_notification_permission() {
+/// Submit one interruption to the process-local authorization coordinator.
+/// Information stays in the log and menu; it neither prompts nor posts.
+pub fn notify(title: &str, body: &str, severity: Severity) {
+    let notice = Notice::new(title, body, severity);
+    let effect = NOTIFICATIONS.lock().unwrap().submit(notice, notification_eligibility());
+    apply_notification_effect(effect);
+}
+
+fn notification_eligibility() -> NotificationEligibility {
+    NotificationEligibility {
+        configuration_allows: agent::notification_authorization_eligible(),
+        menu_open: crate::menu::is_open(),
+        bundled: bundled(),
+    }
+}
+
+fn apply_notification_effect(effect: Option<AuthorizationEffect>) {
+    match effect {
+        Some(AuthorizationEffect::Request) => request_notification_authorization(),
+        Some(AuthorizationEffect::Deliver(notice)) => deliver_notification(notice),
+        None => {}
+    }
+}
+
+/// Ask only in response to the first eligible interruption. Existing OS state
+/// comes back through the same callback as a new decision.
+fn request_notification_authorization() {
     use objc2_user_notifications::{UNAuthorizationOptions, UNUserNotificationCenter};
 
-    if !bundled() {
-        log::warn("not running from an .app bundle; notifications are unavailable");
-        return;
-    }
     let center = UNUserNotificationCenter::currentNotificationCenter();
     let options = UNAuthorizationOptions::Alert | UNAuthorizationOptions::Sound;
     let handler = block2::StackBlock::new(
-        |granted: objc2::runtime::Bool, _err: *mut objc2_foundation::NSError| {
-            if !granted.as_bool() {
-                log::info("notifications were declined; the menu bar still shows the state");
-            }
+        |granted: objc2::runtime::Bool, error: *mut objc2_foundation::NSError| {
+            let result = if !error.is_null() {
+                AuthorizationResult::Error
+            } else if granted.as_bool() {
+                AuthorizationResult::Granted
+            } else {
+                AuthorizationResult::Denied
+            };
+            next_pass(Job::AuthorizationCompleted(result));
         },
     );
     center.requestAuthorizationWithOptions_completionHandler(options, &handler);
 }
 
-/// A passive notification.
-///
-/// Severity is an **interruption level** here rather than an icon: a banner has
-/// no icon slot of ours to carry it, and the level is what decides whether this
-/// may light a dark screen. Nothing the agent says is time-sensitive in the sense
-/// the system means -- that level needs an entitlement, and it is for things that
-/// cannot wait for the user to look -- so the loud end is `Active` and the quiet
-/// end is `Passive`.
-/// No `MainThreadMarker`, unlike every other entry point here. UserNotifications
-/// is not AppKit: `UNUserNotificationCenter` is thread-safe and this touches
-/// nothing else. The marker its neighbors take is for `NSAlert` and for window
-/// and sheet work, which AppKit does confine to the main thread.
-pub fn notify(title: &str, body: &str, severity: Severity) {
+/// Apply the callback on the UI thread. Configuration or menu visibility can
+/// change while the system prompt is open, so the pending notice is checked
+/// again before delivery.
+fn complete_notification_authorization(result: AuthorizationResult) {
+    match result {
+        AuthorizationResult::Granted => {}
+        AuthorizationResult::Denied => {
+            log::info("notifications were declined; the menu bar still shows the state");
+        }
+        AuthorizationResult::Error => {
+            log::warn("notification authorization failed; the menu bar still shows the state");
+        }
+    }
+    let pending_eligible = notification_eligibility().allows_pending();
+    let effect = NOTIFICATIONS.lock().unwrap().complete(result, pending_eligible);
+    apply_notification_effect(effect);
+}
+
+/// Create Objective-C notification objects only when delivery is permitted.
+fn deliver_notification(notice: Notice) {
     use objc2_user_notifications::{
         UNMutableNotificationContent, UNNotificationInterruptionLevel, UNNotificationRequest,
         UNUserNotificationCenter,
     };
 
-    if !bundled() {
-        return;
-    }
-    let content = UNMutableNotificationContent::new();
-    content.setTitle(&NSString::from_str(title));
-    content.setBody(&NSString::from_str(body));
-    content.setInterruptionLevel(match severity {
+    let interruption = match notice.severity {
         Severity::Info => return,
         Severity::Warning | Severity::Error => UNNotificationInterruptionLevel::Active,
-    });
+    };
+    let content = UNMutableNotificationContent::new();
+    content.setTitle(&NSString::from_str(&notice.title));
+    content.setBody(&NSString::from_str(&notice.body));
+    content.setInterruptionLevel(interruption);
     // A stable identifier would replace the previous notification; a fresh one
     // each time keeps a sequence readable.
     let id = NSString::from_str(&format!("kerbridge-{}", time::now()));
@@ -326,13 +460,10 @@ pub fn open_url(url: &str) {
     NSWorkspace::sharedWorkspace().openURL(&url);
 }
 
-/// The Settings sheet: the broker URL and whether to start at login.
+/// Show Settings in a delayed-commit `NSAlert`.
 ///
-/// An alert with an accessory view rather than a window of its own. There are two
-/// settings; a window would be mostly empty, and this way there is no second
-/// surface to keep in sync with the core. An `NSAlert` is delayed-commit by
-/// construction, which is why this has OK and Cancel where the Windows Settings
-/// window is instant-apply.
+/// Three settings fit in its accessory view, avoiding another surface to keep
+/// in sync. Unlike the Windows Settings window, this sheet commits on OK.
 pub fn settings_sheet() {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
@@ -340,14 +471,14 @@ pub fn settings_sheet() {
     let view = agent::settings_view();
     let s = tr();
 
-    // Bottom-left origin, so the field sits above the checkbox.
+    // Bottom-left origin, so the field sits above the checkboxes.
     let accessory = NSView::initWithFrame(
         NSView::alloc(mtm),
-        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(320.0, 52.0)),
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(320.0, 76.0)),
     );
     let field = NSTextField::initWithFrame(
         NSTextField::alloc(mtm),
-        NSRect::new(NSPoint::new(0.0, 28.0), NSSize::new(320.0, 24.0)),
+        NSRect::new(NSPoint::new(0.0, 52.0), NSSize::new(320.0, 24.0)),
     );
     field.setStringValue(&NSString::from_str(&view.broker_url));
     // Policy wins over anything typed here, and saying so beats letting someone
@@ -365,7 +496,7 @@ pub fn settings_sheet() {
             mtm,
         )
     };
-    autostart.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(320.0, 20.0)));
+    autostart.setFrame(NSRect::new(NSPoint::new(0.0, 28.0), NSSize::new(320.0, 20.0)));
     autostart.setState(if view.autostart { NSControlStateValueOn } else { NSControlStateValueOff });
     autostart.setToolTip(Some(&NSString::from_str(if view.autostart_locked {
         s.settings_broker_managed
@@ -374,6 +505,24 @@ pub fn settings_sheet() {
     })));
     autostart.setEnabled(!view.autostart_locked);
     accessory.addSubview(&autostart);
+
+    let silent = unsafe {
+        NSButton::checkboxWithTitle_target_action(
+            &NSString::from_str(s.settings_silent_label),
+            None,
+            None,
+            mtm,
+        )
+    };
+    silent.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(320.0, 20.0)));
+    silent.setState(if view.silent { NSControlStateValueOn } else { NSControlStateValueOff });
+    silent.setToolTip(Some(&NSString::from_str(if view.silent_locked {
+        s.settings_broker_managed
+    } else {
+        s.settings_silent_sub
+    })));
+    silent.setEnabled(!view.silent_locked);
+    accessory.addSubview(&silent);
 
     NSApplication::sharedApplication(mtm).activate();
     let alert = NSAlert::new(mtm);
@@ -391,15 +540,15 @@ pub fn settings_sheet() {
     if alert.runModal() != 1000 {
         return;
     }
-    agent::apply_settings(
-        Some(&field.stringValue().to_string()),
-        autostart.state() == NSControlStateValueOn,
-        view.windows_sign_in,
-        // Both handed straight back: neither has a control on this sheet, and a
-        // Windows sign-in this platform never had is not something a Mac may
-        // clear. The pin is machine policy or nothing here.
-        &view.grant_for,
-    );
+    let broker = field.stringValue().to_string();
+    let autostart_on = autostart.state() == NSControlStateValueOn;
+    let silent_on = silent.state() == NSControlStateValueOn;
+    agent::apply_settings(agent::SettingsChange {
+        broker_url: (broker != view.broker_url).then_some(broker.as_str()),
+        autostart: (autostart_on != view.autostart).then_some(autostart_on),
+        silent: (silent_on != view.silent).then_some(silent_on),
+        ..agent::SettingsChange::default()
+    });
 }
 
 /// The Kerberos details, read-only. Behind a menu item rather than in the menu --
@@ -467,4 +616,167 @@ pub fn about() {
     alert.setAccessoryView(Some(&address));
     alert.addButtonWithTitle(&NSString::from_str(s.settings_ok));
     alert.runModal();
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Barrier};
+
+    use super::*;
+
+    fn notice(title: &str, severity: Severity) -> Notice {
+        Notice::new(title, "body", severity)
+    }
+
+    fn eligible() -> NotificationEligibility {
+        NotificationEligibility {
+            configuration_allows: Some(true),
+            menu_open: false,
+            bundled: true,
+        }
+    }
+
+    #[test]
+    fn coordinator_starts_unasked_without_an_effect() {
+        assert_eq!(AuthorizationCoordinator::new().state, AuthorizationState::Unasked);
+    }
+
+    #[test]
+    fn first_eligible_notice_requests_authorization_and_becomes_pending() {
+        let mut coordinator = AuthorizationCoordinator::new();
+        let first = notice("first", Severity::Warning);
+
+        assert_eq!(
+            coordinator.submit(first.clone(), eligible()),
+            Some(AuthorizationEffect::Request)
+        );
+        assert_eq!(coordinator.state, AuthorizationState::Requesting(first));
+    }
+
+    #[test]
+    fn concurrent_submissions_make_one_request_and_keep_one_notice() {
+        let coordinator = Arc::new(Mutex::new(AuthorizationCoordinator::new()));
+        let barrier = Arc::new(Barrier::new(8));
+        let threads: Vec<_> = (0..8)
+            .map(|i| {
+                let coordinator = Arc::clone(&coordinator);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    coordinator
+                        .lock()
+                        .unwrap()
+                        .submit(notice(&format!("notice {i}"), Severity::Error), eligible())
+                })
+            })
+            .collect();
+        let effects: Vec<_> =
+            threads.into_iter().map(|thread| thread.join().expect("submission thread")).collect();
+
+        assert_eq!(
+            effects
+                .iter()
+                .filter(|effect| matches!(effect, Some(AuthorizationEffect::Request)))
+                .count(),
+            1
+        );
+        let mut coordinator = coordinator.lock().unwrap();
+        assert!(matches!(&coordinator.state, AuthorizationState::Requesting(_)));
+        assert!(matches!(
+            coordinator.complete(AuthorizationResult::Granted, true),
+            Some(AuthorizationEffect::Deliver(_))
+        ));
+    }
+
+    #[test]
+    fn grant_delivers_the_pending_notice_and_later_notices_without_a_request() {
+        let mut coordinator = AuthorizationCoordinator::new();
+        let first = notice("first", Severity::Warning);
+        let dropped = notice("dropped", Severity::Error);
+        let later = notice("later", Severity::Error);
+
+        assert_eq!(
+            coordinator.submit(first.clone(), eligible()),
+            Some(AuthorizationEffect::Request)
+        );
+        assert_eq!(coordinator.submit(dropped, eligible()), None);
+        assert_eq!(
+            coordinator.complete(AuthorizationResult::Granted, true),
+            Some(AuthorizationEffect::Deliver(first))
+        );
+        assert_eq!(coordinator.state, AuthorizationState::Granted);
+        assert_eq!(
+            coordinator.submit(later.clone(), eligible()),
+            Some(AuthorizationEffect::Deliver(later))
+        );
+    }
+
+    #[test]
+    fn denial_and_error_are_terminal() {
+        for result in [AuthorizationResult::Denied, AuthorizationResult::Error] {
+            let mut coordinator = AuthorizationCoordinator::new();
+            assert_eq!(
+                coordinator.submit(notice("first", Severity::Warning), eligible()),
+                Some(AuthorizationEffect::Request)
+            );
+            assert_eq!(coordinator.complete(result, true), None);
+            assert_eq!(coordinator.state, AuthorizationState::Denied);
+            assert_eq!(coordinator.submit(notice("later", Severity::Error), eligible()), None);
+        }
+    }
+
+    #[test]
+    fn ineligible_notices_leave_authorization_unasked() {
+        let cases = [
+            (
+                NotificationEligibility { configuration_allows: None, ..eligible() },
+                Severity::Warning,
+            ),
+            (
+                NotificationEligibility { configuration_allows: Some(false), ..eligible() },
+                Severity::Warning,
+            ),
+            (NotificationEligibility { menu_open: true, ..eligible() }, Severity::Warning),
+            (NotificationEligibility { bundled: false, ..eligible() }, Severity::Error),
+            (eligible(), Severity::Info),
+        ];
+
+        for (eligibility, severity) in cases {
+            let mut coordinator = AuthorizationCoordinator::new();
+            assert_eq!(coordinator.submit(notice("ignored", severity), eligibility), None);
+            assert_eq!(coordinator.state, AuthorizationState::Unasked);
+        }
+    }
+
+    #[test]
+    fn turning_silent_off_without_a_notice_is_inert() {
+        let mut coordinator = AuthorizationCoordinator::new();
+        let mut current =
+            NotificationEligibility { configuration_allows: Some(false), ..eligible() };
+        assert_eq!(coordinator.submit(notice("silent", Severity::Warning), current), None);
+
+        current.configuration_allows = Some(true);
+        assert!(current.allows(Severity::Warning));
+        assert_eq!(coordinator.state, AuthorizationState::Unasked);
+    }
+
+    #[test]
+    fn grant_rechecks_silence_and_menu_before_releasing_pending() {
+        let changed = [
+            NotificationEligibility { configuration_allows: None, ..eligible() },
+            NotificationEligibility { configuration_allows: Some(false), ..eligible() },
+            NotificationEligibility { menu_open: true, ..eligible() },
+        ];
+
+        for eligibility in changed {
+            let mut coordinator = AuthorizationCoordinator::new();
+            assert_eq!(
+                coordinator.submit(notice("pending", Severity::Warning), eligible()),
+                Some(AuthorizationEffect::Request)
+            );
+            let pending_eligible = eligibility.allows_pending();
+            assert_eq!(coordinator.complete(AuthorizationResult::Granted, pending_eligible), None);
+            assert_eq!(coordinator.state, AuthorizationState::Granted);
+        }
+    }
 }

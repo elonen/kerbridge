@@ -238,12 +238,12 @@ This is still one machine, one TPM, one deployment, debugged immediately before
 the test. A second TPM implementation is unmeasured.
 
 Two smaller gaps exist in the same area. Nothing reports a device whose Windows
-connection fell back to NTLM: the tray tries to repair the connection and tells
-the person at the machine, but on an unattended build machine that toast goes
-nowhere, and the build system is what finds the failure. And one configuration
-is untested: such a machine running as a local administrator with UAC disabled,
-so that the tray can inject a ticket and restart the connection service in one
-logon session. The measured fact is only this: an elevated process under
+connection fell back to NTLM: the agent opens a repair surface for the person at
+the machine, but an unattended build machine has nobody to see it, and the build
+system finds the failure. And one configuration is untested: such a machine
+running as a local administrator with UAC disabled, so that the agent can inject
+a ticket and restart Windows Workstation service in one logon session.
+The measured fact is only this: an elevated process under
 split-token UAC has a different logon session, and the redirector cannot see
 the tickets of that session.
 

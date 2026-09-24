@@ -39,7 +39,7 @@ pub struct OidcConfig {
     pub authorization_endpoint: String,
     pub token_endpoint: String,
     /// The authority's RP-initiated logout endpoint, when it advertises one. Used
-    /// by the tray's "sign out of the cloud too" path; `None` means the IdP does
+    /// by the agent's "sign out of the cloud too" path; `None` means the IdP does
     /// not offer a logout URL and only the local session can be dropped.
     pub end_session_endpoint: Option<String>,
 }
@@ -60,7 +60,7 @@ pub struct KerberosConfig {
 
 /// What this deployment allows in the way of device grants.
 ///
-/// `days` of 0 means the feature is off, and it is the whole answer: the tray
+/// `days` of 0 means the feature is off, and it is the whole answer: the agent
 /// never offers the button, and it takes the duration in its own strings from
 /// this value rather than hardcoding one. A broker too old to publish the block
 /// reads the same way.
@@ -96,6 +96,7 @@ pub struct Defaults {
     pub autostart: Option<bool>,
     pub windows_sign_in: Option<bool>,
     pub ntlm_fallback_recovery: Option<bool>,
+    pub silent: Option<bool>,
 }
 
 /// The whole `/config` document, as the helper uses it.
@@ -115,7 +116,7 @@ pub struct BrokerConfig {
     pub kerberos: KerberosConfig,
     pub device_grant: DeviceGrantConfig,
     pub defaults: Defaults,
-    /// Where the tray menu's *Help* goes, when the deployment publishes one.
+    /// Where the agent menu's *Help* goes, when the deployment publishes one.
     /// `None` on every broker that does not, which is what an older one reads
     /// as -- the client falls back to its own page.
     pub help_url: Option<String>,
@@ -161,12 +162,35 @@ pub fn source_base(broker_url: &str) -> Result<String> {
     Ok(fetch_config_and_base(broker_url)?.1)
 }
 
-pub fn discover(broker_url: &str) -> Result<BrokerConfig> {
-    let (config, base_url) = fetch_config_and_base(broker_url)?;
+/// The broker's `/config` document before OIDC discovery.
+pub struct BrokerDocument {
+    pub base_url: String,
+    pub kerberos: KerberosConfig,
+    pub device_grant: DeviceGrantConfig,
+    pub defaults: Defaults,
+    pub help_url: Option<String>,
+    pub idp_name: String,
+    oidc: OidcSeed,
+}
 
+struct OidcSeed {
+    client_id: String,
+    authority: String,
+    scopes: Vec<String>,
+    extra_auth_params: BTreeMap<String, String>,
+}
+
+/// Read `/config` without contacting the IdP, so workstation defaults apply
+/// when the IdP is unavailable.
+pub fn broker_document(broker_url: &str) -> Result<BrokerDocument> {
+    let (config, base_url) = fetch_config_and_base(broker_url)?;
+    parse_broker_document(&config, base_url)
+}
+
+fn parse_broker_document(config: &serde_json::Value, base_url: String) -> Result<BrokerDocument> {
     let oidc_block = config.get("oidc").ok_or_else(|| anyhow!("/config has no `oidc` block"))?;
     let client_id = str_field(oidc_block, "client_id").context("/config oidc")?;
-    let display_name = str_field(oidc_block, "display_name").context("/config oidc")?;
+    let idp_name = str_field(oidc_block, "display_name").context("/config oidc")?;
     let authority = str_field(oidc_block, "authority").context("/config oidc")?;
     let scopes = str_array(oidc_block, "scopes").context("/config oidc")?;
     if scopes.is_empty() {
@@ -176,6 +200,7 @@ pub fn discover(broker_url: &str) -> Result<BrokerConfig> {
     // an IdP that needs a parameter to issue a refresh token gets no login at all
     // without it.
     let extra_auth_params = str_map(oidc_block, "extra_auth_params").context("/config oidc")?;
+    require_https(&authority).context("/config oidc.authority")?;
 
     let krb_block =
         config.get("kerberos").ok_or_else(|| anyhow!("/config has no `kerberos` block"))?;
@@ -185,40 +210,6 @@ pub fn discover(broker_url: &str) -> Result<BrokerConfig> {
         kdcs: str_array(krb_block, "kdcs").unwrap_or_default(),
         services: str_array(krb_block, "services").unwrap_or_default(),
     };
-
-    // The helper does not trust the broker to name the token endpoints; it runs
-    // standard discovery against the authority itself.
-    require_https(&authority).context("/config oidc.authority")?;
-    // Named separately because this is the one call in the pair that reaches the
-    // IdP rather than the broker. A reader who sees only "discovery failed" will
-    // go and check the broker, which is up.
-    let metadata_url =
-        format!("{}/.well-known/openid-configuration", authority.trim_end_matches('/'));
-    log::info(&format!("discovery: GET {metadata_url}"));
-    let metadata = fetch_json(&metadata_url).context("fetching OIDC discovery document")?;
-
-    let authorization_endpoint =
-        str_field(&metadata, "authorization_endpoint").context("OIDC metadata")?;
-    let token_endpoint = str_field(&metadata, "token_endpoint").context("OIDC metadata")?;
-    // Optional in the spec; Entra publishes it. Absent = no cloud logout URL.
-    let end_session_endpoint = str_field(&metadata, "end_session_endpoint").ok();
-
-    // The endpoints are checked too, and this is the half that was missing. The
-    // broker URL is the one an operator typed and can see; these three arrive from
-    // the network, and they are where the secrets go -- the browser carries the
-    // user's credentials to the authorization endpoint, and the authorization code
-    // is exchanged at the token endpoint. A plaintext one is the whole login handed
-    // to whoever is on the path, and the discovery document that named it was
-    // itself only as trustworthy as the authority that served it.
-    require_https(&authorization_endpoint).context("OIDC metadata authorization_endpoint")?;
-    require_https(&token_endpoint).context("OIDC metadata token_endpoint")?;
-    if let Some(logout) = &end_session_endpoint {
-        // Refused rather than dropped to `None`. This one carries no token, so the
-        // downgrade is smaller, but an authority publishing a plaintext endpoint is
-        // broken in a way worth stopping on, and silently disabling cloud logout
-        // would leave the tray offering a sign-out that no longer signs out.
-        require_https(logout).context("OIDC metadata end_session_endpoint")?;
-    }
 
     // Absent entirely on a broker predating device grants, which reads as off --
     // the same answer as a broker that has the feature and leaves it disabled.
@@ -240,37 +231,79 @@ pub fn discover(broker_url: &str) -> Result<BrokerConfig> {
             autostart: bool_field(block, "autostart"),
             windows_sign_in: bool_field(block, "windows_sign_in"),
             ntlm_fallback_recovery: bool_field(block, "ntlm_fallback_recovery"),
+            silent: bool_field(block, "silent"),
         })
         .unwrap_or_default();
 
-    // Optional, and a plaintext one is refused rather than used: a broker
-    // already trusted to name the realm's KDCs is not made more dangerous by
-    // naming a help page, but it does not get to send a user to one over http.
-    // Refusing the *URL* rather than the whole document, unlike the endpoints
-    // above -- a mistyped help link must not stop this machine signing in.
+    // Ignore an invalid or plaintext help URL rather than failing discovery. The
+    // optional support link must not prevent sign-in; IdP endpoints below must.
     let help_url = config.get("help_url").and_then(|v| v.as_str()).filter(|url| {
         require_https(url)
             .inspect_err(|e| log::warn(&format!("ignoring /config help_url: {e}")))
             .is_ok()
     });
 
-    Ok(BrokerConfig {
+    Ok(BrokerDocument {
         base_url,
-        oidc: OidcConfig {
-            client_id,
-            display_name,
-            authority,
-            scopes,
-            extra_auth_params,
-            authorization_endpoint,
-            token_endpoint,
-            end_session_endpoint,
-        },
         kerberos,
         device_grant,
         defaults,
         help_url: help_url.map(str::to_owned),
+        idp_name,
+        oidc: OidcSeed { client_id, authority, scopes, extra_auth_params },
     })
+}
+
+pub fn discover(broker_url: &str) -> Result<BrokerConfig> {
+    broker_document(broker_url)?.discover_oidc()
+}
+
+impl BrokerDocument {
+    /// Complete OIDC discovery after the caller applies the discovery document.
+    pub fn discover_oidc(self) -> Result<BrokerConfig> {
+        let document = self;
+
+        // Resolve token endpoints through standard discovery at the broker-named authority.
+        let metadata_url = format!(
+            "{}/.well-known/openid-configuration",
+            document.oidc.authority.trim_end_matches('/')
+        );
+        log::info(&format!("discovery: GET {metadata_url}"));
+        let metadata = fetch_json(&metadata_url).context("fetching OIDC discovery document")?;
+
+        let authorization_endpoint =
+            str_field(&metadata, "authorization_endpoint").context("OIDC metadata")?;
+        let token_endpoint = str_field(&metadata, "token_endpoint").context("OIDC metadata")?;
+        // Optional in the spec; Entra publishes it. Absent = no cloud logout URL.
+        let end_session_endpoint = str_field(&metadata, "end_session_endpoint").ok();
+
+        // These endpoints are where the secrets go. The browser carries the user's
+        // credentials to the authorization endpoint, and the authorization code is
+        // exchanged at the token endpoint.
+        require_https(&authorization_endpoint).context("OIDC metadata authorization_endpoint")?;
+        require_https(&token_endpoint).context("OIDC metadata token_endpoint")?;
+        if let Some(logout) = &end_session_endpoint {
+            require_https(logout).context("OIDC metadata end_session_endpoint")?;
+        }
+
+        Ok(BrokerConfig {
+            base_url: document.base_url,
+            oidc: OidcConfig {
+                client_id: document.oidc.client_id,
+                display_name: document.idp_name,
+                authority: document.oidc.authority,
+                scopes: document.oidc.scopes,
+                extra_auth_params: document.oidc.extra_auth_params,
+                authorization_endpoint,
+                token_endpoint,
+                end_session_endpoint,
+            },
+            kerberos: document.kerberos,
+            device_grant: document.device_grant,
+            defaults: document.defaults,
+            help_url: document.help_url,
+        })
+    }
 }
 
 /// The base the rest of this run's broker calls hang off, from the `base_url` in
@@ -463,6 +496,49 @@ mod tests {
         for off in ["https://elsewhere.example/entra", "//elsewhere.example/entra"] {
             assert!(base(json!({"base_url": off})).is_err(), "{off} must be refused");
         }
+    }
+
+    #[test]
+    fn broker_defaults_are_available_before_oidc_discovery() {
+        let document = parse_broker_document(
+            &json!({
+                "oidc": {
+                    "client_id": "client",
+                    "display_name": "Entra ID",
+                    "authority": "https://idp.example.site",
+                    "scopes": ["openid"]
+                },
+                "kerberos": { "realm": "example.site" },
+                "client_defaults": {
+                    "ntlm_fallback_recovery": true,
+                    "silent": false,
+                    "windows_sign_in": "not a bool"
+                }
+            }),
+            "https://kerbridge.example.site/entra".into(),
+        )
+        .expect("the discovery document parses without contacting the IdP");
+
+        assert_eq!(document.kerberos.realm, "EXAMPLE.SITE");
+        assert_eq!(document.idp_name, "Entra ID");
+        assert_eq!(document.defaults.ntlm_fallback_recovery, Some(true));
+        assert_eq!(document.defaults.silent, Some(false));
+        assert_eq!(document.defaults.windows_sign_in, None);
+
+        let without_defaults = parse_broker_document(
+            &json!({
+                "oidc": {
+                    "client_id": "client",
+                    "display_name": "Entra ID",
+                    "authority": "https://idp.example.site",
+                    "scopes": ["openid"]
+                },
+                "kerberos": { "realm": "EXAMPLE.SITE" }
+            }),
+            "https://kerbridge.example.site/entra".into(),
+        )
+        .unwrap();
+        assert!(without_defaults.defaults == Defaults::default());
     }
 
     #[test]

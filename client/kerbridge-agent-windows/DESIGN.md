@@ -60,13 +60,14 @@ the wrong user.
 
 ## The repair of the NTLM fallback
 
-How the fallback is detected, and why the agent never restarts the service by
-itself, is in [`../DESIGN.md`](../DESIGN.md). What is left here is the mechanism.
+How the fallback is detected is in [`../DESIGN.md`](../DESIGN.md). What is left
+here is the mechanism.
 
-When the agent detects the fallback, it opens the status window directly on the
-repair explanation, and the user consents to the elevated `--repair`. **The
+When the agent detects the fallback, it opens the repair explanation. After the
+user confirms, the agent starts the elevated `--repair` command. **The
 confirmation warns that every network drive and shared folder on the device
-disconnects, and not only the realm's.**
+disconnects, and not only the realm's.** A successful repair closes the dialog; it
+shows no success result or notification.
 
 The agent does **not** try a re-injection first. Into a redirector that is stuck
 on NTLM, that is the attempt the research measured going nowhere.
@@ -233,7 +234,8 @@ confirm ──commit──▶ waiting ──▶ working ──▶ result
    first, and an **indeterminate** bar only after five seconds. Determinate is
    impossible, because progress through an opaque elevated child is not
    observable.
-4. **Result** — one sentence, and Close.
+4. **Result** — one sentence, and Close. A successful repair skips this phase and
+   closes the dialog.
 
 **A decline returns to phase 1, unchanged and silent.** A decline is a decision
 and not a fault.
@@ -310,6 +312,7 @@ the window contradicts.
 │ Connection                 broker address · sub or managed cue · [Save]
 │ Sign-in                    ☑ Start at login
 │                            ☑ Use Windows sign-in when possible
+│ Behavior                   ☑ Silent mode
 └
 ┌ Advanced
 │ Authorization              state line (grant held only)
@@ -379,8 +382,8 @@ the duplication that one clock was meant to end.
 
 ## Notification mechanics
 
-The policy — the two gates and the event table — is in
-[`../DESIGN.md`](../DESIGN.md). What is Windows' own:
+The policy — the silent-mode outer gate, the two notification gates and the event
+table — is in [`../DESIGN.md`](../DESIGN.md). What is Windows' own:
 
 - **A `Shell_NotifyIcon` balloon never reaches Notification Center**, in any
   configuration, even with the per-app box checked. Measured. That is part of why

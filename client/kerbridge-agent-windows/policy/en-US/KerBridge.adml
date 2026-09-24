@@ -57,6 +57,15 @@ Not Configured: the user's own choice stands, and the mechanism is on by default
 
 The fallback can never succeed on its own: the realm holds no password for a cloud identity.</string>
 
+      <string id="Silent">Keep the agent silent</string>
+      <string id="Silent_Help">Whether the agent may interrupt the user.
+
+Enabled: the agent posts no OS notifications and never opens its status window unless the user clicks its icon. The icon and log still report its state.
+
+Disabled: the normal notification and status-window rules apply.
+
+Not Configured: the user's own choice stands, and silent mode is off by default.</string>
+
       <string id="GrantFor">Authorize this machine for a specific account</string>
       <string id="GrantFor_Help">The account a device grant on this machine works as - a login name, or a literal kb1| identity value. For an unattended machine that has to hold a ticket as a service account rather than as whoever last signed in.
 

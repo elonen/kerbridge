@@ -21,7 +21,8 @@
 //! **The lifecycle this implements.** Windows renews an injected TGT at T−15m,
 //! the KDC grants it, and Windows never installs the result (measured); worse, a
 //! TGT that expires while an SMB session is open drops the redirector into a
-//! stuck NTLM fallback, which only an elevated service restart clears. So
+//! stuck NTLM fallback, which only an elevated restart of Windows Workstation
+//! service clears. So
 //! re-injection at ~50 % of ticket lifetime is not a convenience -- it is the
 //! thing that prevents the worst measured failure mode, and it must always land
 //! before End Time.
@@ -37,7 +38,7 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::config::{Grant, Settings};
 use crate::describe::{Action, Fault};
-use crate::discovery::{DeviceGrantConfig, KerberosConfig, OidcConfig};
+use crate::discovery::{Defaults, DeviceGrantConfig, KerberosConfig, OidcConfig};
 use crate::strings::{days, duration, fill, tr};
 use crate::{enroll, log, srv, tickets, time};
 
@@ -47,9 +48,9 @@ use worker::{Event, Trigger};
 /// reason to know which side of the threading seam a command runs on, or whether
 /// what it reads is assembled next to the state or beside the verbs.
 pub use commands::{
-    SettingsView, apply_settings, autostart_sign_in, cancel_sign_in, drop_ticket,
-    give_up_grant_now, open_log, open_log_folder, renew_now, settings_view, sign_in, sign_out_idp,
-    status_closed,
+    SettingsChange, SettingsView, apply_settings, autostart_sign_in, cancel_sign_in, drop_ticket,
+    give_up_grant_now, notification_authorization_eligible, open_log, open_log_folder, renew_now,
+    settings_view, sign_in, sign_out_idp, silent, status_closed,
 };
 pub use status::{Status, TicketClock, status};
 pub use worker::{begin_enroll, begin_reenroll, begin_repair, begin_unenroll, create_grant, drain};
@@ -249,14 +250,38 @@ enum Phase {
     Error,
 }
 
+/// The identity of one broker-document request. The URL is the effective
+/// [`Settings::broker_url`] at issue time, not the `base_url` returned by the
+/// broker.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DiscoveryStamp {
+    requested_broker_url: String,
+    generation: u64,
+}
+
+/// Every broker-owned value published by one `/config` document.
+#[derive(Clone, Default, PartialEq, Eq)]
+struct BrokerSnapshot {
+    kerberos: KerberosConfig,
+    device_grant: DeviceGrantConfig,
+    defaults: Defaults,
+    help_url: Option<String>,
+    idp_name: String,
+    source: String,
+}
+
+struct BusyOperation {
+    stamp: DiscoveryStamp,
+    action: Action,
+}
+
 /// Where the agent is in an NTLM-fallback episode.
 ///
 /// An episode opens when the injected TGT vanishes *before* its End Time -- the
 /// measured signature of an access that fell back to NTLM, which evicts the
 /// TGT `(1)→(0)` immediately
 /// (research spike `windows-tgt-followup-entra-joined`, lines 787-792)
-/// -- and closes only when a ticket exchange lands, an elevated repair succeeds,
-/// or the agent restarts.
+/// -- and closes only when a ticket exchange lands or the agent restarts.
 ///
 /// That is the whole rate limit: one raised status window per episode.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -272,6 +297,10 @@ enum NtlmFallback {
 
 struct Agent {
     settings: Settings,
+    /// The newest discovery-document request or invalidation. Only a result with
+    /// both this generation and this exact effective requested broker URL may publish.
+    discovery_generation: u64,
+    discovery_target: Option<String>,
     /// Realm/KDC/services as last discovered, falling back to the config cache
     /// so the agent can name the realm before its first successful discovery.
     kerberos: KerberosConfig,
@@ -300,9 +329,12 @@ struct Agent {
     /// 0 outside a network failure streak.
     refresh_backoff: i64,
     /// What is running, in the surface's vocabulary. At most one of these holds
-    /// the busy slot; the cloud logout and the revoke sit outside it and can
-    /// overlap.
+    /// the busy slot; cloud sign-out and revocation use their own workers.
     in_flight: Vec<Action>,
+    busy_operation: Option<BusyOperation>,
+    cloud_sign_out: Option<DiscoveryStamp>,
+    grant_cleanup_generation: u64,
+    grant_cleanup: Option<u64>,
     /// A grant was created and nothing has happened since.
     just_authorized: bool,
     /// The exchange that grant itself started, which must not be what clears
@@ -331,7 +363,7 @@ struct Agent {
     /// the next reinstall. The grant itself lives in [`Settings`], because it is
     /// the one part that has to survive a restart.
     device_grant: DeviceGrantConfig,
-    /// Where the tray menu's *Help* goes, as last discovered. `None` until a
+    /// Where the agent menu's *Help* goes, as last discovered. `None` until a
     /// discovery lands, and on every broker that publishes no page -- the
     /// surface has its own default and this only ever replaces it.
     help_url: Option<String>,
@@ -359,6 +391,8 @@ thread_local! {
 /// Shared with worker threads -- the only state that crosses a thread boundary.
 static BUSY: AtomicBool = AtomicBool::new(false);
 static CANCEL: AtomicBool = AtomicBool::new(false);
+/// True while local key deletion and old-broker revocation are unfinished.
+static GRANT_CLEANUP: AtomicBool = AtomicBool::new(false);
 
 /// The OIDC refresh token. **Memory only, never persisted, never logged.** It is
 /// what makes re-injection silent; losing it (quit, logoff, reboot) costs one
@@ -372,19 +406,180 @@ static REFRESH_TOKEN: Mutex<Option<crate::secret::Secret>> = Mutex::new(None);
 /// is a control that does nothing when pressed.
 static BROWSER_LEG: AtomicBool = AtomicBool::new(false);
 
-/// A browser leg has just obtained tokens and `config.toml` does not know yet.
-/// Transport, not state: [`Agent`] lives in a thread-local that only exists on
-/// the main thread, so a worker cannot write the setting itself, and the record
-/// of record is the file. Consumed at the top of `apply`, which every worker
-/// result passes through -- an injection that fails after the browser succeeded
-/// still leaves the session that failure has to be able to offer ending.
-static NEW_BROWSER_SESSION: AtomicBool = AtomicBool::new(false);
-
 fn with<T>(f: impl FnOnce(&mut Agent) -> T) -> T {
     AGENT.with(|a| f(a.borrow_mut().as_mut().expect("agent initialized in main")))
 }
 
 impl Agent {
+    fn new(settings: Settings) -> Self {
+        let kerberos = settings.cache().to_kerberos();
+        let enroll_state = enroll::state(&kerberos);
+        let discovery_target = settings.broker_url().map(str::to_owned);
+        Self {
+            settings,
+            discovery_generation: 0,
+            discovery_target,
+            kerberos,
+            enroll_state,
+            phase: Phase::SignedOut,
+            principal: String::new(),
+            start: 0,
+            end: 0,
+            renew_till: 0,
+            refresh_at: None,
+            message: String::new(),
+            fault: None,
+            first_failure_at: None,
+            probe_at: None,
+            probe_backoff: 0,
+            refresh_backoff: 0,
+            in_flight: Vec::new(),
+            busy_operation: None,
+            cloud_sign_out: None,
+            grant_cleanup_generation: 0,
+            grant_cleanup: None,
+            just_authorized: false,
+            granted_exchange_pending: false,
+            silent_failed: false,
+            startup_retry_at: None,
+            startup_retries: 0,
+            startup_backoff: 0,
+            escalated: false,
+            device_grant: DeviceGrantConfig::default(),
+            help_url: None,
+            idp_name: String::new(),
+            source: String::new(),
+            fallback: NtlmFallback::Clear,
+            fallback_check_at: 0,
+            grant_notified_at: None,
+        }
+    }
+
+    /// Advance the request identity and bind it to the effective requested broker
+    /// URL. Calling this without launching a request invalidates every outstanding one.
+    fn advance_discovery(&mut self) -> Option<DiscoveryStamp> {
+        self.discovery_generation = self
+            .discovery_generation
+            .checked_add(1)
+            .expect("broker discovery generation exhausted");
+        self.discovery_target = self.settings.broker_url().map(str::to_owned);
+        self.discovery_target.clone().map(|requested_broker_url| DiscoveryStamp {
+            requested_broker_url,
+            generation: self.discovery_generation,
+        })
+    }
+
+    fn discovery_is_current(&self, stamp: &DiscoveryStamp) -> bool {
+        stamp.generation == self.discovery_generation
+            && self.discovery_target.as_deref() == Some(stamp.requested_broker_url.as_str())
+            && self.settings.broker_url() == Some(stamp.requested_broker_url.as_str())
+    }
+
+    /// Replace one accepted broker payload in memory. Validation is first, so a
+    /// rejected payload does not read enrollment state, clear a fault, or mutate
+    /// the persisted cache image.
+    fn replace_broker_snapshot(
+        &mut self,
+        stamp: &DiscoveryStamp,
+        snapshot: BrokerSnapshot,
+    ) -> Option<bool> {
+        if !self.discovery_is_current(stamp) {
+            return None;
+        }
+
+        if self.phase != Phase::SignedOut
+            && !self.kerberos.realm.is_empty()
+            && self.kerberos.realm != snapshot.kerberos.realm
+        {
+            let old_realm = self.kerberos.realm.clone();
+            log::warn(&format!(
+                "broker realm changed from {old_realm} to {}; ending the old session",
+                snapshot.kerberos.realm
+            ));
+            #[cfg(not(test))]
+            purge_realm(&old_realm);
+            self.expect(false);
+            self.reset_session();
+        }
+        let enroll_state = enroll::state(&snapshot.kerberos);
+        let cache_changed = self.settings.set_cache(&snapshot.kerberos);
+        self.settings.set_defaults(snapshot.defaults);
+        self.kerberos = snapshot.kerberos;
+        self.enroll_state = enroll_state;
+        self.device_grant = snapshot.device_grant;
+        self.help_url = snapshot.help_url;
+        self.idp_name = snapshot.idp_name;
+        self.source = snapshot.source;
+
+        // The discovery document landed. Clear a transport fault only after the
+        // complete replacement, so rejection cannot make an old failure vanish.
+        if self.fault == Some(Fault::Network) {
+            self.record(None, String::new());
+        }
+        Some(cache_changed)
+    }
+
+    /// Clear broker-owned state after a requested broker URL change. User and policy values,
+    /// including a once-applied autostart choice, stay in [`Settings`].
+    fn clear_broker_snapshot(&mut self) {
+        self.kerberos = KerberosConfig::default();
+        self.enroll_state = enroll::State::NotEnrolled;
+        self.device_grant = DeviceGrantConfig::default();
+        self.help_url = None;
+        self.idp_name.clear();
+        self.source.clear();
+        self.settings.clear_defaults();
+        self.settings.clear_broker_state();
+    }
+
+    fn invalidate_broker_snapshot(&mut self) {
+        let _ = self.advance_discovery();
+        self.clear_broker_snapshot();
+    }
+
+    /// Adopt a live TGT after startup. Returns true when the ticket belongs to
+    /// somebody other than the stored device grant and must be replaced.
+    fn adopt_existing_ticket(&mut self) -> bool {
+        if self.phase != Phase::SignedOut || self.kerberos.realm.is_empty() {
+            return false;
+        }
+        let Ok(Some(ticket)) = tickets::realm_tgt(&self.kerberos.realm) else {
+            return false;
+        };
+        if ticket.end <= time::now() {
+            return false;
+        }
+        self.adopt_cached_ticket(ticket)
+    }
+
+    fn adopt_cached_ticket(&mut self, ticket: tickets::CachedTgt) -> bool {
+        let pinned = self.settings.grant_for().is_some();
+        if !is_the_grants(self.settings.grant(), pinned, &ticket.principal) {
+            self.startup_retries = STARTUP_RETRIES;
+            log::warn(&format!(
+                "the {} ticket in this session belongs to {}, not to this machine's device grant; \
+                 starting re-injection instead of adopting it",
+                self.kerberos.realm, ticket.principal
+            ));
+            return true;
+        }
+
+        self.principal = ticket.principal;
+        self.start = ticket.start;
+        self.end = ticket.end;
+        self.renew_till = ticket.renew_till;
+        self.phase = Phase::Connected;
+        self.refresh_at = Some(midpoint(ticket.start.max(time::now()), ticket.end));
+        self.expect(true);
+        log::info(&format!(
+            "adopted the existing {} ticket for {} (ends {})",
+            self.kerberos.realm,
+            self.principal,
+            time::local_stamp(ticket.end)
+        ));
+        false
+    }
+
     /// Forget everything about the current session, including the schedule.
     fn reset_session(&mut self) {
         self.phase = Phase::SignedOut;
@@ -482,6 +677,55 @@ impl Agent {
             self.in_flight.push(action);
         }
     }
+
+    fn started_busy(&mut self, stamp: DiscoveryStamp, action: Action) {
+        self.started(action);
+        self.busy_operation = Some(BusyOperation { stamp, action });
+    }
+
+    /// Release only the operation that owns this stamp. A delayed terminal event
+    /// cannot release a newer operation that reused the global slot.
+    fn finish_busy(&mut self, stamp: &DiscoveryStamp, stale: bool) -> bool {
+        if self.busy_operation.as_ref().map(|op| &op.stamp) != Some(stamp) {
+            return false;
+        }
+        let operation = self.busy_operation.take().unwrap();
+        self.in_flight.retain(|action| *action != operation.action);
+        BUSY.store(false, Ordering::Relaxed);
+        if stale && self.phase == Phase::SigningIn {
+            self.phase = if self.holds_live_ticket() { Phase::Connected } else { Phase::SignedOut };
+        }
+        true
+    }
+
+    fn finish_cloud_sign_out(&mut self, stamp: &DiscoveryStamp) -> bool {
+        if self.cloud_sign_out.as_ref() != Some(stamp) {
+            return false;
+        }
+        self.cloud_sign_out = None;
+        self.in_flight.retain(|action| *action != Action::SignOutIdp);
+        true
+    }
+
+    fn started_grant_cleanup(&mut self) -> u64 {
+        self.grant_cleanup_generation = self
+            .grant_cleanup_generation
+            .checked_add(1)
+            .expect("grant cleanup generation exhausted");
+        let generation = self.grant_cleanup_generation;
+        self.grant_cleanup = Some(generation);
+        self.started(Action::GiveUpGrant);
+        generation
+    }
+
+    fn finish_grant_cleanup(&mut self, generation: u64) -> bool {
+        if self.grant_cleanup != Some(generation) {
+            return false;
+        }
+        self.grant_cleanup = None;
+        self.in_flight.retain(|action| *action != Action::GiveUpGrant);
+        true
+    }
 }
 
 /// The realm as last discovered. The one piece of discovery a *surface* needs
@@ -493,6 +737,52 @@ pub fn kerberos_config() -> KerberosConfig {
 
 fn host_of(url: &str) -> String {
     url.trim_start_matches("https://").trim_start_matches("http://").trim_end_matches('/').into()
+}
+
+/// Purge one known realm without consulting broker-owned state.
+fn purge_realm(realm: &str) -> bool {
+    if realm.is_empty() {
+        return true;
+    }
+    match tickets::purge_realm(realm) {
+        Ok(n) => {
+            log::info(&format!("signed out of {realm} ({n} ticket(s) purged)"));
+            true
+        }
+        Err(e) => {
+            log::warn(&format!("sign-out purge failed: {e:#}"));
+            false
+        }
+    }
+}
+
+/// Invalidate discovery and remove everything tied to the old route. The
+/// broker snapshot is cleared separately from ticket, device-grant, and cloud-session
+/// teardown so neither can accidentally preserve the other.
+fn retarget(a: &mut Agent, old_broker: Option<String>) -> bool {
+    let old_realm = a.settings.cache().realm.clone();
+    let old_grant = a.settings.grant().cloned();
+    if !purge_realm(&old_realm) {
+        return false;
+    }
+    a.invalidate_broker_snapshot();
+    a.cloud_sign_out = None;
+    a.in_flight.retain(|action| *action != Action::SignOutIdp);
+    CANCEL.store(true, Ordering::Relaxed);
+    *REFRESH_TOKEN.lock().unwrap() = None;
+    a.reset_session();
+
+    let saved = match a.settings.save() {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn(&format!("could not clear state from the previous broker: {e:#}"));
+            false
+        }
+    };
+    if let Some(grant) = old_grant {
+        worker::give_up_captured_grant(a, old_broker, grant, saved, false);
+    }
+    true
 }
 
 // ---- lifecycle -------------------------------------------------------------
@@ -514,85 +804,11 @@ pub fn init(h: &'static dyn Host) {
     {
         log::warn(&format!("could not record the autostart entry: {e:#}"));
     }
-    let kerberos = settings.cache().to_kerberos();
-    let enroll_state = enroll::state(&kerberos);
+    let mut agent = Agent::new(settings);
 
-    let mut agent = Agent {
-        settings,
-        kerberos,
-        enroll_state,
-        phase: Phase::SignedOut,
-        principal: String::new(),
-        start: 0,
-        end: 0,
-        renew_till: 0,
-        refresh_at: None,
-        message: String::new(),
-        fault: None,
-        first_failure_at: None,
-        probe_at: None,
-        probe_backoff: 0,
-        refresh_backoff: 0,
-        in_flight: Vec::new(),
-        just_authorized: false,
-        granted_exchange_pending: false,
-        silent_failed: false,
-        startup_retry_at: None,
-        startup_retries: 0,
-        startup_backoff: 0,
-        escalated: false,
-        device_grant: DeviceGrantConfig::default(),
-        help_url: None,
-        idp_name: String::new(),
-        source: String::new(),
-        fallback: NtlmFallback::Clear,
-        fallback_check_at: 0,
-        grant_notified_at: None,
-    };
-
-    // A ticket can outlive the agent: the agent is per-user and restartable, the
-    // ticket cache is per-logon-session. Adopting it means a restarted agent
-    // reports the truth rather than "signed out" over a working session. There
-    // is no refresh token to go with it, so the first scheduled renewal falls
-    // back to the browser -- which is exactly the fallback the design specifies.
-    let mut reinject = false;
-    if !agent.kerberos.realm.is_empty()
-        && let Ok(Some(t)) = tickets::realm_tgt(&agent.kerberos.realm)
-        && t.end > time::now()
-    {
-        let pinned = agent.settings.grant_for().is_some();
-        if is_the_grants(agent.settings.grant(), pinned, &t.principal) {
-            agent.principal = t.principal;
-            agent.start = t.start;
-            agent.end = t.end;
-            agent.renew_till = t.renew_till;
-            agent.phase = Phase::Connected;
-            agent.refresh_at = Some(midpoint(t.start.max(time::now()), t.end));
-            // Adoption sets the expectation the same way a landed exchange
-            // does: this is how a machine that has been restarted knows a
-            // lapsed ticket later is a fault rather than a fresh install.
-            agent.expect(true);
-            log::info(&format!(
-                "adopted the existing {} ticket for {} (ends {})",
-                agent.kerberos.realm,
-                agent.principal,
-                time::local_stamp(t.end)
-            ));
-        } else {
-            // Left by somebody else's sign-in -- a `--no-grant` run, most
-            // likely. Adopting it would have this machine report, and keep, that
-            // person's session for up to half a ticket lifetime while every file
-            // it writes carries their name. Re-injection costs one round trip and
-            // no browser, so it is not a trade.
-            reinject = true;
-            agent.startup_retries = STARTUP_RETRIES;
-            log::warn(&format!(
-                "the {} ticket in this session belongs to {}, not to this machine's device grant; \
-                 re-injecting instead of adopting it",
-                agent.kerberos.realm, t.principal
-            ));
-        }
-    }
+    // A ticket can outlive the agent. Adoption reports the existing login
+    // session and schedules its next re-injection instead of appearing signed out.
+    let reinject = agent.adopt_existing_ticket();
 
     AGENT.with(|a| *a.borrow_mut() = Some(agent));
 
@@ -601,10 +817,10 @@ pub fn init(h: &'static dyn Host) {
     // times to ride out the logon race an unattended machine boots into.
     if reinject {
         worker::start_worker(Trigger::Startup);
+    } else {
+        // Ticket adoption and sign-out bypass sign-in; fetch the discovery document now.
+        worker::discover_in_background();
     }
-
-    // Ticket adoption and sign-out bypass sign-in; fetch the grant policy now.
-    worker::discover_in_background();
 
     // Nothing named a broker, so ask the network whether it knows one. Off the
     // UI thread: a dead resolver would otherwise hold up the status icon itself.
@@ -769,7 +985,7 @@ pub fn tick() -> bool {
             if matches!(tickets::realm_tgt(&a.kerberos.realm), Ok(None)) {
                 log::warn(&format!(
                     "the injected {} ticket is gone {} before its End Time -- treating it as an \
-                     NTLM fallback; only an elevated repair clears it",
+                     NTLM fallback; repairing it requires a LanmanWorkstation restart",
                     a.kerberos.realm,
                     duration(a.end - now)
                 ));
@@ -837,6 +1053,9 @@ const GRANT_NOTIFY_INTERVAL: i64 = 86_400;
 /// unknown idle time counts as present, so a platform that cannot answer gets a
 /// toast on time rather than none.
 fn grant_deadline_due(a: &Agent, now: i64) -> Option<(String, String, Severity)> {
+    if a.settings.resolved_silent() != Some(false) {
+        return None;
+    }
     let deadline = a.settings.grant()?.sign_in_required_by;
     if deadline <= now || deadline - now > GRANT_DUE_SOON_SECS {
         return None;
@@ -878,6 +1097,208 @@ fn notify(title: &str, body: &str, severity: Severity) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::FileConfig;
+
+    fn test_agent(broker_url: &str) -> Agent {
+        Agent::new(Settings::for_test(FileConfig {
+            broker_url: Some(broker_url.to_owned()),
+            ..FileConfig::default()
+        }))
+    }
+
+    fn snapshot(realm: &str, source: &str) -> BrokerSnapshot {
+        BrokerSnapshot {
+            kerberos: KerberosConfig {
+                realm: realm.to_owned(),
+                kdcs: vec![format!("kdc.{}", realm.to_ascii_lowercase())],
+                services: vec![format!("nas.{}", realm.to_ascii_lowercase())],
+            },
+            device_grant: DeviceGrantConfig { days: 30, audience: format!("kerbridge://{realm}") },
+            defaults: Defaults {
+                autostart: None,
+                windows_sign_in: Some(false),
+                ntlm_fallback_recovery: Some(false),
+                silent: Some(true),
+            },
+            help_url: Some(format!("https://help.{}/", realm.to_ascii_lowercase())),
+            idp_name: format!("IdP {realm}"),
+            source: source.to_owned(),
+        }
+    }
+
+    fn assert_broker_snapshot(a: &Agent, expected: &BrokerSnapshot) {
+        assert!(a.kerberos == expected.kerberos);
+        assert!(a.settings.cache().to_kerberos() == expected.kerberos);
+        assert!(a.device_grant == expected.device_grant);
+        assert_eq!(a.help_url, expected.help_url);
+        assert_eq!(a.idp_name, expected.idp_name);
+        assert_eq!(a.source, expected.source);
+        assert!(a.settings.defaults_ready());
+        assert_eq!(a.settings.silent(), expected.defaults.silent.unwrap_or(false));
+    }
+
+    #[test]
+    fn late_old_target_document_has_no_side_effects_after_retarget() {
+        let mut a = test_agent("https://a.example.site");
+        let first_a = a.advance_discovery().unwrap();
+        let snapshot_a = snapshot("A.SITE", "a");
+        assert!(a.replace_broker_snapshot(&first_a, snapshot_a).is_some());
+
+        let delayed_a = a.advance_discovery().unwrap();
+        a.settings.set_broker_url("https://b.example.site");
+        a.invalidate_broker_snapshot();
+        assert!(a.kerberos.realm.is_empty());
+        assert!(a.settings.cache().realm.is_empty());
+        assert!(!a.device_grant.enabled());
+        assert!(a.help_url.is_none());
+        assert!(a.idp_name.is_empty());
+        assert!(a.source.is_empty());
+        assert!(!a.settings.defaults_ready());
+        assert_eq!(a.enroll_state, enroll::State::NotEnrolled);
+
+        let request_b = a.advance_discovery().unwrap();
+        let snapshot_b = snapshot("B.SITE", "b");
+        assert!(a.replace_broker_snapshot(&request_b, snapshot_b.clone()).is_some());
+        a.record(Some(Fault::Network), "B is temporarily unreachable".to_owned());
+        let probe_at = a.probe_at;
+        let enrollment = format!("{:?}", a.enroll_state);
+        let generation = a.discovery_generation;
+        let target = a.discovery_target.clone();
+
+        assert!(a.replace_broker_snapshot(&delayed_a, snapshot("LATE.SITE", "late")).is_none());
+        assert_broker_snapshot(&a, &snapshot_b);
+        assert_eq!(format!("{:?}", a.enroll_state), enrollment);
+        assert_eq!(a.discovery_generation, generation);
+        assert_eq!(a.discovery_target, target);
+        assert_eq!(a.fault, Some(Fault::Network));
+        assert_eq!(a.message, "B is temporarily unreachable");
+        assert_eq!(a.probe_at, probe_at);
+    }
+
+    #[test]
+    fn only_the_newest_same_target_generation_can_publish() {
+        for newest_finishes_first in [false, true] {
+            let mut a = test_agent("https://a.example.site");
+            let older = a.advance_discovery().unwrap();
+            let newer = a.advance_discovery().unwrap();
+            assert!(older.generation < newer.generation);
+            let current = snapshot("NEW.SITE", "new");
+
+            if newest_finishes_first {
+                assert!(a.replace_broker_snapshot(&newer, current.clone()).is_some());
+                assert!(a.replace_broker_snapshot(&older, snapshot("OLD.SITE", "old")).is_none());
+            } else {
+                assert!(a.replace_broker_snapshot(&older, snapshot("OLD.SITE", "old")).is_none());
+                assert!(a.replace_broker_snapshot(&newer, current.clone()).is_some());
+            }
+            assert_broker_snapshot(&a, &current);
+        }
+    }
+
+    #[test]
+    fn accepted_snapshot_replaces_present_values_with_absence() {
+        let mut a = test_agent("https://a.example.site");
+        let first = a.advance_discovery().unwrap();
+        assert!(a.replace_broker_snapshot(&first, snapshot("A.SITE", "a")).is_some());
+
+        let next = a.advance_discovery().unwrap();
+        let replacement = BrokerSnapshot {
+            kerberos: KerberosConfig { realm: "B.SITE".into(), ..KerberosConfig::default() },
+            idp_name: "IdP B".into(),
+            ..BrokerSnapshot::default()
+        };
+        assert!(a.replace_broker_snapshot(&next, replacement.clone()).is_some());
+
+        assert_broker_snapshot(&a, &replacement);
+        assert!(a.kerberos.kdcs.is_empty());
+        assert!(a.kerberos.services.is_empty());
+        assert!(!a.device_grant.enabled());
+        assert!(a.help_url.is_none());
+        assert!(a.source.is_empty());
+        assert!(!a.settings.silent());
+    }
+
+    #[test]
+    fn changed_realm_cannot_relabel_a_live_session() {
+        let mut a = test_agent("https://broker.example.site");
+        let first = a.advance_discovery().unwrap();
+        assert!(a.replace_broker_snapshot(&first, snapshot("A.SITE", "a")).is_some());
+        a.phase = Phase::Connected;
+        a.principal = "riku@A.SITE".into();
+        a.start = 100;
+        a.end = 200;
+        a.refresh_at = Some(150);
+        a.fallback = NtlmFallback::Confirmed;
+        a.expect(true);
+
+        let next = a.advance_discovery().unwrap();
+        assert!(a.replace_broker_snapshot(&next, snapshot("B.SITE", "b")).is_some());
+
+        assert_eq!(a.kerberos.realm, "B.SITE");
+        assert!(a.phase == Phase::SignedOut);
+        assert!(a.principal.is_empty());
+        assert_eq!(a.start, 0);
+        assert_eq!(a.end, 0);
+        assert!(a.refresh_at.is_none());
+        assert!(a.fallback == NtlmFallback::Clear);
+        assert!(!a.expected());
+    }
+
+    #[test]
+    fn grant_deadline_waits_until_silent_mode_resolves() {
+        let mut a = test_agent("https://broker.example.site");
+        a.settings.set_grant(Some(Grant {
+            grant_id: "1a2b3c4d".into(),
+            identity: "kb1|entra|subject".into(),
+            principal: None,
+            audience: "kerbridge://EXAMPLE.SITE".into(),
+            sign_in_required_by: time::now() + 86_400,
+        }));
+
+        assert!(!a.settings.defaults_ready());
+        assert!(grant_deadline_due(&a, time::now()).is_none());
+        assert!(a.grant_notified_at.is_none());
+    }
+
+    #[test]
+    fn cached_realm_is_available_before_dns() {
+        let settings = Settings::for_test(FileConfig {
+            cache: crate::config::Cache {
+                realm: "EXAMPLE.SITE".into(),
+                ..crate::config::Cache::default()
+            },
+            ..FileConfig::default()
+        });
+        let mut a = Agent::new(settings);
+        assert_eq!(a.kerberos.realm, "EXAMPLE.SITE");
+
+        let now = time::now();
+        assert!(!a.adopt_cached_ticket(tickets::CachedTgt {
+            principal: "riku@EXAMPLE.SITE".into(),
+            start: now - 60,
+            end: now + 3_600,
+            renew_till: now + 7_200,
+        }));
+
+        assert!(a.phase == Phase::Connected);
+        assert_eq!(a.principal, "riku@EXAMPLE.SITE");
+        assert!(a.refresh_at.is_some());
+        assert!(a.expected());
+    }
+
+    #[test]
+    fn returned_source_path_is_not_the_request_identity() {
+        let requested = "https://kerbridge.example.site";
+        let mut a = test_agent(requested);
+        let stamp = a.advance_discovery().unwrap();
+        let mut found = snapshot("EXAMPLE.SITE", "");
+        found.source = crate::discovery::source_name("https://kerbridge.example.site/entra");
+
+        assert_eq!(stamp.requested_broker_url, requested);
+        assert!(a.replace_broker_snapshot(&stamp, found).is_some());
+        assert_eq!(a.discovery_target.as_deref(), Some(requested));
+        assert_eq!(a.source, "entra");
+    }
 
     fn grant(principal: Option<&str>) -> Grant {
         Grant {

@@ -163,7 +163,7 @@ they are deliberately not made to depend on each other.
 
 | File | Contents |
 |---|---|
-| `config.toml` | `broker_url`, and `autostart`, `ntlm_fallback_recovery` and `windows_sign_in` — each written only once something settled it, and each `true` until then — plus a `[cache]` copy of the broker's Kerberos block. |
+| `config.toml` | `broker_url`, and optional user choices for `autostart`, `ntlm_fallback_recovery`, `silent` and `windows_sign_in`, plus a `[cache]` copy of the broker's Kerberos block. |
 | `kerbridge.log` | One line per event; "Open log" in the menu points here. |
 | `kerbridge.log.1.gz` … `.3.gz` | Earlier history. The log rotates at start when it has passed 10 MB; collect these too. |
 
@@ -183,10 +183,11 @@ GrantFor              (REG_SZ)    -> the account a device grant works as
 Autostart             (REG_DWORD) -> 1 starts the agent at sign-in, 0 forbids it
 WindowsSignIn         (REG_DWORD) -> 0 forces the browser flow
 NtlmFallbackRecovery  (REG_DWORD) -> 0 disables all NTLM-fallback machinery
+Silent                (REG_DWORD) -> 1 suppresses notifications and automatic flyouts
 ```
 
 [`policy/KerBridge.admx`](policy/KerBridge.admx) is the Group Policy template
-for those five, and is what Intune ingests too. The corresponding control in
+for those six, and is what Intune ingests too. The corresponding control in
 Settings then shows the managed value instead of offering to change it. The
 tenant side of that is
 [`docs/setup/mdm-intune.md`](../../docs/setup/mdm-intune.md).

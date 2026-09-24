@@ -118,7 +118,9 @@ impl agent::Host for WinHost {
         // One surface answers both targets: the flyout draws the `NtlmFallback`
         // blocker and the repair button from the same status it always did, so
         // there is nothing for a repair-shaped raise to open instead.
-        flyout::show_unfocused();
+        if !agent::silent() {
+            flyout::show_unfocused();
+        }
     }
 
     fn open_path(&self, path: &str) {

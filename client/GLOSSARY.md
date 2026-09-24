@@ -149,10 +149,9 @@ it, and reaching it without a renewal landing is its own agent phase.
 ### episode
 
 One run of an `NTLM fallback`, opened when the injected TGT vanishes before its
-End Time and closed by a landed exchange or a restart; it is the whole rate
-limit on raising the status surface, one raised window per episode. A successful
-elevated repair deliberately leaves it open, because the evicted TGT is still
-gone.
+End Time and closed by a landed exchange or an agent restart; it limits
+machine-raised status surfaces to one. A successful repair deliberately leaves
+it open, because the evicted TGT is still gone.
 <!-- refs: `agent::NtlmFallback` -->
 <!-- avoid: incident, event, occurrence -->
 
@@ -357,6 +356,14 @@ day count, so lowering that number bites every outstanding grant and raising it
 stretches none. Shown to users as *Authorization expires in …*.
 <!-- refs: `DeviceGrant::effective_end`, `configs/main.toml` `device_grant_days` -->
 <!-- avoid: browser-sign-in deadline, grant deadline, grant expiry, effective end, expiry, expires at, deadline (bare) -->
+
+### silent mode
+
+A setting that suppresses every OS [notification](#notification) and every
+machine-raised status [surface](#surface). The icon, log, and a surface opened by
+an explicit icon click remain. The built-in default is off.
+<!-- refs: `silent` in `config.toml`; Windows policy `Silent` -->
+<!-- avoid: quiet mode, do not disturb -->
 
 ### status (client)
 

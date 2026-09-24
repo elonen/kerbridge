@@ -516,6 +516,9 @@ strings! {
     settings_startup_managed,
     settings_wam_label,
     settings_wam_sub,
+    settings_section_behavior,
+    settings_silent_label,
+    settings_silent_sub,
     settings_section_authorization,
     /// Past tense, and from the held grant, so it cannot be edited into a lie.
     /// Not `id_working_as`: there that means the identity the tickets carry

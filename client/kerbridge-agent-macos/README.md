@@ -96,21 +96,37 @@ credentials one at a time.
 
 ## Settings, notifications, autostart
 
-**Settings uses `NSAlert`.** This is delayed-commit. Windows uses instant-apply.
-That model does not cross. `settings_ok` and `settings_cancel` exist on this
-platform. Windows OK and Cancel do not exist.
+**Settings uses `NSAlert`.** This is delayed-commit. It contains the broker URL,
+autostart and silent mode. Windows uses instant-apply. That model does not cross.
+`settings_ok` and `settings_cancel` exist on this platform. Windows OK and Cancel
+do not exist.
 
-**Notification policy is unchanged. All mechanisms are from Windows.**
+**Notification policy follows the shared design.** Silent mode suppresses
+Notification Center and machine-raised menu openings; an icon click still opens
+the menu.
 
-- `NIIF_*` severity maps to interruption levels. `Passive` for information.
-  `Active` for other severities. The agent never uses `TimeSensitive`. This
-  needs an entitlement. It is for urgent messages.
+**Notification authorization is lazy.** When it runs from the app bundle, launch,
+settings changes, and menu use never request it. After configuration resolves to
+non-silent, the first bundled Warning or Error notification with the menu closed
+requests authorization. That notification waits for the result. Approval permits
+delivery if silent mode and menu visibility still permit it. A denial or request
+error is final for that process.
+
+When policy and user settings do not decide silent mode, an unresolved deployment
+default is not treated as non-silent. A silent policy, user choice, or deployment
+default suppresses authorization requests and delivery.
+
+- Info notifications stay in the core log. They do not request authorization or
+  reach Notification Center.
+- Warning and Error notifications set `UNNotificationInterruptionLevelActive`.
+  The agent never uses `TimeSensitive`. It needs an entitlement and is for urgent
+  messages.
 - Quiet time and attribution header come from the bundle.
 - macOS has no `GetLastInputInfo`. The presence-gated grant deadline does not
   work.
 - A click that opens the surface needs `UNUserNotificationCenter` delegate. This
   agent has none.
-- Gate 2 checks: is a surface on screen? Answer: the menu is open.
+- Gate 2 checks whether the menu is open.
 
 **Autostart uses `SMAppService`.** The app registers as a login item. It does
 not use a `RunAtLoad` plist in `~/Library/LaunchAgents`. macOS records that as a

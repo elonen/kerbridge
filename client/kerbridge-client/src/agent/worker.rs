@@ -12,12 +12,12 @@
 //! out of the agent entirely (`client/DESIGN.md` @ what each platform does
 //! instead). Do not turn it into a `#[cfg]` seam.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use crate::config::Grant;
 use crate::describe::{Action, Fault};
-use crate::discovery::{BrokerConfig, Defaults, DeviceGrantConfig, KerberosConfig};
+use crate::discovery::{BrokerConfig, BrokerDocument};
 use crate::session::{InjectError, Injected};
 use crate::strings::{days, duration, fill, tr};
 use crate::{broker, discovery, elevate, enroll, log, oidc, session, time};
@@ -27,27 +27,16 @@ use super::failure::{
     describe_token_error,
 };
 use super::{
-    Agent, BROWSER_LEG, BUSY, CANCEL, FALLBACK_POLL_SECS, MIN_REFRESH_DELAY, NEW_BROWSER_SESSION,
-    NativeToken, NtlmFallback, Outcome, PROBE_MAX_SECS, Phase, REFRESH_TOKEN,
-    STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS, Severity, host, host_of, is_the_grants,
-    midpoint, next_backoff, notify, with,
+    Agent, BROWSER_LEG, BUSY, BrokerSnapshot, CANCEL, DiscoveryStamp, FALLBACK_POLL_SECS,
+    GRANT_CLEANUP, MIN_REFRESH_DELAY, NativeToken, NtlmFallback, Outcome, PROBE_MAX_SECS, Phase,
+    REFRESH_TOKEN, STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS, Severity, host, host_of,
+    is_the_grants, midpoint, next_backoff, notify, purge_realm, with,
 };
 
 // ---- the queue -------------------------------------------------------------
 
 /// What workers have finished, waiting for the UI thread to apply it. See [`post`].
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
-
-/// Set by a worker that has just established this machine's stored grant is
-/// dead. Consumed on the UI thread, which is the only place that owns settings.
-///
-/// One way in: the broker refused it -- expired, clamped, revoked, or the key is
-/// gone. Authorizing again is not a second way, because the key is reused and a
-/// refused renewal leaves the stored grant working.
-/// Left in the file, a dead grant costs a wasted round trip before every browser
-/// fallback and -- worse -- leaves the status window announcing a deadline, and Settings
-/// offering to extend, something that no longer exists.
-static GRANT_STALE: AtomicBool = AtomicBool::new(false);
 
 /// Why a sign-in worker is running. It decides two things: whether a window may
 /// open on its own, and what a failure means to the person at the keyboard.
@@ -79,20 +68,57 @@ impl Trigger {
     }
 }
 
+#[derive(Default)]
+enum RefreshUpdate {
+    #[default]
+    Keep,
+    Set(Option<crate::secret::Secret>),
+}
+
+#[derive(Default)]
+pub(super) struct WorkerEffects {
+    refresh_token: RefreshUpdate,
+    browser_session_started: bool,
+    grant_stale: bool,
+    injection_realm: Option<String>,
+}
+
+impl WorkerEffects {
+    /// Apply worker-local mutations only after the terminal stamp is accepted.
+    fn apply(self, a: &mut Agent) {
+        let mut save = false;
+        if let RefreshUpdate::Set(refresh_token) = self.refresh_token {
+            *REFRESH_TOKEN.lock().unwrap() = refresh_token;
+        }
+        if self.browser_session_started {
+            save |= a.settings.set_browser_session(true);
+        }
+        if self.grant_stale && a.settings.grant().is_some() {
+            a.settings.set_grant(None);
+            save = true;
+            log::info("this device's grant is no longer usable; a browser sign-in is needed again");
+        }
+        if save && let Err(e) = a.settings.save() {
+            log::warn(&format!("could not save worker session state: {e:#}"));
+        }
+    }
+}
+
 /// What a worker reports back. Queued by [`post`], applied by [`drain`].
-pub enum Event {
+pub(super) enum Event {
     SignedIn {
+        stamp: DiscoveryStamp,
         injected: Injected,
-        kerberos: KerberosConfig,
-        device_grant: DeviceGrantConfig,
-        help_url: Option<String>,
-        idp_name: String,
+        realm: String,
+        effects: WorkerEffects,
         /// The exchange was proved with this machine's grant, so the principal
         /// that came back is what the grant works as -- the one fact that lets a
         /// later startup tell this machine's ticket from anybody else's.
         via_grant: bool,
     },
     SignInFailed {
+        stamp: DiscoveryStamp,
+        effects: WorkerEffects,
         /// What class of failure it was, or `None` where nothing failed and
         /// there was simply nothing to be silent with -- an absence the blocker
         /// list already explains, and not something to dress as a breakage.
@@ -100,11 +126,13 @@ pub enum Event {
         message: String,
         quiet: bool,
     },
-    Cancelled,
-    /// An elevated one-shot finished. `outcome` is what the child reported,
-    /// already user-facing, plus the two things only this side can know: that
-    /// the prompt was declined, and that nothing readable came back.
-    Elevated {
+    Cancelled {
+        stamp: DiscoveryStamp,
+        effects: WorkerEffects,
+    },
+    /// An elevated operation finished. The parent supplies outcomes the child
+    /// cannot report: permission declined or an unreadable result file.
+    ElevatedFinished {
         action: Action,
         outcome: Outcome,
         recheck_enrollment: bool,
@@ -113,42 +141,57 @@ pub enum Event {
     BrokerDiscovered {
         url: String,
     },
-    /// What `/config` said, reported the moment it is read rather than only
-    /// when a sign-in built on it lands. The realm is the half that used to be
-    /// discarded: a broker can answer perfectly and the sign-in after it fail
-    /// for reasons that have nothing to do with which realm it serves.
+    /// One complete discovery document. This is the only event that publishes
+    /// broker-owned snapshot fields. `accepted` lets an operation wait before it
+    /// starts OIDC discovery.
     Discovered {
-        kerberos: KerberosConfig,
-        device_grant: DeviceGrantConfig,
-        defaults: Defaults,
-        help_url: Option<String>,
-        idp_name: String,
-        source: String,
+        stamp: DiscoveryStamp,
+        snapshot: BrokerSnapshot,
+        accepted: Option<std::sync::mpsc::Sender<bool>>,
+    },
+    /// Ask whether a worker's requested broker URL and generation are still
+    /// current before an external side effect.
+    Current {
+        stamp: DiscoveryStamp,
+        current: std::sync::mpsc::Sender<bool>,
     },
     /// This machine may now skip the browser sign-in.
     GrantCreated {
+        stamp: DiscoveryStamp,
         grant: Grant,
+        broker_url: String,
+        effects: WorkerEffects,
     },
     /// It may not, and this is why. Already user-facing, and carrying its class:
     /// a refused authorization is a standing fact about the account, not a
     /// transient the surface may forget once its balloon has gone.
     GrantFailed {
+        stamp: DiscoveryStamp,
+        effects: WorkerEffects,
         fault: Option<Fault>,
         message: String,
     },
-    /// The cloud logout finished. Outside the busy slot, so it frees nothing but
-    /// itself.
+    /// The cloud sign-out finished. It does not own the busy slot.
     /// `asked` is whether the authority was reached at all. A sign-out that never
     /// left the machine must not be recorded as one that did.
     CloudSignedOut {
+        stamp: DiscoveryStamp,
         asked: bool,
     },
+    /// Cleanup for a device grant that was created after its stamp became stale.
+    StaleGrantCompensated {
+        stamp: DiscoveryStamp,
+    },
     /// The revoke worker finished. The key on this device is gone either way;
-    /// `revoked` is the second, independent fact -- whether the broker was told.
-    /// `saved` is a third: this device could not update its own record.
+    /// `revoked` is the second, independent fact -- whether the captured `broker`
+    /// was told. `saved` is a third: this device could not update its own record.
+    /// `report` is true only for a user-requested cleanup.
     GrantGivenUp {
+        generation: u64,
+        broker: Option<String>,
         revoked: bool,
         saved: bool,
+        report: bool,
     },
     /// The elevation prompt has been answered and the child is running. The one
     /// observable moment between the two phases a dialog can distinguish; the
@@ -156,6 +199,19 @@ pub enum Event {
     ElevationGranted {
         action: Action,
     },
+}
+
+impl BrokerSnapshot {
+    fn from_document(document: &BrokerDocument) -> Self {
+        Self {
+            kerberos: document.kerberos.clone(),
+            device_grant: document.device_grant.clone(),
+            defaults: document.defaults,
+            help_url: document.help_url.clone(),
+            idp_name: document.idp_name.clone(),
+            source: discovery::source_name(&document.base_url),
+        }
+    }
 }
 
 /// Queue a worker's result and ask the UI thread for a turn. Called from worker
@@ -170,36 +226,94 @@ pub(super) fn post(ev: Event) {
 /// wake-up that raced an earlier drain costs no repaint.
 pub fn drain() -> bool {
     let events = std::mem::take(&mut *EVENTS.lock().unwrap());
-    let applied = !events.is_empty();
+    let mut applied = false;
     for ev in events {
-        apply(ev);
+        applied |= apply(ev);
     }
     applied
 }
 
+fn reject_stale_terminal(ev: Event) -> bool {
+    match ev {
+        Event::SignedIn { stamp, realm, .. } => {
+            log::warn("discarding a ticket injected after its broker request became stale");
+            purge_realm(&realm);
+            with(|a| a.finish_busy(&stamp, true))
+        }
+        Event::SignInFailed { stamp, effects, .. } => {
+            if let Some(realm) = effects.injection_realm {
+                purge_realm(&realm);
+            }
+            with(|a| a.finish_busy(&stamp, true))
+        }
+        Event::Cancelled { stamp, .. } | Event::GrantFailed { stamp, .. } => {
+            with(|a| a.finish_busy(&stamp, true))
+        }
+        Event::GrantCreated { stamp, grant, broker_url, .. } => {
+            log::warn("removing a device grant created after its broker request became stale");
+            std::thread::spawn(move || {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    session::revoke_this_device(Some(&broker_url), &grant)
+                }));
+                post(Event::StaleGrantCompensated { stamp });
+            });
+            false
+        }
+        Event::CloudSignedOut { stamp, .. } => with(|a| a.finish_cloud_sign_out(&stamp)),
+        _ => unreachable!("only stamped terminal events can be stale"),
+    }
+}
+
 /// One worker's result. As in [`tick`], the balloon is raised only after the
 /// agent borrow is released.
-fn apply(ev: Event) {
-    // Every event but these is a worker reporting in, and that is what releases
-    // the busy slot. The broker lookup, the cloud logout and the revoke run
-    // outside the slot entirely, so clearing it for them would free a sign-in
-    // that is still running.
-    //
-    // `Discovered` is the one that is not a report at all: `run_sign_in` posts it
-    // from the middle of its own run, so freeing the slot here would let a tick
-    // start a second sign-in beside the first -- two browsers, two exchanges --
-    // and empty `in_flight` while the work it names is still going.
-    if !matches!(
-        ev,
-        Event::BrokerDiscovered { .. }
-            | Event::Discovered { .. }
-            | Event::CloudSignedOut { .. }
-            | Event::GrantGivenUp { .. }
-            | Event::ElevationGranted { .. }
-    ) {
+fn apply(ev: Event) -> bool {
+    // These events only answer a worker that is waiting. They publish no state.
+    let ev = match ev {
+        Event::Current { stamp, current } => {
+            let _ = current.send(with(|a| a.discovery_is_current(&stamp)));
+            return false;
+        }
+        Event::Discovered { stamp, snapshot, accepted } => {
+            let applied = with(|a| {
+                let Some(cache_changed) = a.replace_broker_snapshot(&stamp, snapshot) else {
+                    return false;
+                };
+                let autostart_changed = a.settings.enforce_autostart();
+                if (cache_changed || autostart_changed)
+                    && let Err(e) = a.settings.save()
+                {
+                    log::warn(&format!("could not save the accepted broker settings: {e:#}"));
+                }
+                true
+            });
+            if let Some(reply) = accepted {
+                let _ = reply.send(applied);
+            }
+            return applied;
+        }
+        Event::StaleGrantCompensated { stamp } => {
+            return with(|a| a.finish_busy(&stamp, true));
+        }
+        other => other,
+    };
+
+    let terminal_stamp = match &ev {
+        Event::SignedIn { stamp, .. }
+        | Event::SignInFailed { stamp, .. }
+        | Event::Cancelled { stamp, .. }
+        | Event::GrantCreated { stamp, .. }
+        | Event::GrantFailed { stamp, .. }
+        | Event::CloudSignedOut { stamp, .. } => Some(stamp),
+        _ => None,
+    };
+    if terminal_stamp.is_some_and(|stamp| !with(|a| a.discovery_is_current(stamp))) {
+        return reject_stale_terminal(ev);
+    }
+
+    // Elevated operations use the busy slot without a discovery stamp.
+    if matches!(ev, Event::ElevatedFinished { .. }) {
         BUSY.store(false, Ordering::Relaxed);
-        // The slot carries one action at a time and whichever it was is over.
-        with(|a| a.in_flight.retain(|act| act.outside_busy_slot()));
+        with(|a| a.in_flight.retain(|action| action.outside_busy_slot()));
     }
     let mut pending: Option<(String, String, Severity)> = None;
     let mut finished: Option<(Action, Outcome)> = None;
@@ -207,34 +321,11 @@ fn apply(ev: Event) {
     let mut elevating = None;
     let mut discover = false;
 
-    // The UI thread owns the settings, so a worker's verdict on the stored grant
-    // is applied here -- and before the event itself, so a `GrantCreated` in the
-    // same pass writes the new grant over the cleared old one, not the reverse.
-    if GRANT_STALE.swap(false, Ordering::Relaxed) {
-        with(|a| {
-            if a.settings.grant().is_none() {
-                return;
-            }
-            a.settings.set_grant(None);
-            if let Err(e) = a.settings.save() {
-                log::warn(&format!("could not forget the dead device grant: {e:#}"));
-            }
-            log::info("this device's grant is no longer usable; a browser sign-in is needed again");
-        });
-    }
-
     with(|a| {
-        // Before the match, so no arm can be the one that forgets: the browser
-        // leg that set this may be followed by a success, a failed injection or
-        // a cancel, and the session exists in every one of them.
-        if NEW_BROWSER_SESSION.swap(false, Ordering::Relaxed)
-            && a.settings.set_browser_session(true)
-            && let Err(e) = a.settings.save()
-        {
-            log::warn(&format!("could not record the browser session: {e:#}"));
-        }
         match ev {
-            Event::SignedIn { injected, kerberos, device_grant, help_url, idp_name, via_grant } => {
+            Event::SignedIn { stamp, injected, effects, via_grant, .. } => {
+                a.finish_busy(&stamp, false);
+                effects.apply(a);
                 // Gate 1: a session starting is news, and so is a fault clearing.
                 // A midpoint renewal that simply worked moves no condition and says
                 // nothing.
@@ -262,9 +353,6 @@ fn apply(ev: Event) {
                 a.startup_retry_at = None;
                 a.startup_retries = 0;
                 a.startup_backoff = 0;
-                a.device_grant = device_grant;
-                a.help_url = help_url;
-                a.idp_name = idp_name;
                 // Everything except the exchange a fresh grant started itself: that
                 // one is the second half of the authorization the user just
                 // performed, not news arriving after it.
@@ -278,20 +366,8 @@ fn apply(ev: Event) {
                 // outage cannot turn it into a raise loop.
                 a.fallback = NtlmFallback::Clear;
                 a.fallback_check_at = time::now() + FALLBACK_POLL_SECS;
-                if !kerberos.realm.is_empty() {
-                    if a.settings.set_cache(&kerberos)
-                        && let Err(e) = a.settings.save()
-                    {
-                        // Not silent: an unwritten realm means the next start adopts
-                        // no ticket and reports no access over a cache that works.
-                        log::warn(&format!("could not cache the realm: {e:#}"));
-                    }
-                    a.kerberos = kerberos;
-                    a.enroll_state = enroll::state(&a.kerberos);
-                }
-                // After the realm is current, because that is half of the scope: a
-                // landed exchange is what makes a later lapse read as a fault
-                // rather than as a machine that never started.
+                // The accepted broker snapshot already supplied the realm. Success
+                // changes ticket and session facts only.
                 a.expect(true);
                 if news {
                     let identity = fill(
@@ -315,7 +391,9 @@ fn apply(ev: Event) {
                     ));
                 }
             }
-            Event::SignInFailed { fault, message, quiet } => {
+            Event::SignInFailed { stamp, effects, fault, message, quiet } => {
+                a.finish_busy(&stamp, false);
+                effects.apply(a);
                 log::warn(&format!("sign-in failed: {message}"));
                 // Recorded on every path, quiet or not: what the surface says is not
                 // the same question as whether anyone is interrupted, and a
@@ -377,7 +455,9 @@ fn apply(ev: Event) {
                     pending = Some((tr().cond_stopped.into(), a.message.clone(), Severity::Error));
                 }
             }
-            Event::Cancelled => {
+            Event::Cancelled { stamp, effects } => {
+                a.finish_busy(&stamp, false);
+                effects.apply(a);
                 // Same reasoning: cancelling a sign-in must not throw away a session
                 // that is still working.
                 if a.phase == Phase::SigningIn {
@@ -385,58 +465,18 @@ fn apply(ev: Event) {
                         if a.holds_live_ticket() { Phase::Connected } else { Phase::SignedOut };
                 }
             }
-            Event::Discovered { kerberos, device_grant, defaults, help_url, idp_name, source } => {
-                // The broker answered, so transport works -- whatever else does not.
-                // Cleared here and not only in `SignedIn`: on a machine with nothing
-                // to be silent with this is the only thing that ever lands, so a
-                // "can't reach" would otherwise stand over a server that answers.
-                if a.fault == Some(Fault::Network) {
-                    a.record(None, String::new());
-                }
-                // Only where there is no realm: a landed sign-in has the same answer
-                // from the same endpoint and has already stored it, and this can
-                // arrive while one is still in flight.
-                if !kerberos.realm.is_empty() && a.kerberos.realm.is_empty() {
-                    if a.settings.set_cache(&kerberos)
-                        && let Err(e) = a.settings.save()
-                    {
-                        // Not silent: an unwritten realm means the next start adopts
-                        // no ticket and reports no access over a cache that works.
-                        log::warn(&format!("could not cache the realm: {e:#}"));
-                    }
-                    a.kerberos = kerberos;
-                    a.enroll_state = enroll::state(&a.kerberos);
-                }
-                // Only ever fills a gap, and no longer asks after the phase: an agent
-                // that is signed out needs this answer most, since the button is how
-                // it stops needing to be signed in by hand. A sign-in that landed
-                // while this was in flight has the same answer from the same
-                // endpoint, one round trip fresher, so it is not overwritten.
-                if a.device_grant.days == 0 {
-                    a.device_grant = device_grant;
-                }
-                // Unconditional: unlike the grant policy above there is nothing
-                // fresher to overwrite, and a tray that has not signed in still has
-                // a Help item to point somewhere.
-                a.help_url = help_url;
-                a.idp_name = idp_name;
-                a.source = source;
-                // Last, so the entry this may write is the one a deployment that
-                // has just answered asks for. Nothing above depends on it.
-                a.settings.set_defaults(defaults);
-                if a.settings.enforce_autostart()
-                    && let Err(e) = a.settings.save()
-                {
-                    log::warn(&format!("could not record the autostart default: {e:#}"));
-                }
+            Event::Discovered { .. }
+            | Event::Current { .. }
+            | Event::StaleGrantCompensated { .. } => {
+                unreachable!("worker acknowledgements are handled before shared events")
             }
             Event::BrokerDiscovered { url } => {
                 // The user may have typed one into Settings while the lookup ran;
-                // theirs wins, and `broker_url` already says so -- but re-checking
-                // keeps the log honest about which address is in play.
+                // theirs wins, and `broker_url` already says so.
                 if a.settings.broker_url().is_none() {
                     log::info(&format!("using the broker DNS advertises: {url}"));
                     a.settings.set_discovered(url);
+                    let _ = a.advance_discovery();
                     // Fetch `/config`: ticket adoption skips startup retry.
                     discover = true;
                     // Autostart ran before DNS discovery; retry only when signed out.
@@ -445,7 +485,9 @@ fn apply(ev: Event) {
                     }
                 }
             }
-            Event::GrantCreated { grant } => {
+            Event::GrantCreated { stamp, grant, effects, .. } => {
+                a.finish_busy(&stamp, false);
+                effects.apply(a);
                 // Rounded up, like the rest of the UI: a 30-day grant reads as 30.
                 let left =
                     days(((grant.sign_in_required_by - time::now() + 86_399) / 86_400).max(1));
@@ -496,7 +538,9 @@ fn apply(ev: Event) {
                     },
                 ));
             }
-            Event::GrantFailed { fault, message } => {
+            Event::GrantFailed { stamp, effects, fault, message } => {
+                a.finish_busy(&stamp, false);
+                effects.apply(a);
                 log::warn(&format!("device grant not created: {message}"));
                 // Recorded, not just announced. Every one of these needs somebody
                 // else to act -- an administrator, or a correction to the account
@@ -505,8 +549,8 @@ fn apply(ev: Event) {
                 a.record(fault, message.clone());
                 finished = Some((Action::CreateGrant, Outcome::Failed { message }));
             }
-            Event::CloudSignedOut { asked } => {
-                a.in_flight.retain(|act| *act != Action::SignOutIdp);
+            Event::CloudSignedOut { stamp, asked } => {
+                a.finish_cloud_sign_out(&stamp);
                 // Forgetting the session is what makes the offer go away, so it waits
                 // for the trip that was the point of the offer. Not proof the
                 // authority ended anything -- opening a URL never is -- but it is the
@@ -519,54 +563,51 @@ fn apply(ev: Event) {
                     log::warn(&format!("could not forget the browser session: {e:#}"));
                 }
             }
-            Event::GrantGivenUp { revoked, saved } => {
-                a.in_flight.retain(|act| *act != Action::GiveUpGrant);
-                let broker = a.settings.broker_url().map(host_of).unwrap_or_default();
-                // Two independent facts, and the second is the one that costs
-                // something later: the key is gone either way, but a directory row
-                // that survives holds a `device_grant_max_per_user` slot, and the
-                // bill arrives as a refused authorization on a machine that has
-                // forgotten why. A third, when this device could not even write down
-                // that it no longer holds one.
-                let mut detail = fill(
-                    if revoked {
-                        tr().dlg_grant_off_result_sub
-                    } else {
-                        tr().dlg_grant_off_result_stale
-                    },
-                    &[("broker", &broker)],
-                );
+            Event::GrantGivenUp { generation, broker, revoked, saved, report } => {
+                if !a.finish_grant_cleanup(generation) {
+                    return;
+                }
+                GRANT_CLEANUP.store(false, Ordering::Relaxed);
+                // A surviving directory row holds a device-grant slot. Log it
+                // even when retarget cleanup has no user-facing result.
                 if !revoked {
                     log::warn(
                         "this device's grant is gone but its record at the broker is not; an \
                      administrator clears it with `kbmanage device revoke`",
                     );
                 }
-                if !saved {
-                    detail.push_str("\r\n");
-                    detail.push_str(tr().dlg_grant_unsaved);
+                if report {
+                    let broker = broker.as_deref().map(host_of).unwrap_or_default();
+                    let mut detail = fill(
+                        if revoked {
+                            tr().dlg_grant_off_result_sub
+                        } else {
+                            tr().dlg_grant_off_result_stale
+                        },
+                        &[("broker", &broker)],
+                    );
+                    if !saved {
+                        detail.push_str("\r\n");
+                        detail.push_str(tr().dlg_grant_unsaved);
+                    }
+                    finished = Some((
+                        Action::GiveUpGrant,
+                        Outcome::Done {
+                            message: tr().dlg_grant_off_result.to_string(),
+                            detail: Some(detail),
+                        },
+                    ));
                 }
-                finished = Some((
-                    Action::GiveUpGrant,
-                    Outcome::Done {
-                        message: tr().dlg_grant_off_result.to_string(),
-                        detail: Some(detail),
-                    },
-                ));
             }
             Event::ElevationGranted { action } => elevating = Some(action),
-            Event::Elevated { action, outcome, recheck_enrollment } => {
-                if recheck_enrollment {
+            Event::ElevatedFinished { action, outcome, recheck_enrollment } => {
+                if recheck_enrollment && !a.kerberos.realm.is_empty() {
                     a.enroll_state = enroll::state(&a.kerberos);
                 }
                 let succeeded = matches!(outcome, Outcome::Done { .. });
-                // A successful elevated one-shot during an episode is the repair the
-                // confirmed status window asked for. Nothing else is running one
-                // mid-episode. It asks for a ticket and deliberately leaves the
-                // episode open: the TGT that was evicted is still gone, so re-arming
-                // detection here would find it missing 30 s later and raise the
-                // surface again, and again, until the scheduled re-injection. Only a
-                // landed exchange ends an episode.
+                // A successful repair requests a ticket but leaves the episode open.
+                // Re-arming before the exchange lands detects the still-missing TGT
+                // again. Only a landed exchange ends the episode.
                 if succeeded && a.fallback != NtlmFallback::Clear {
                     a.refresh_at = Some(time::now());
                 }
@@ -582,6 +623,7 @@ fn apply(ev: Event) {
 
     // Run after the agent borrow: discovery reads settings.
     if discover {
+        #[cfg(not(test))]
         discover_in_background();
     }
     // Before the dialog rather than after it: the modal pumps messages, so the
@@ -602,33 +644,75 @@ fn apply(ev: Event) {
     if let Some((action, outcome)) = finished {
         host().finished(action, outcome);
     }
+    true
 }
 
 /// Ask the broker for `/config` on a thread of its own.
 ///
-/// Needs no credential and never opens a window, so it is safe anywhere: at
-/// startup, where it is the only thing that fetches the grant policy for a
-/// machine that will not sign in for hours, and on the re-probe backoff, where it
-/// is the only thing that can notice a broker coming back. It does not take the
-/// busy slot and `apply` does not release one for it.
+/// Needs no credential and never opens a window. It runs at startup, where it is
+/// the only thing that fetches the device-grant policy for a machine that will not sign
+/// in for hours, and on the re-probe backoff, where it is the only thing that can
+/// notice a broker coming back. It waits while cloud sign-out owns the current
+/// discovery generation. It does not take the busy slot and `apply` does not
+/// release one for it.
 ///
 /// A failure is logged and nothing else: the surface is already saying the broker
 /// is unreachable, and the backoff in [`super::tick`] is what answers it.
 pub(super) fn discover_in_background() {
-    let Some(url) = with(|a| a.settings.broker_url().map(str::to_owned)) else {
+    let Some(stamp) =
+        with(|a| if a.cloud_sign_out.is_some() { None } else { a.advance_discovery() })
+    else {
         return;
     };
-    std::thread::spawn(move || match discovery::discover(&url) {
-        Ok(config) => post(Event::Discovered {
-            kerberos: config.kerberos,
-            device_grant: config.device_grant,
-            defaults: config.defaults,
-            help_url: config.help_url,
-            idp_name: config.oidc.display_name,
-            source: discovery::source_name(&config.base_url),
+    std::thread::spawn(move || match discovery::broker_document(&stamp.requested_broker_url) {
+        Ok(document) => post(Event::Discovered {
+            snapshot: BrokerSnapshot::from_document(&document),
+            stamp,
+            accepted: None,
         }),
         Err(e) => log::info(&format!("could not reach the broker for its settings: {e:#}")),
     });
+}
+
+/// Publish one discovery document and wait for the UI thread to accept its stamp.
+fn publish_and_wait(stamp: DiscoveryStamp, document: &BrokerDocument) -> bool {
+    let (send, receive) = std::sync::mpsc::channel();
+    post(Event::Discovered {
+        stamp,
+        snapshot: BrokerSnapshot::from_document(document),
+        accepted: Some(send),
+    });
+    receive.recv().unwrap_or(false)
+}
+
+fn still_current(stamp: &DiscoveryStamp) -> bool {
+    let (send, receive) = std::sync::mpsc::channel();
+    post(Event::Current { stamp: stamp.clone(), current: send });
+    receive.recv().unwrap_or(false)
+}
+
+/// Make publication a completed first leg. The second leg does not start when
+/// the snapshot lost its requested broker URL or generation while the request was running.
+fn after_broker_document<D, T, E>(
+    document: D,
+    publish: impl FnOnce(&D) -> bool,
+    next: impl FnOnce(D) -> Result<T, E>,
+) -> Result<Option<T>, E> {
+    if !publish(&document) {
+        return Ok(None);
+    }
+    next(document).map(Some)
+}
+
+fn discover_oidc_after_publication(
+    stamp: &DiscoveryStamp,
+    document: BrokerDocument,
+) -> anyhow::Result<Option<BrokerConfig>> {
+    after_broker_document(
+        document,
+        |document| publish_and_wait(stamp.clone(), document),
+        BrokerDocument::discover_oidc,
+    )
 }
 
 // ---- sign-in ---------------------------------------------------------------
@@ -637,27 +721,35 @@ pub(super) fn discover_in_background() {
 /// never opens a browser on its own; it falls back by *reporting* failure, so
 /// the user is asked rather than surprised by a browser window.
 pub(super) fn start_worker(trigger: Trigger) {
+    if GRANT_CLEANUP.load(Ordering::Relaxed) || with(|a| a.cloud_sign_out.is_some()) {
+        if trigger == Trigger::Startup {
+            with(|a| a.startup_retry_at = Some(time::now() + 1));
+        }
+        return;
+    }
     if BUSY.swap(true, Ordering::Relaxed) {
         return;
     }
     let silent = trigger.silent();
     CANCEL.store(false, Ordering::Relaxed);
 
-    let Some(broker) = with(|a| a.settings.broker_url().map(str::to_owned)) else {
+    let Some((stamp, use_native, grant, pin)) = with(|a| {
+        let stamp = a.advance_discovery()?;
+        Some((
+            stamp,
+            a.settings.windows_sign_in(),
+            a.settings.grant().cloned(),
+            a.settings.grant_for().map(str::to_owned),
+        ))
+    }) else {
         BUSY.store(false, Ordering::Relaxed);
         return;
     };
-    // Read on the UI thread and carried in: the settings live in this module's
-    // thread-local, which a worker must never touch.
-    let use_native = with(|a| a.settings.windows_sign_in());
-    let grant = with(|a| a.settings.grant().cloned());
-    let pin = with(|a| a.settings.grant_for().map(str::to_owned));
+    let action = if trigger == Trigger::User { Action::SignIn } else { Action::ReinjectTicket };
     // Work nobody launched still gets an action's name: a scheduled renewal and
     // a clicked *Renew now* are the same thing to the button that has to be
     // disabled, and only the user's own sign-in can reach a browser.
-    with(|a| {
-        a.started(if trigger == Trigger::User { Action::SignIn } else { Action::ReinjectTicket });
-    });
+    with(|a| a.started_busy(stamp.clone(), action));
     if !silent {
         with(|a| {
             a.phase = Phase::SigningIn;
@@ -671,22 +763,22 @@ pub(super) fn start_worker(trigger: Trigger) {
         // agent's only busy slot, and a slot that is never released stops every
         // future re-injection. A dependency panicking on malformed input (the ccache
         // parser runs over broker-supplied bytes) is the realistic way in.
+        let mut effects = WorkerEffects::default();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run_sign_in(&broker, silent, use_native, grant.as_ref(), pin.as_deref())
+            run_sign_in(&stamp, silent, use_native, grant.as_ref(), pin.as_deref(), &mut effects)
         }));
         let quiet = matches!(trigger, Trigger::Startup | Trigger::Granted);
         match outcome {
-            Ok(Ok(Some((injected, config, via_grant)))) => post(Event::SignedIn {
-                injected,
-                kerberos: config.kerberos,
-                device_grant: config.device_grant,
-                help_url: config.help_url,
-                idp_name: config.oidc.display_name,
-                via_grant,
-            }),
-            Ok(Ok(None)) => post(Event::Cancelled),
-            Ok(Err((fault, message))) => post(Event::SignInFailed { fault, message, quiet }),
+            Ok(Ok(Some((injected, via_grant, realm)))) => {
+                post(Event::SignedIn { stamp, injected, realm, effects, via_grant })
+            }
+            Ok(Ok(None)) => post(Event::Cancelled { stamp, effects }),
+            Ok(Err((fault, message))) => {
+                post(Event::SignInFailed { stamp, effects, fault, message, quiet })
+            }
             Err(_) => post(Event::SignInFailed {
+                stamp,
+                effects,
                 fault: Some(Fault::Other),
                 message: fill(tr().err_internal, &[("detail", "panic in the sign-in worker")]),
                 quiet,
@@ -698,31 +790,28 @@ pub(super) fn start_worker(trigger: Trigger) {
 /// The worker body. Runs off the UI thread; returns user-facing text on failure,
 /// and on success whether the grant is what proved the exchange.
 fn run_sign_in(
-    broker_url: &str,
+    stamp: &DiscoveryStamp,
     silent: bool,
     use_native: bool,
     grant: Option<&Grant>,
     pin: Option<&str>,
-) -> Result<Option<(Injected, BrokerConfig, bool)>, Failure> {
-    let config: BrokerConfig =
-        discovery::discover(broker_url).map_err(|e| describe_discovery_error(&e, broker_url))?;
-    // Reported now, not on the way out. Everything below can fail -- no
-    // credential to be silent with is the ordinary case on a machine that has
-    // just been retargeted -- and the realm this broker serves is known either
-    // way. Held to the end, a failure here left the surface saying "no settings
-    // from <host>" about a broker that had just answered.
-    post(Event::Discovered {
-        kerberos: config.kerberos.clone(),
-        device_grant: config.device_grant.clone(),
-        defaults: config.defaults,
-        help_url: config.help_url.clone(),
-        idp_name: config.oidc.display_name.clone(),
-        source: discovery::source_name(&config.base_url),
-    });
+    effects: &mut WorkerEffects,
+) -> Result<Option<(Injected, bool, String)>, Failure> {
+    let requested_broker_url = stamp.requested_broker_url.clone();
+    let document = discovery::broker_document(&requested_broker_url)
+        .map_err(|e| describe_discovery_error(&e, &requested_broker_url))?;
+    // The discovery document must be accepted before the IdP is asked. A later IdP
+    // failure cannot undo it, and a stale payload cannot start the second leg.
+    let Some(config) = discover_oidc_after_publication(stamp, document)
+        .map_err(|e| describe_discovery_error(&e, &requested_broker_url))?
+    else {
+        return Ok(None);
+    };
     // Every exchange below hangs off the source the broker confirmed: the
     // configured address carries no source segment when DNS supplied it.
     let base_url = config.base_url.clone();
     let broker_url = base_url.as_str();
+    let realm = config.kerberos.realm.clone();
 
     // A granted device proves possession of its TPM key instead of presenting a
     // token, and that is the entire feature: this path must not reach
@@ -741,9 +830,13 @@ fn run_sign_in(
     // to, and telling its operator to re-authorize would be telling them to
     // repeat the one thing that cannot help.
     let mut refused = None;
+    if !still_current(stamp) {
+        return Ok(None);
+    }
     if let Some(grant) = grant {
+        effects.injection_realm = Some(realm.clone());
         match session::inject_with_grant(broker_url, grant) {
-            Ok(injected) => return Ok(Some((injected, config, true))),
+            Ok(injected) => return Ok(Some((injected, true, realm))),
             // Not marked stale, unlike the refusal below: both of these are the
             // operator's to undo, and a grant put back in the group works again
             // untouched. Forgetting it would cost a browser sign-in to rebuild
@@ -760,7 +853,7 @@ fn run_sign_in(
                 ))
             }
             Err(InjectError::Broker(broker::BrokerError::InvalidProof(why))) => {
-                GRANT_STALE.store(true, Ordering::Relaxed);
+                effects.grant_stale = true;
                 log::warn(&format!("this device's grant was refused ({why}); signing in instead"))
             }
             Err(e) => return Err(describe_inject_error(&e, &host_of(broker_url))),
@@ -780,13 +873,20 @@ fn run_sign_in(
             .unwrap_or_else(|| (None, fill(tr().err_grant_reauthorize, &[("target", target)]))));
     }
 
-    let token = match acquire_token(&config, silent, use_native)? {
+    if !still_current(stamp) {
+        return Ok(None);
+    }
+    let token = match acquire_token(&config, silent, use_native, effects)? {
         Some(t) => t,
         None => return Ok(None),
     };
+    if !still_current(stamp) {
+        return Ok(None);
+    }
 
+    effects.injection_realm = Some(realm.clone());
     match session::inject(broker_url, token.expose()) {
-        Ok(injected) => Ok(Some((injected, config, false))),
+        Ok(injected) => Ok(Some((injected, false, realm))),
         Err(e) => Err(describe_inject_error(&e, &host_of(broker_url))),
     }
 }
@@ -798,6 +898,7 @@ fn acquire_token(
     config: &BrokerConfig,
     silent: bool,
     use_native: bool,
+    effects: &mut WorkerEffects,
 ) -> Result<Option<crate::secret::Secret>, Failure> {
     // The platform's own credential source, silently on both paths: that is what
     // keeps re-injection unattended without this process holding a refresh token
@@ -827,8 +928,8 @@ fn acquire_token(
         })?;
         let tokens = oidc::refresh(&config.oidc, refresh_token.expose())
             .map_err(|e| describe_token_error(&e, tr().err_silent_refresh))?;
-        if let Some(rt) = tokens.refresh_token {
-            *REFRESH_TOKEN.lock().unwrap() = Some(rt);
+        if let Some(refresh_token) = tokens.refresh_token {
+            effects.refresh_token = RefreshUpdate::Set(Some(refresh_token));
         }
         return Ok(Some(tokens.access_token));
     }
@@ -842,10 +943,8 @@ fn acquire_token(
     drop(leg);
     match outcome {
         Ok(Some(tokens)) => {
-            *REFRESH_TOKEN.lock().unwrap() = tokens.refresh_token;
-            // A session of ours now exists in a browser. This is a worker
-            // thread, so it can only flag the fact; `apply` writes it down.
-            NEW_BROWSER_SESSION.store(true, Ordering::Relaxed);
+            effects.refresh_token = RefreshUpdate::Set(tokens.refresh_token);
+            effects.browser_session_started = true;
             Ok(Some(tokens.access_token))
         }
         Ok(None) => Ok(None),
@@ -869,6 +968,48 @@ impl Drop for BrowserLeg {
     }
 }
 
+/// Discover the current authority, then ask it to end the browser session. It
+/// has its own worker but waits until ticket or device-grant work leaves the busy slot.
+pub(super) fn begin_cloud_sign_out() -> bool {
+    // A concurrent discovery document would supersede ticket or device-grant work between
+    // its final stamp check and its external side effect.
+    if BUSY.load(Ordering::Relaxed) {
+        return false;
+    }
+    let Some(stamp) = with(|a| {
+        if !a.settings.browser_session() || a.cloud_sign_out.is_some() {
+            return None;
+        }
+        let stamp = a.advance_discovery()?;
+        a.started(Action::SignOutIdp);
+        a.cloud_sign_out = Some(stamp.clone());
+        Some(stamp)
+    }) else {
+        return false;
+    };
+    *REFRESH_TOKEN.lock().unwrap() = None;
+
+    std::thread::spawn(move || {
+        let requested_broker_url = stamp.requested_broker_url.clone();
+        let asked = match discovery::broker_document(&requested_broker_url) {
+            Ok(document) => match discover_oidc_after_publication(&stamp, document) {
+                Ok(Some(config)) if still_current(&stamp) => oidc::logout(&config.oidc),
+                Ok(Some(_)) | Ok(None) => false,
+                Err(e) => {
+                    log::warn(&format!("cloud sign-out: OIDC discovery failed: {e:#}"));
+                    false
+                }
+            },
+            Err(e) => {
+                log::warn(&format!("cloud sign-out: broker discovery failed: {e:#}"));
+                false
+            }
+        };
+        post(Event::CloudSignedOut { stamp, asked });
+    });
+    true
+}
+
 // ---- device grants ---------------------------------------------------------
 
 /// Give up this machine's device grant: forget it here, then destroy the TPM key
@@ -885,6 +1026,9 @@ impl Drop for BrowserLeg {
 /// it -- retargeting the agent -- must self-revoke at the broker that issued the
 /// grant, not at the one the user has just typed in.
 pub(super) fn give_up_grant(a: &mut Agent, broker: Option<String>) -> bool {
+    if BUSY.load(Ordering::Relaxed) || GRANT_CLEANUP.load(Ordering::Relaxed) {
+        return false;
+    }
     let Some(grant) = a.settings.grant().cloned() else {
         return false;
     };
@@ -899,13 +1043,31 @@ pub(super) fn give_up_grant(a: &mut Agent, broker: Option<String>) -> bool {
             false
         }
     };
-    a.started(Action::GiveUpGrant);
+    give_up_captured_grant(a, broker, grant, saved, true)
+}
+
+/// `report` is false for retarget cleanup, so an internal grant release cannot
+/// open a result surface.
+pub(super) fn give_up_captured_grant(
+    a: &mut Agent,
+    broker: Option<String>,
+    grant: Grant,
+    saved: bool,
+    report: bool,
+) -> bool {
+    if GRANT_CLEANUP.swap(true, Ordering::Relaxed) {
+        return false;
+    }
+    let generation = a.started_grant_cleanup();
     std::thread::spawn(move || {
         // The key first and unconditionally, so this works offline: see
         // `session::revoke_this_device` for why that order is not negotiable.
-        let revoked = session::revoke_this_device(broker.as_deref(), &grant);
+        let revoked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            session::revoke_this_device(broker.as_deref(), &grant)
+        }))
+        .unwrap_or(false);
         log::info(&format!("gave up device grant {}", grant.grant_id));
-        post(Event::GrantGivenUp { revoked, saved });
+        post(Event::GrantGivenUp { generation, broker, revoked, saved, report });
     });
     true
 }
@@ -918,27 +1080,36 @@ pub(super) fn give_up_grant(a: &mut Agent, broker: Option<String>) -> bool {
 /// covers no TPM, a TPM that is not prepared, lockout, policy and the device cap
 /// alike, and a cached verdict would be stale exactly when it mattered.
 pub fn create_grant() -> bool {
-    if BUSY.swap(true, Ordering::Relaxed) {
+    if GRANT_CLEANUP.load(Ordering::Relaxed)
+        || with(|a| a.cloud_sign_out.is_some())
+        || BUSY.swap(true, Ordering::Relaxed)
+    {
         return false;
     }
     CANCEL.store(false, Ordering::Relaxed);
-    let Some(broker) = with(|a| a.settings.broker_url().map(str::to_owned)) else {
+    let Some((stamp, use_native, target)) = with(|a| {
+        let stamp = a.advance_discovery()?;
+        Some((stamp, a.settings.windows_sign_in(), a.settings.grant_for().map(str::to_owned)))
+    }) else {
         BUSY.store(false, Ordering::Relaxed);
         return false;
     };
-    let use_native = with(|a| a.settings.windows_sign_in());
-    let target = with(|a| a.settings.grant_for().map(str::to_owned));
-    with(|a| a.started(Action::CreateGrant));
+    with(|a| a.started_busy(stamp.clone(), Action::CreateGrant));
 
     std::thread::spawn(move || {
+        let mut effects = WorkerEffects::default();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run_create_grant(&broker, use_native, target.as_deref())
+            run_create_grant(&stamp, use_native, target.as_deref(), &mut effects)
         }));
         post(match outcome {
-            Ok(Ok(Some(grant))) => Event::GrantCreated { grant },
-            Ok(Ok(None)) => Event::Cancelled,
-            Ok(Err((fault, message))) => Event::GrantFailed { fault, message },
+            Ok(Ok(Some((grant, broker_url)))) => {
+                Event::GrantCreated { stamp, grant, broker_url, effects }
+            }
+            Ok(Ok(None)) => Event::Cancelled { stamp, effects },
+            Ok(Err((fault, message))) => Event::GrantFailed { stamp, effects, fault, message },
             Err(_) => Event::GrantFailed {
+                stamp,
+                effects,
                 fault: Some(Fault::Other),
                 message: fill(tr().err_internal, &[("detail", "panic in the authorize worker")]),
             },
@@ -947,14 +1118,21 @@ pub fn create_grant() -> bool {
     true
 }
 
-/// The grant worker's body: discover, sign in, make a key, register it.
+/// The device-grant work: discover, sign in, create a device key, register it.
 fn run_create_grant(
-    broker_url: &str,
+    stamp: &DiscoveryStamp,
     use_native: bool,
     target: Option<&str>,
-) -> Result<Option<Grant>, Failure> {
-    let config: BrokerConfig =
-        discovery::discover(broker_url).map_err(|e| describe_discovery_error(&e, broker_url))?;
+    effects: &mut WorkerEffects,
+) -> Result<Option<(Grant, String)>, Failure> {
+    let requested_broker_url = stamp.requested_broker_url.clone();
+    let document = discovery::broker_document(&requested_broker_url)
+        .map_err(|e| describe_discovery_error(&e, &requested_broker_url))?;
+    let Some(config) = discover_oidc_after_publication(stamp, document)
+        .map_err(|e| describe_discovery_error(&e, &requested_broker_url))?
+    else {
+        return Ok(None);
+    };
     // The button is drawn from a discovery that may be minutes old; this is the
     // fresh one, and an operator who has since turned the feature off wins.
     if !config.device_grant.enabled() {
@@ -963,11 +1141,17 @@ fn run_create_grant(
     let base_url = config.base_url.clone();
     let broker_url = base_url.as_str();
 
-    // Never silent: a device grant is the user authorizing *this machine*, and
-    // authorizing it needs them to have just proved who they are.
-    let Some(token) = acquire_token(&config, false, use_native)? else {
+    // Creating a device grant never runs silently: the user must have just
+    // proved who they are.
+    if !still_current(stamp) {
+        return Ok(None);
+    }
+    let Some(token) = acquire_token(&config, false, use_native, effects)? else {
         return Ok(None);
     };
+    if !still_current(stamp) {
+        return Ok(None);
+    }
 
     // Nothing is marked stale here. `create_grant` reuses the key this machine
     // already has, so a renewal refused -- at the cap, outside the group, a
@@ -976,17 +1160,16 @@ fn run_create_grant(
     // that never broke. On success the new grant is written over the old one
     // anyway; and a grant that really is dead is caught where it shows, at the
     // next exchange, by the `InvalidProof` arm above.
-    session::create_grant(broker_url, token.expose(), &config.device_grant.audience, target)
-        .map(Some)
-        .map_err(|e| match e {
-            session::GrantError::Broker(e) => describe_grant_error(&e, &host_of(broker_url)),
-            session::GrantError::Local(e) => {
-                (Some(Fault::Other), fill(tr().err_grant_key, &[("detail", &format!("{e:#}"))]))
-            }
-        })
+    match session::create_grant(broker_url, token.expose(), &config.device_grant.audience, target) {
+        Ok(grant) => Ok(Some((grant, base_url))),
+        Err(session::GrantError::Broker(e)) => Err(describe_grant_error(&e, &host_of(broker_url))),
+        Err(session::GrantError::Local(e)) => {
+            Err((Some(Fault::Other), fill(tr().err_grant_key, &[("detail", &format!("{e:#}"))])))
+        }
+    }
 }
 
-// ---- elevated one-shots ----------------------------------------------------
+// ---- elevated operations -----------------------------------------------------
 
 /// Relaunch ourselves elevated to register the realm with Windows, then re-check.
 pub fn begin_enroll() -> bool {
@@ -1021,7 +1204,7 @@ pub fn begin_reenroll() -> bool {
 /// to.
 ///
 /// **The child renders nothing.** UIPI runs the right way for this -- it can
-/// report down to the medium-IL tray, and the tray could never drive its UI --
+/// report down to the medium-IL agent, and the agent could never drive its UI --
 /// so the confirmation happened here, before the prompt, and what comes back is
 /// an exit code plus one sentence through a file whose path this side chose.
 /// Absent or unreadable is *couldn't confirm*, never a fabricated success.
@@ -1086,7 +1269,7 @@ fn spawn_elevated(mut args: Vec<String>, recheck_enrollment: bool, action: Actio
             message: fill(tr().err_internal, &[("detail", "panic in the elevation worker")]),
         });
         // Post either way -- the event is what releases the busy slot.
-        post(Event::Elevated { action, outcome, recheck_enrollment });
+        post(Event::ElevatedFinished { action, outcome, recheck_enrollment });
     });
     true
 }
@@ -1095,4 +1278,344 @@ fn spawn_elevated(mut args: Vec<String>, recheck_enrollment: bool, action: Actio
 /// two agents in two logon sessions cannot read each other's.
 fn result_path() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("kerbridge-elevated-{}.txt", std::process::id()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::FileConfig;
+    use crate::discovery::{Defaults, DeviceGrantConfig, KerberosConfig};
+    use std::cell::{Cell, RefCell};
+
+    static STATE_LOCK: Mutex<()> = Mutex::new(());
+
+    fn install_agent(broker_url: &str) {
+        let settings = crate::config::Settings::for_test(FileConfig {
+            broker_url: Some(broker_url.to_owned()),
+            ..FileConfig::default()
+        });
+        super::super::AGENT.with(|slot| *slot.borrow_mut() = Some(Agent::new(settings)));
+        BUSY.store(false, Ordering::Relaxed);
+        GRANT_CLEANUP.store(false, Ordering::Relaxed);
+        *REFRESH_TOKEN.lock().unwrap() = None;
+    }
+
+    fn snapshot(realm: &str, source: &str) -> BrokerSnapshot {
+        BrokerSnapshot {
+            kerberos: KerberosConfig {
+                realm: realm.to_owned(),
+                kdcs: vec![format!("kdc.{}", realm.to_ascii_lowercase())],
+                services: vec![format!("nas.{}", realm.to_ascii_lowercase())],
+            },
+            device_grant: DeviceGrantConfig { days: 30, audience: format!("kerbridge://{realm}") },
+            defaults: Defaults { silent: Some(false), ..Defaults::default() },
+            help_url: Some(format!("https://help.{}/", realm.to_ascii_lowercase())),
+            idp_name: format!("IdP {realm}"),
+            source: source.to_owned(),
+        }
+    }
+
+    fn discovered(stamp: DiscoveryStamp, snapshot: BrokerSnapshot) -> Event {
+        Event::Discovered { stamp, snapshot, accepted: None }
+    }
+
+    fn finish_test() {
+        BUSY.store(false, Ordering::Relaxed);
+        GRANT_CLEANUP.store(false, Ordering::Relaxed);
+        *REFRESH_TOKEN.lock().unwrap() = None;
+        super::super::AGENT.with(|slot| *slot.borrow_mut() = None);
+    }
+
+    #[test]
+    fn device_grant_and_sign_in_flow_publish_before_oidc_failure() {
+        let published = Cell::new(false);
+        let order = RefCell::new(Vec::new());
+        let result: Result<Option<()>, &str> = after_broker_document(
+            "discovery document",
+            |_| {
+                order.borrow_mut().push("published");
+                published.set(true);
+                true
+            },
+            |_| {
+                assert!(published.get());
+                order.borrow_mut().push("OIDC failed");
+                Err("OIDC failed")
+            },
+        );
+
+        assert_eq!(result, Err("OIDC failed"));
+        assert!(published.get(), "the accepted snapshot remains published");
+        assert_eq!(&*order.borrow(), &["published", "OIDC failed"]);
+    }
+
+    #[test]
+    fn broker_snapshot_is_applied_before_following_oidc_failure() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent("https://a.example.site");
+        let stamp = with(Agent::advance_discovery).unwrap();
+        let expected = snapshot("A.SITE", "a");
+
+        let result: Result<Option<()>, &str> = after_broker_document(
+            "parsed discovery document",
+            |_| apply(discovered(stamp.clone(), expected.clone())),
+            |_| Err("OIDC failed"),
+        );
+
+        assert_eq!(result, Err("OIDC failed"));
+        with(|a| {
+            assert!(a.kerberos == expected.kerberos);
+            assert_eq!(a.help_url, expected.help_url);
+            assert_eq!(a.idp_name, expected.idp_name);
+            assert_eq!(a.source, expected.source);
+            assert!(a.settings.defaults_ready());
+        });
+        finish_test();
+    }
+
+    #[test]
+    fn event_application_rejects_late_target_and_same_target_generations() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent("https://a.example.site");
+        let accepted_a = with(Agent::advance_discovery).unwrap();
+        assert!(apply(discovered(accepted_a, snapshot("A.SITE", "a"))));
+        let late_a = with(Agent::advance_discovery).unwrap();
+
+        with(|a| {
+            a.settings.set_broker_url("https://b.example.site");
+            a.invalidate_broker_snapshot();
+        });
+        let older_b = with(Agent::advance_discovery).unwrap();
+        let newest_b = with(Agent::advance_discovery).unwrap();
+        assert!(!apply(discovered(older_b, snapshot("OLD.SITE", "old"))));
+        let expected_b = snapshot("B.SITE", "b");
+        assert!(apply(discovered(newest_b, expected_b.clone())));
+        assert!(!apply(discovered(late_a, snapshot("LATE.SITE", "late"))));
+
+        with(|a| {
+            assert!(a.kerberos == expected_b.kerberos);
+            assert_eq!(a.help_url, expected_b.help_url);
+            assert_eq!(a.idp_name, expected_b.idp_name);
+            assert_eq!(a.source, expected_b.source);
+        });
+        finish_test();
+    }
+
+    #[test]
+    fn stale_terminal_discards_worker_effects_and_releases_only_its_operation() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent("https://a.example.site");
+        let accepted = with(Agent::advance_discovery).unwrap();
+        assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
+        with(|a| {
+            a.settings.set_grant(Some(Grant {
+                grant_id: "1a2b3c4d".into(),
+                identity: "kb1|entra|subject".into(),
+                principal: None,
+                audience: "kerbridge://A.SITE".into(),
+                sign_in_required_by: 1_785_000_000,
+            }));
+        });
+        *REFRESH_TOKEN.lock().unwrap() = Some(crate::secret::Secret::new("current"));
+
+        let stale = with(|a| {
+            let stamp = a.advance_discovery().unwrap();
+            a.started_busy(stamp.clone(), Action::SignIn);
+            a.phase = Phase::SigningIn;
+            stamp
+        });
+        BUSY.store(true, Ordering::Relaxed);
+        let _newer = with(|a| {
+            let stamp = a.advance_discovery().unwrap();
+            a.record(Some(Fault::Network), "current fault".into());
+            stamp
+        });
+        let effects = WorkerEffects {
+            refresh_token: RefreshUpdate::Set(None),
+            browser_session_started: true,
+            grant_stale: true,
+            injection_realm: None,
+        };
+        assert!(apply(Event::SignInFailed {
+            stamp: stale,
+            effects,
+            fault: Some(Fault::Refused),
+            message: "stale fault".into(),
+            quiet: false,
+        }));
+
+        with(|a| {
+            assert_eq!(a.fault, Some(Fault::Network));
+            assert_eq!(a.message, "current fault");
+            assert!(a.settings.grant().is_some());
+            assert!(!a.settings.browser_session());
+            assert!(a.busy_operation.is_none());
+            assert!(!a.in_flight.contains(&Action::SignIn));
+        });
+        assert!(REFRESH_TOKEN.lock().unwrap().is_some());
+        assert!(!BUSY.load(Ordering::Relaxed));
+        finish_test();
+    }
+
+    #[test]
+    fn stale_terminal_cannot_release_newer_busy_or_cloud_work() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent("https://a.example.site");
+        let accepted = with(Agent::advance_discovery).unwrap();
+        assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
+        with(|a| assert!(a.settings.set_browser_session(true)));
+        let stale = with(Agent::advance_discovery).unwrap();
+        let newer = with(|a| {
+            let stamp = a.advance_discovery().unwrap();
+            a.started_busy(stamp.clone(), Action::CreateGrant);
+            a.started(Action::SignOutIdp);
+            a.cloud_sign_out = Some(stamp.clone());
+            stamp
+        });
+        BUSY.store(true, Ordering::Relaxed);
+
+        assert!(!apply(Event::Cancelled {
+            stamp: stale.clone(),
+            effects: WorkerEffects::default(),
+        }));
+        assert!(!apply(Event::CloudSignedOut { stamp: stale, asked: true }));
+        with(|a| {
+            assert_eq!(a.busy_operation.as_ref().map(|op| &op.stamp), Some(&newer));
+            assert_eq!(a.cloud_sign_out.as_ref(), Some(&newer));
+            assert!(a.in_flight.contains(&Action::CreateGrant));
+            assert!(a.in_flight.contains(&Action::SignOutIdp));
+            assert!(a.settings.browser_session());
+        });
+        assert!(BUSY.load(Ordering::Relaxed));
+        finish_test();
+    }
+
+    #[test]
+    fn broker_change_is_rejected_while_worker_owns_the_slot() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent("https://a.example.site");
+        let generation = with(|a| a.discovery_generation);
+        BUSY.store(true, Ordering::Relaxed);
+
+        super::super::commands::apply_settings(super::super::commands::SettingsChange {
+            broker_url: Some("https://b.example.site"),
+            ..super::super::commands::SettingsChange::default()
+        });
+
+        with(|a| {
+            assert_eq!(a.settings.broker_url(), Some("https://a.example.site"));
+            assert_eq!(a.discovery_generation, generation);
+        });
+        finish_test();
+    }
+
+    #[test]
+    fn cloud_sign_out_serializes_generation_allocating_work_in_both_directions() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent("https://a.example.site");
+        let accepted = with(Agent::advance_discovery).unwrap();
+        assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
+        with(|a| assert!(a.settings.set_browser_session(true)));
+        let cloud = with(|a| {
+            let stamp = a.advance_discovery().unwrap();
+            a.cloud_sign_out = Some(stamp.clone());
+            a.started(Action::SignOutIdp);
+            stamp
+        });
+        let generation = with(|a| a.discovery_generation);
+
+        discover_in_background();
+        start_worker(Trigger::Startup);
+        assert!(!create_grant());
+        with(|a| {
+            assert_eq!(a.discovery_generation, generation);
+            assert_eq!(a.cloud_sign_out.as_ref(), Some(&cloud));
+            assert!(a.startup_retry_at.is_some());
+        });
+        assert!(!BUSY.load(Ordering::Relaxed));
+
+        with(|a| {
+            a.cloud_sign_out = None;
+            a.in_flight.retain(|action| *action != Action::SignOutIdp);
+        });
+        BUSY.store(true, Ordering::Relaxed);
+        assert!(!begin_cloud_sign_out());
+        assert_eq!(with(|a| a.discovery_generation), generation);
+        finish_test();
+    }
+
+    #[test]
+    fn background_grant_cleanup_does_not_present_a_result() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent("https://new.example.site");
+        let generation = with(Agent::started_grant_cleanup);
+        GRANT_CLEANUP.store(true, Ordering::Relaxed);
+
+        assert!(apply(Event::GrantGivenUp {
+            generation,
+            broker: Some("https://old.example.site".into()),
+            revoked: true,
+            saved: true,
+            report: false,
+        }));
+
+        with(|a| {
+            assert!(a.grant_cleanup.is_none());
+            assert!(!a.in_flight.contains(&Action::GiveUpGrant));
+        });
+        assert!(!GRANT_CLEANUP.load(Ordering::Relaxed));
+        finish_test();
+    }
+
+    #[test]
+    fn dns_discovery_keeps_1_0_1_persisted_state() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        let url = "https://kerbridge.example.site";
+        let settings = crate::config::Settings::for_test(FileConfig {
+            grant: Some(Grant {
+                grant_id: "1a2b3c4d".into(),
+                identity: "kb1|entra|subject".into(),
+                principal: None,
+                audience: "kerbridge://EXAMPLE.SITE".into(),
+                sign_in_required_by: 1_785_000_000,
+            }),
+            browser_session: true,
+            cache: crate::config::Cache {
+                realm: "EXAMPLE.SITE".into(),
+                ..crate::config::Cache::default()
+            },
+            ..FileConfig::default()
+        });
+        super::super::AGENT.with(|slot| *slot.borrow_mut() = Some(Agent::new(settings)));
+        with(|a| {
+            assert_eq!(a.kerberos.realm, "EXAMPLE.SITE");
+            assert!(a.settings.grant().is_some());
+            assert!(a.settings.browser_session());
+        });
+
+        assert!(apply(Event::BrokerDiscovered { url: url.into() }));
+        with(|a| {
+            assert_eq!(a.settings.broker_url(), Some(url));
+            assert_eq!(a.kerberos.realm, "EXAMPLE.SITE");
+            assert!(a.settings.grant().is_some());
+            assert!(a.settings.browser_session());
+        });
+        finish_test();
+    }
+
+    #[test]
+    fn rejected_first_leg_never_starts_oidc() {
+        let oidc_started = Cell::new(false);
+        let result: Result<Option<()>, ()> = after_broker_document(
+            "stale discovery document",
+            |_| false,
+            |_| {
+                oidc_started.set(true);
+                Ok(())
+            },
+        );
+
+        assert_eq!(result, Ok(None));
+        assert!(!oidc_started.get());
+    }
 }

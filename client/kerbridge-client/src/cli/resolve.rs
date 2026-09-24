@@ -14,6 +14,20 @@ pub(crate) fn pinned_target() -> Option<String> {
     config::Settings::load().grant_for().map(str::to_owned)
 }
 
+/// Whether persisted agent state can be used for this CLI run. A DNS-selected
+/// broker has no stored URL, so absence of an explicit override is the proof.
+pub(crate) fn stored_state_applies(
+    explicit_broker: Option<&str>,
+    requested_broker: &str,
+    configured_broker: Option<&str>,
+) -> bool {
+    match (explicit_broker, configured_broker) {
+        (Some(_), None) => false,
+        (_, Some(configured)) => configured == requested_broker,
+        (None, None) => true,
+    }
+}
+
 /// Which account a `--grant*` run acts on: `--for` if given, else the pin.
 ///
 /// The UPN check happens here rather than only at the broker because the round
@@ -52,7 +66,7 @@ pub(crate) fn resolve_broker(args: &Args) -> Result<String> {
     settings
         .broker_url()
         .map(str::to_owned)
-        .ok_or_else(|| anyhow!("no broker configured -- pass --broker <url>, publish a _kerbridge._tcp.<domain> SRV record, or set it in the tray's Settings window"))
+        .ok_or_else(|| anyhow!("no broker configured -- pass --broker <url>, publish a _kerbridge._tcp.<domain> SRV record, or set it in the agent's Settings window"))
 }
 
 /// Obtain an access token: use the one supplied, or run the browser sign-in.
@@ -67,10 +81,12 @@ pub(crate) fn obtain_token(args: &Args, broker: &str) -> Result<(String, Secret)
         return Ok((broker.to_owned(), Secret::new(token.trim())));
     }
     let config = discovery::discover(broker).context("discovering OIDC configuration")?;
-    // Share the realm with the tray: whichever of the two discovers it first, the
-    // other should be able to name it (and check enrollment against it) offline.
+    // Share the realm with the agent only when this run follows its effective
+    // broker. An explicit override must not replace the agent's cached realm.
     let mut settings = config::Settings::load();
-    if settings.set_cache(&config.kerberos) {
+    if stored_state_applies(args.broker.as_deref(), broker, settings.broker_url())
+        && settings.set_cache(&config.kerberos)
+    {
         let _ = settings.save();
     }
     let tokens = oidc::login(&config.oidc, &AtomicBool::new(false))
@@ -87,9 +103,38 @@ pub(crate) fn obtain_token(args: &Args, broker: &str) -> Result<(String, Secret)
 /// falling back to a live broker lookup only when nothing is cached -- so removing
 /// or purging a realm works even when the broker is unreachable.
 pub(crate) fn resolve_realm(args: &Args) -> Result<String> {
-    let cached = config::Settings::load().cache().realm.clone();
-    if !cached.is_empty() {
-        return Ok(cached);
+    let settings = config::Settings::load();
+    let requested = args.broker.as_deref().or_else(|| settings.broker_url()).unwrap_or_default();
+    if stored_state_applies(args.broker.as_deref(), requested, settings.broker_url()) {
+        let cached = settings.cache().realm.clone();
+        if !cached.is_empty() {
+            return Ok(cached);
+        }
     }
     Ok(discovery::discover(&resolve_broker(args)?)?.kerberos.realm)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stored_state_applies;
+
+    #[test]
+    fn dns_run_uses_the_stored_grant_without_a_persisted_broker_url() {
+        assert!(stored_state_applies(None, "https://kerbridge.example.site", None));
+    }
+
+    #[test]
+    fn configured_run_uses_state_only_for_its_effective_broker() {
+        let broker = "https://kerbridge.example.site";
+        assert!(stored_state_applies(None, broker, Some(broker)));
+        assert!(!stored_state_applies(None, broker, Some("https://other.example.site")));
+    }
+
+    #[test]
+    fn explicit_broker_uses_state_only_when_it_matches_configuration() {
+        let broker = "https://kerbridge.example.site";
+        assert!(stored_state_applies(Some(broker), broker, Some(broker)));
+        assert!(!stored_state_applies(Some(broker), broker, None));
+        assert!(!stored_state_applies(Some(broker), broker, Some("https://other.example.site")));
+    }
 }

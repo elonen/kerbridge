@@ -34,7 +34,7 @@ Do this after you have uploaded the ADMX template (above).
 
 *Devices → Manage devices → Configuration → Create → New policy*, platform
 **Windows 10 and later**, profile type **Templates → Imported Administrative
-templates**. The five settings are under *Configuration settings*, in a **NAS
+templates**. The six settings are under *Configuration settings*, in a **NAS
 Access by KerBridge** category.
 
 Two profile types look right and are not:
@@ -109,7 +109,7 @@ Manager closes and revives a running agent, so `/qn` needs no reboot.
 ## 4. Register the realm during the push (optional)
 
 Windows has to be told the realm exists before an injected ticket means
-anything, and that is a machine-wide, elevated, reboot-once step. The tray
+anything, and that is a machine-wide, elevated, reboot-once step. The agent
 offers it at first run, but the push can do it instead — it runs as SYSTEM,
 which is already elevated, and Intune already knows how to reboot.
 

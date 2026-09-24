@@ -96,14 +96,17 @@ pub(crate) unsafe extern "system" fn wndproc(
             match loword(lparam as usize) {
                 WM_LBUTTONUP => flyout::toggle(),
                 WM_RBUTTONUP | WM_CONTEXTMENU => show_menu(),
-                // A click on a toast should always open, never toggle.
-                NIN_BALLOONUSERCLICK => flyout::show(),
+                // A queued balloon click can arrive after silent mode is enabled;
+                // ignore it to prevent an unsolicited flyout.
+                NIN_BALLOONUSERCLICK if !agent::silent() => flyout::show(),
                 _ => {}
             }
             0
         }
         WM_SHOW_FLYOUT => {
-            flyout::show();
+            if !agent::silent() {
+                flyout::show();
+            }
             0
         }
         WM_AGENT => {
@@ -336,6 +339,9 @@ fn show_menu() {
 /// Balloon notification through the tray icon. Reached through `WinHost`, which
 /// has already decided that no surface of ours is carrying this.
 pub(crate) fn notify(title: &str, body: &str, severity: Severity) {
+    if agent::silent() {
+        return;
+    }
     let a = app();
     unsafe {
         let mut nid = tray_id(a.owner);
