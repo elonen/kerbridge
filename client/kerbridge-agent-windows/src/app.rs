@@ -60,9 +60,11 @@ pub(crate) struct App {
     /// Last rendered whole minute of ticket life, so the 1 Hz timer only rebuilds
     /// the flyout when the text it shows would actually change.
     pub(crate) shown_minute: Cell<i64>,
-    /// Last rendered condition, so the icon and infotip follow a change the clock
-    /// caused rather than an event.
-    pub(crate) shown_condition: Cell<Option<Condition>>,
+    /// Last condition read from the core, so time-driven changes rebuild every
+    /// surface once even while tray delivery is retrying.
+    pub(crate) observed_condition: Cell<Option<Condition>>,
+    /// What the shell has accepted, plus bounded retry state.
+    pub(crate) tray_delivery: Cell<crate::tray_delivery::DeliveryState<Condition>>,
     /// When the flyout last hid itself because it lost activation. A tray click
     /// deactivates it *before* the shell delivers the click, so without this the
     /// click that closes the flyout immediately reopens it.

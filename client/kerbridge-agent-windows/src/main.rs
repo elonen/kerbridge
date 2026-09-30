@@ -40,6 +40,7 @@ mod settings;
 mod sys;
 mod theme;
 mod tray;
+mod tray_delivery;
 mod ui;
 mod wam;
 
@@ -261,7 +262,8 @@ fn main() {
             flyout_visible: Cell::new(false),
             tray_cur: Cell::new(std::ptr::null_mut()),
             shown_minute: Cell::new(i64::MIN),
-            shown_condition: Cell::new(None),
+            observed_condition: Cell::new(None),
+            tray_delivery: Cell::new(tray_delivery::DeliveryState::new()),
             auto_hidden_at: Cell::new(None),
             buttons: RefCell::new(Vec::new()),
             menu_actions: RefCell::new(Vec::new()),
@@ -391,7 +393,7 @@ fn set_face(lf: &mut LOGFONTW, name: &str) {
 pub(crate) fn refresh_ui() {
     let a = app();
     let status = agent::status();
-    a.shown_condition.set(Some(status.condition));
+    a.observed_condition.set(Some(status.condition));
     tray::update(&status);
     if a.flyout_visible.get() {
         flyout::rebuild();

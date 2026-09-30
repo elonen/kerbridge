@@ -634,8 +634,12 @@ impl Agent {
 
     /// True while the injected ticket is still usable, whatever the agent is doing.
     fn holds_live_ticket(&self) -> bool {
+        self.holds_live_ticket_at(time::now())
+    }
+
+    fn holds_live_ticket_at(&self, now: i64) -> bool {
         matches!(self.phase, Phase::Connected | Phase::SigningIn)
-            && self.end > time::now()
+            && self.end > now
             && !self.principal.is_empty()
     }
 

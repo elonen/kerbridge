@@ -761,12 +761,14 @@ target a machine whose drives have just broken gets an unexplained window. **The
 raise must never open a modal dialog**, which is a step of the escalation ladder
 that no machine-initiated event has earned.
 
-The ticket's time-dependent values are one `Option<TicketClock>`: `None` when no
-ticket is held, and `Some` with `remaining: 0` when the ticket has lapsed.
+The ticket's time-dependent values are one `Option<TicketClock>`: `Some` only
+while the ticket is live, and `None` when it is absent or has reached its End
+Time. Historical clocks remain agent state and never use current-access copy.
+`TicketClock.remaining` is therefore strictly positive.
 `next_attempt_at_earliest` and `grant_expiry` are `Option<i64>` for the same
 reason. `TicketClock` carries no methods — it is worked out once in `status()`
-against one reading of the clock, and a surface that can recompute it is a second
-place where the lifecycle is settled.
+against one reading of the clock, and a surface that can recompute it is a
+second place where the lifecycle is settled.
 
 ## What the surface decides
 

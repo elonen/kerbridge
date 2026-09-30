@@ -12,9 +12,10 @@ use windows_sys::Win32::UI::Shell::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, DefWindowProcW, DestroyIcon, DestroyMenu, DestroyWindow,
-    GetCursorPos, MF_SEPARATOR, MF_STRING, PostMessageW, PostQuitMessage, RegisterWindowMessageW,
-    SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WM_CONTEXTMENU,
-    WM_DESTROY, WM_ENDSESSION, WM_LBUTTONUP, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER,
+    GetCursorPos, HICON, MF_SEPARATOR, MF_STRING, PostMessageW, PostQuitMessage,
+    RegisterWindowMessageW, SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    WM_CONTEXTMENU, WM_DESTROY, WM_ENDSESSION, WM_LBUTTONUP, WM_RBUTTONUP, WM_SETTINGCHANGE,
+    WM_TIMER,
 };
 use windows_sys::core::GUID;
 
@@ -27,6 +28,7 @@ use crate::app::{LOGO_SVG, SM_CXSMICON, app, app_opt};
 use crate::present::infotip;
 use crate::sys::{loword, status_icon, wide};
 use crate::theme::{allow_dark_for_window, taskbar_dark};
+use crate::tray_delivery::{Diagnostic, IconDisposition, ShellCall};
 use crate::{flyout, settings, start_action};
 
 pub(crate) const OWNER_CLASS: &str = "NasAuthOwner";
@@ -167,6 +169,35 @@ fn tray_id(owner: HWND) -> NOTIFYICONDATAW {
     nid
 }
 
+fn notify_icon(message: u32, nid: &NOTIFYICONDATAW) -> bool {
+    unsafe { Shell_NotifyIconW(message, nid) != 0 }
+}
+
+fn registration(icon: HICON) -> NOTIFYICONDATAW {
+    let mut nid = tray_id(app().owner);
+    nid.uFlags |= NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid.uCallbackMessage = WM_TRAY;
+    nid.hIcon = icon;
+    // The name Windows keeps for its notification-area settings list. A later
+    // modification writes the state-carrying tooltip.
+    copy_into(&mut nid.szTip, tr().app_name);
+    nid
+}
+
+/// Add once, then take over a path-bound stale GUID registration and add once more.
+fn add_registration(icon: HICON) -> bool {
+    let nid = registration(icon);
+    if notify_icon(NIM_ADD, &nid) {
+        return true;
+    }
+    let _ = notify_icon(NIM_DELETE, &nid);
+    if notify_icon(NIM_ADD, &nid) {
+        return true;
+    }
+    kerbridge_client::log::error("tray: Shell_NotifyIcon(NIM_ADD) failed after delete/re-add");
+    false
+}
+
 /// Subscribe to the shell's Explorer-restart broadcast, then put the icon up.
 pub(crate) fn install() {
     TASKBAR_CREATED.store(
@@ -179,34 +210,15 @@ pub(crate) fn install() {
 /// Add (or re-add) our notification-area icon and paint the current state on it.
 fn add_icon() {
     let a = app();
-    unsafe {
-        let mut nid = tray_id(a.owner);
-        nid.uFlags |= NIF_ICON | NIF_MESSAGE | NIF_TIP;
-        nid.uCallbackMessage = WM_TRAY;
-        // Only up until the `update` below paints the condition on it, but the
-        // shell scales whatever `NIM_ADD` carries, so hand it the metric's size.
-        let dpi = GetDpiForWindow(a.owner).max(96);
-        nid.hIcon = a.logo_at(GetSystemMetricsForDpi(SM_CXSMICON as i32, dpi).max(16) as u32);
-        // The name Windows keeps for its own notification-area list. It records
-        // that once, at `NIM_ADD`: the state-carrying tip written by every later
-        // `NIM_MODIFY` never reaches the settings list.
-        copy_into(&mut nid.szTip, tr().app_name);
-        if Shell_NotifyIconW(NIM_ADD, &nid) == 0 {
-            // A GUID is bound to the path of the executable that registered it,
-            // and an add from a different path fails outright. That is this
-            // build's ordinary case -- the same agent runs from the share, from
-            // a local copy and from the installed location -- so take the
-            // registration over rather than leaving no icon at all.
-            Shell_NotifyIconW(NIM_DELETE, &nid);
-            if Shell_NotifyIconW(NIM_ADD, &nid) == 0 {
-                // The one way to learn the icon never landed. Windows 11 also
-                // demotes new icons to an overflow the taskbar may not show, so
-                // an invisible tray icon is not on its own evidence of a failure
-                // here.
-                kerbridge_client::log::error("tray: Shell_NotifyIcon(NIM_ADD) failed");
-            }
-        }
-    }
+    let mut delivery = a.tray_delivery.get();
+    delivery.invalidate();
+    a.tray_delivery.set(delivery);
+
+    // Only up until `update` paints the condition on it, but the shell scales
+    // whatever `NIM_ADD` carries, so hand it the metric's size.
+    let dpi = unsafe { GetDpiForWindow(a.owner) }.max(96);
+    let icon = a.logo_at(unsafe { GetSystemMetricsForDpi(SM_CXSMICON as i32, dpi) }.max(16) as u32);
+    let _ = add_registration(icon);
     update(&agent::status());
 }
 
@@ -217,19 +229,19 @@ pub(crate) fn remove_icon() {
     unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
 }
 
-/// One second of housekeeping: let the agent run its schedule, then repaint only
-/// what has actually changed -- the icon on a condition change, the flyout on
-/// either that or the countdown ticking over a minute.
+/// One second of housekeeping: run the agent schedule, retry pending shell
+/// delivery, and rebuild the flyout only when its content changes.
 fn on_tick() {
     let a = app();
     let scheduled_change = agent::tick();
     let status = agent::status();
     let condition_changed =
-        a.shown_condition.replace(Some(status.condition)) != Some(status.condition);
+        a.observed_condition.replace(Some(status.condition)) != Some(status.condition);
+    let tray_needs_update = a.tray_delivery.get().needs_update(status.condition);
     let minute = status.ticket.as_ref().map_or(-1, |t| t.remaining / 60);
     let minute_changed = a.shown_minute.replace(minute) != minute;
 
-    if scheduled_change || condition_changed {
+    if scheduled_change || condition_changed || tray_needs_update {
         update(&status);
     }
     if a.flyout_visible.get() && (scheduled_change || condition_changed || minute_changed) {
@@ -369,16 +381,49 @@ pub(crate) fn update(status: &Status) {
     let dpi = unsafe { GetDpiForWindow(a.owner) }.max(96);
     let size = unsafe { GetSystemMetricsForDpi(SM_CXSMICON as i32, dpi) }.max(16) as u32;
     let icon = status_icon(LOGO_SVG, size, taskbar_dark(), status.condition);
-    let old = a.tray_cur.replace(icon);
+    let tooltip = infotip(status);
+    let mut nid = tray_id(a.owner);
+    nid.uFlags |= NIF_ICON | NIF_TIP;
+    nid.hIcon = icon;
+    copy_into(&mut nid.szTip, &tooltip);
 
-    unsafe {
-        let mut nid = tray_id(a.owner);
-        nid.uFlags |= NIF_ICON | NIF_TIP;
-        nid.hIcon = icon;
-        copy_into(&mut nid.szTip, &infotip(status));
-        Shell_NotifyIconW(NIM_MODIFY, &nid);
-        if !old.is_null() {
-            DestroyIcon(old);
+    let content = (status.condition, tooltip.as_str());
+    let registration = registration(icon);
+    let mut delivery = a.tray_delivery.get();
+    let attempt = delivery.attempt(status.condition, content, |call| match call {
+        ShellCall::Modify(_) => notify_icon(NIM_MODIFY, &nid),
+        ShellCall::Add => notify_icon(NIM_ADD, &registration),
+        ShellCall::Delete => notify_icon(NIM_DELETE, &registration),
+    });
+    a.tray_delivery.set(delivery);
+
+    match attempt.diagnostic {
+        Diagnostic::None => {}
+        Diagnostic::ModifyFailed => kerbridge_client::log::warn(&format!(
+            "tray: Shell_NotifyIcon(NIM_MODIFY) failed: icon={:?}, tooltip={tooltip:?}; retrying",
+            status.condition
+        )),
+        Diagnostic::ReAdded => kerbridge_client::log::warn(&format!(
+            "tray: repeated NIM_MODIFY failures; re-added icon={:?}; tooltip retry pending",
+            status.condition
+        )),
+        Diagnostic::ReAddFailed => kerbridge_client::log::warn(&format!(
+            "tray: repeated NIM_MODIFY failures; could not re-add icon={:?}; backing off",
+            status.condition
+        )),
+    }
+
+    match attempt.icon {
+        IconDisposition::Delivered | IconDisposition::ReAdded => {
+            let old = a.tray_cur.replace(icon);
+            if !old.is_null() {
+                unsafe { DestroyIcon(old) };
+            }
+        }
+        IconDisposition::Unused => {
+            if !icon.is_null() {
+                unsafe { DestroyIcon(icon) };
+            }
         }
     }
 }
