@@ -1175,14 +1175,12 @@ flowchart LR
 | Status surface | a flyout window plus the tray menu | the menu, which is also the status window |
 | Autostart | a per-user `Run` value | `SMAppService` |
 
-Two consequences of that table are traps, and one accessor owns each of them:
+One consequence of that table is a trap, and one accessor owns it:
 
 - **`Settings::windows_sign_in` is the stored flag `&& cfg!(windows)`.** The flag
   defaults to on and travels with `config.toml`, so to read it raw made a Mac
   claim a supply that cannot exist, and several things downstream went wrong at once
   — including a *Renew now* that provably cannot get a ticket.
-- **`device::AVAILABLE` is false on macOS**, so the offer is absent from the
-  model and not filtered out of the surface.
 
 ## Known limits
 

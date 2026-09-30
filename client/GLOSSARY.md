@@ -122,11 +122,12 @@ signed in.
 
 ### device key
 
-The non-exportable ECDSA P-256 key a device grant stands on: Windows holds it in
-the TPM through CNG's platform crypto provider, user-scoped, so creating one
-needs no elevation and it dies with the profile. macOS has none — its device
-module reports unavailable, so nothing there offers to authorize the machine.
-<!-- refs: `MS_PLATFORM_CRYPTO_PROVIDER`; `client/kerbridge-client/src/macos/device.rs` reports `AVAILABLE = false` -->
+The non-exportable ECDSA P-256 key a device grant stands on. Windows holds it in
+the TPM through CNG's platform crypto provider, scoped to the user profile.
+macOS holds it in the Secure Enclave and stores a Mac-bound wrapped blob at mode
+`0600`; the file mode is its user boundary. Neither platform needs elevation to
+create one.
+<!-- refs: `MS_PLATFORM_CRYPTO_PROVIDER`; `client/kerbridge-client/src/macos/device.rs` -->
 <!-- avoid: TPM key, protected key, platform key, enclave key -->
 
 ### elevation

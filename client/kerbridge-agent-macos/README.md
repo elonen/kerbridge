@@ -30,11 +30,10 @@ sees "server disconnected". The system clears the error after 10 minutes. A
 reconnect then works. The agent disables the repair code:
 `ntlm_fallback_recovery = cfg!(windows)`.
 
-**No confirmation dialogs.** Windows needs dialogs for enrollment, repair, and
-device grants. macOS has none of these. `Host::elevating` is empty.
-`Host::finished` is unreachable. Some action labels name Windows. They are
-unreachable. `RealmNotRegistered` cannot occur. `enroll::state` always returns
-`Enrolled`.
+**No elevation dialogs.** Windows needs them for enrollment and repair. macOS
+needs neither, so `Host::elevating` is empty. Device-grant actions use ordinary
+confirmation alerts, and `Host::finished` reports their results.
+`RealmNotRegistered` cannot occur. `enroll::state` always returns `Enrolled`.
 
 **Badge is monochrome.** The agent draws the badge. It shares icon code with
 Windows: `kerbridge_client::icon`. Windows colors the badge. macOS does not. The
@@ -74,8 +73,8 @@ Two consequences:
   `status_closed` runs here.
 
 **Cloud sign-out follows the action list.** This platform never promotes it.
-There is no Secure Enclave key. There is no grant. `just_authorized` is never
-true.
+Device-grant actions use confirmation alerts; see **Device grants work here**
+below.
 
 ## TGT location
 
