@@ -35,7 +35,7 @@ pub(super) static KO: Strings = Strings {
     blk_no_grant: "이 장치는 {account}(으)로 동작할 권한이 없음",
     blk_grant_refused: "조직에서 이 승인을 거부함",
     blk_refused: "계정이 거부됨",
-    blk_ntlm_fallback: "네트워크 드라이브가 작동을 멈춤 (NTLM)",
+    blk_tgt_absent: "Kerberos TGT가 만료 전에 사라짐",
 
     details_heading: "Kerberos 세부 정보",
     meter_label: "액세스 유효 기간",

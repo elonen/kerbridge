@@ -60,7 +60,7 @@ user-visible text.
 
 Windows uses a flyout. Tray icons have no other surface. Menu-bar items do have
 a surface. macOS agents use disabled menu items to show state. The agent uses
-one surface. `Host::raise` opens the menu.
+one surface.
 
 `menu::plan` is a pure function of `Status`. The menu is a pure function of that
 plan. This makes change detection a comparison, not a guess.
@@ -101,8 +101,7 @@ autostart and silent mode. Windows uses instant-apply. That model does not cross
 do not exist.
 
 **Notification policy follows the shared design.** Silent mode suppresses
-Notification Center and machine-raised menu openings; an icon click still opens
-the menu.
+Notification Center notifications; an icon click still opens the menu.
 
 **Notification authorization is lazy.** When it runs from the app bundle, launch,
 settings changes, and menu use never request it. After configuration resolves to

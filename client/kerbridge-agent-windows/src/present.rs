@@ -45,8 +45,8 @@ pub(crate) fn ranked(st: &Status) -> Vec<Action> {
         .filter(|act| st.actions.contains(act))
         .filter(|act| match act {
             // The menu carries the hunch path; the front page offers it only
-            // where the agent has diagnosed one.
-            Action::RestartWorkstation => st.blockers.contains(&Blocker::NtlmFallback),
+            // while the TGT is seen absent.
+            Action::RestartWorkstation => st.blockers.contains(&Blocker::TgtAbsent),
             Action::CreateGrant => (!st.grant_target.is_empty() && !st.holds_grant) || due_soon,
             Action::SignIn => st.condition != Condition::Working,
             Action::SignOutIdp => st.just_authorized,

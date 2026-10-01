@@ -178,7 +178,7 @@ blockers = [
   { blocker = "blk_network_error",        arg = "servidor", plain = "O aplicativo não consegue chegar ao servidor da sua equipe de TI.", todo = "Verifique se você está na rede ou na VPN. As unidades que você já tem abertas costumam continuar funcionando." },
   { blocker = "blk_realm_unknown",        arg = "servidor", plain = "O aplicativo alcançou o servidor, mas ainda não recebeu a configuração dele.", todo = "Aguarde. Ele tenta de novo sozinho." },
   { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "Uma etapa única de configuração deste computador ainda não foi feita.", todo = "Use o botão de configuração. Ele pede permissão de administrador e uma reinicialização." },
-  { blocker = "blk_ntlm_fallback",        os = "win", plain = "Um soluço conhecido do Windows depois que um passe vence. Suas unidades ficaram travadas.", todo = "Salve seu trabalho e então use o botão de reparo." },
+  { blocker = "blk_tgt_absent",           plain = "O passe deste dispositivo sumiu antes da hora. O acesso ainda pode estar funcionando.", todo = "Normalmente nada: o aplicativo obtém um novo sozinho. Se uma unidade pedir senha, renove." },
   { blocker = "blk_refused",              plain = "O servidor da sua organização não aceitou sua conta para estas unidades.", todo = "Não é algo que este computador possa resolver — fale com a TI." },
   { blocker = "blk_no_grant",             arg = "conta", plain = "Uma máquina de conta compartilhada que ainda não foi autorizada.", todo = "Alguém com permissão para autorizá-la precisa entrar aqui." },
   { blocker = "blk_grant_refused",        plain = "A política não permite que este dispositivo dispense o navegador.", todo = "Tentar de novo não vai ajudar. Fale com a TI." },

@@ -49,8 +49,9 @@ failure.
 - Sign-out as a realm-scoped ticket purge plus the release of the in-memory
   refresh token. The agent owns the ticket cache. It does not own live SMB
   sessions.
-- A recovery path for the measured NTLM fallback. Windows raises the repair
-  offer by default. Windows only.
+- Silent re-injection when the TGT disappears before its End Time, and an
+  explicit, confirmed repair for the measured NTLM fallback. The repair is
+  Windows only.
 - **Device grants**, off unless the deployment enables them. A device grant is a
   non-exportable ECDSA P-256 key. This machine's hardware holds it: the TPM on
   Windows, the Secure Enclave on macOS. It stands in for a browser sign-in for a
@@ -301,8 +302,8 @@ says all of this again where someone editing the folder will read it.
 
 **An agent crate owns its platform's windows and nothing else.** It supplies the
 methods of `agent::Host` — wake the UI thread, notify, report an outcome,
-say that an elevation has started, name the primary action, raise the status
-surface, open a path, and ask the OS for a token — and the core knows nothing
+say that an elevation has started, name the primary action, open a path, and
+ask the OS for a token — and the core knows nothing
 else about it.
 
 ## Ticket lifecycle
@@ -334,8 +335,17 @@ the refresh-token grant, then it reports; what the surface announces is in
 [Notifications](#notifications). The re-injection **must land before the End
 Time**. Failed renewals retry with progressive backoff starting at 60 s, doubling
 to a 10-minute ceiling, clamped to never exceed the ordinary midpoint schedule.
+While the TGT is absent, the recovery backoff in
+[TGT absent before End Time](#tgt-absent-before-end-time) replaces this one.
 If the End Time comes near with nothing landed, the agent escalates at
 T−20 minutes, and at the End Time the condition becomes `Stopped`.
+
+**End Time with a re-injection still due.** A machine that sleeps across the
+midpoint and the End Time wakes with both behind it. The first tick after
+resume starts that re-injection silently instead of dropping it, and starts it
+again a minute later if the busy-slot gates declined it. The condition stays
+`Stopped` until the exchange lands, and a failure is announced as `Stopped`.
+After that outcome the agent makes no further attempt after End Time on its own.
 
 ```mermaid
 flowchart TD
@@ -474,34 +484,68 @@ each one to a different message and a different action.
 | `Cannot contact a domain controller` | transport (the realm or the KDC is unreachable) | Check the enrollment state. A KDC outage does not break access from cached tickets. Report it, do not thrash. |
 | Broker 5xx from a live broker | a server-side outage | Retry with backoff, with a message distinct from the unreachable one. |
 | Transport error to the broker | the broker is unreachable | Retry with backoff. |
-| The injected TGT is gone before its End Time | the NTLM fallback | See below. |
+| The injected TGT is gone before its End Time | an observation, not a class | Silent re-injection. See below. |
 
-**The detection of the NTLM fallback needs no SMB knowledge.** The discriminator
-that identifies the fallback on the wire has no client-side proxy, and the
-`services` list is empty in the common layout, so frequently there is no host to
-probe. The agent uses a local signal instead: an access that falls back evicts the
-injected TGT immediately, before its End Time
-(research spike `windows-tgt-followup-entra-joined`
-§ 787-792). So a TGT that is simply gone, while the agent still believes in one,
-is a positive signal, read through the LSA query the agent already runs. There is
-no `\\host\IPC$` probe, and none is wanted.
+### TGT absent before End Time
 
-The check is skipped while a worker holds the busy slot, because a re-injection
-purges the realm before it submits and that window looks exactly like a fallback.
+**Absence is an observation, not a diagnosis.** An SMB access that falls back to
+NTLM evicts the injected TGT immediately, before its End Time
+(research spike `windows-tgt-followup-entra-joined` § 787-792). But the converse
+does not hold: on a physical Entra-joined Windows 11 25H2 workstation the TGT
+disappeared while the user saw no loss of access, and a later exchange restored
+it with no repair. So the agent does not call an absent TGT an NTLM fallback, a
+broken drive or a reason to restart `LanmanWorkstation`. It puts the ticket back.
 
-**One response per episode.** An episode opens on the signal above and closes
-only when a ticket exchange lands, or the agent restarts. Detection opens the
-status surface once. A successful repair refreshes and dismisses that surface,
-but leaves the episode open.
+**Detection.** Every 30 s the agent reads the ticket cache for the realm's TGT,
+through the query it already runs, while it holds a live ticket. There is no
+`\\host\IPC$` probe, and none is wanted. A query error is unknown and starts
+nothing. The check is skipped while a worker holds the busy slot, because a
+re-injection purges the realm before it submits and that window looks exactly
+like an absence.
 
-A repair restarts `LanmanWorkstation` after interactive confirmation, or when an
-operator runs the already elevated `kerbridge --repair --yes` command. It
-disconnects all SMB sessions on the machine, not only the realm's.
+**Recovery.** The first absence starts a silent re-injection at once, through the
+ordinary silent path: the device grant, the native token or the refresh token,
+never a browser. Every later attempt reads the cache again first and goes ahead
+only while the TGT is still absent. A landed exchange pauses recovery while its
+TGT stays present; it does not claim that SMB recovered.
 
-`ntlm_fallback_recovery` gates the agent machinery — the detector, the episode
-and the menu item. The operator's explicit `kerbridge --repair` one-shot remains
-available. The setting defaults to `cfg!(windows)`, which switches the agent path
-off on macOS in one line and keeps `#[cfg]` out of the agent.
+**One episode, one backoff.** An episode opens at the first absence and holds the
+loss streak. Each further absence, and each failed attempt, advances the streak.
+Each attempt after the first waits 60 s, doubling to a ceiling of an hour, less up
+to a tenth of random jitter, and continues at the ceiling. A landed exchange does
+not reset the streak, so a replacement that disappears again waits longer. The
+episode ends only when:
+
+- a replacement lasts until its scheduled re-injection is due,
+- a repair succeeds, or
+- the session resets: sign-off, a realm or broker change, or a restart.
+
+Only the agent's own *Sign off* stops re-injection. A ticket removed by other
+means — `klist purge`, `kdestroy`, or a CLI `--sign-off` — is an absence like
+any other, and the agent puts it back silently. This holds on macOS too.
+
+**What stops it.** Transport, rate-limit, server and local injection failures
+retry on the backoff. A refusal of the identity or its grant, or nothing to be
+silent with, suspends recovery attempts until an exchange lands. The midpoint
+re-injection continues on its own schedule. *Renew now* and *Repair network
+drives…* bypass the delay and the suspension, through the same single busy slot
+and, for the repair, the same confirmation and elevation.
+
+**What the user sees.** The `TgtAbsent` blocker and, on Windows, the flyout's
+*Repair network drives…* while the TGT is absent. Nothing is raised and nothing
+is announced for the episode itself: a successful attempt says nothing, and a
+suspension arms the ordinary escalation before End Time. A recovery that lands
+after that escalation is announced as the fault clearing.
+
+**The agent never repairs on its own.** A repair restarts `LanmanWorkstation`
+after interactive confirmation, or when an operator runs the already elevated
+`kerbridge --repair --yes` command. It disconnects all SMB sessions on the
+machine, not only the realm's. No observation, timer or exchange result starts it.
+
+`ntlm_fallback_recovery` gates the repair offer only. TGT recovery runs whatever
+it says. The operator's explicit `kerbridge --repair` one-shot remains available.
+The setting defaults to `cfg!(windows)`, which switches the offer off on macOS in
+one line and keeps `#[cfg]` out of the agent.
 
 ## The status model
 
@@ -670,7 +714,7 @@ fact.
 | `NoGrant` | delegated, so only a grant can get a ticket, and there is none |
 | `GrantRefused` | policy refused this grant; to authorize again cannot help |
 | `Refused` | the broker or the IdP said no to this identity |
-| `NtlmFallback` | the ticket is good, the drives are not |
+| `TgtAbsent` | the TGT was seen absent before its End Time, and nothing has landed since |
 
 **Only unentailed blockers are emitted.** `NoBrokerUrl` entails every blocker
 downstream of it, and `RealmNotRegistered` never appears without a known realm,
@@ -692,10 +736,9 @@ clear on a retry, and the distinct sentences stay in `message`. This merges what
 [Failure classes](#failure-classes) separates, consciously, on the
 recoverability reading.
 
-`NtlmFallback` is the agent's diagnosis and appears only when the fallback is
-confirmed. The `RestartWorkstation` action can be offered with no blocker
-present, for a user who suspects the fault without the agent seeing it. Keep the
-diagnosis and the offer separate.
+`TgtAbsent` is an observation and not a diagnosis: it says nothing about NTLM
+or the drives. The `RestartWorkstation` action is offered with or without it,
+for a user who suspects the fault. Keep the observation and the offer separate.
 
 ### `actions` — flat, and two blockers imply none
 
@@ -755,11 +798,8 @@ visible and disabled either way.
 
 ### Views belong to the host, and absence is typed
 
-`Status` has no view field. What the core keeps is a **raise request with a
-target** — the status surface, or the repair explanation — because without the
-target a machine whose drives have just broken gets an unexplained window. **The
-raise must never open a modal dialog**, which is a step of the escalation ladder
-that no machine-initiated event has earned.
+`Status` has no view field, and the core never asks a host to open a surface on
+its own.
 
 The ticket's time-dependent values are one `Option<TicketClock>`: `Some` only
 while the ticket is live, and `None` when it is absent or has reached its End
@@ -899,8 +939,8 @@ that note recommends. Never spend a warning on the cost of the safer option.
 
 **Blocker lines are fragments** — sentence case, no trailing period. Two carry a
 decision and not only a wording: `NoSupply` renders nothing on the front
-page, and `NtlmFallback` keeps its *(NTLM)* tag, because nothing else nearby
-names the mechanism and that keyword is what has to reach the support request.
+page, and `TgtAbsent` names the TGT, because that is the real term a support
+request has to carry and it claims nothing that the agent has not seen.
 
 **A failure message takes one form**, across the whole `err_*` block:
 
@@ -982,6 +1022,8 @@ emits and logs unconditionally. Each platform judges its own surface.
 | → `NotStarted` | no | not a fault; a healthy autonomous box must not be reported as one |
 | an elevated one-shot finished | gate 2 only | detached → notification, attached → the dialog |
 | a repair succeeded | no | the repaired path is the result; dismiss the manual dialog |
+| a TGT absent before End Time was replaced | no, unless the escalation already spoke | the condition does not move; after the escalation it is gate 1.1 |
+| a TGT absent before End Time, however often | no | the blocker carries it; nothing is raised |
 | the grant deadline is inside the window | yes, presence-gated | below |
 | a grant was created or failed | gate 2 only | the dialog reports it |
 
@@ -1107,10 +1149,10 @@ flowchart LR
   it. State has no historical URL, so this release does not guess one and does not
   add a destructive migration. An accepted snapshot replaces the cached broker
   document; the broker still validates every grant use.
-- **`ntlm_fallback_recovery`** gates the entire NTLM-fallback machinery, and a
-  machine policy value overrides the file. When it is `false` the agent does no
-  elevated restart: a stuck fallback is then recoverable only by a reboot or by
-  IT, and the agent does not name it. Windows only whatever any layer says: a
+- **`ntlm_fallback_recovery`** gates the repair offer, and a machine policy value
+  overrides the file. When it is `false` the agent offers no elevated restart: a
+  stuck fallback is then recoverable only by a reboot or by IT. TGT recovery runs
+  whatever it says. Windows only whatever any layer says: a
   deployment-wide `true` may not arm on macOS a repair that macOS neither needs
   nor offers a switch for.
 - **`silent`** suppresses OS notifications and unsolicited status surfaces. It
@@ -1171,7 +1213,7 @@ flowchart LR
 | Wire format | the ccache is converted to KRB-CRED | the MIT ccache v4 is read natively; `krbcred.rs` supplies the times only |
 | Realm registration | `ksetup`, elevated, one time | none; Heimdal resolves the realm from DNS |
 | Elevation | `--enroll` and `--repair` | none anywhere in the product |
-| NTLM fallback | detected; repair is confirmed and elevated | none; the mount drops visibly and reconnects |
+| NTLM fallback | never inferred; repair is manual, confirmed and elevated | none; the mount drops visibly and reconnects |
 | Native token source | WAM, on by default | none; `native_token` is `Unavailable`, so every sign-in is a browser sign-in |
 | Device grant | a TPM key through CNG | an Enclave key, kept as a wrapped blob in a `0600` file; it needs no entitlement and no Developer ID. A signing identity buys the user boundary, not the key |
 | Status surface | a flyout window plus the tray menu | the menu, which is also the status window |
@@ -1191,6 +1233,11 @@ One consequence of that table is a trap, and one accessor owns it:
   [`kerbridge-agent-windows/DESIGN.md`](kerbridge-agent-windows/DESIGN.md).
 - **Whether a stuck NTLM fallback clears itself after about 20 minutes idle.**
   Not reached in the measurements, so the consented repair path stands.
+- **Whether a fresh TGT alone clears the fallback.** An older joined-workstation
+  measurement needed the `LanmanWorkstation` restart. A physical Entra-joined
+  Windows 11 25H2 workstation that slept across End Time got a credential
+  prompt, and then a CIFS ticket and access after *Renew now*, with no restart.
+  The two are not reconciled, so the manual repair stays.
 - **Entra Cloud Kerberos (cloud-trust) tenants.** Coexistence and ticket
   selection are unproven, and the bench tenant has the feature disabled. Re-test
   before claiming support.

@@ -47,13 +47,13 @@ Not Configured: the user's own choice stands, and the agent tries Windows first 
 This needs ms-appx-web://microsoft.aad.brokerplugin/&lt;client id&gt; registered as a redirect URI on the public client in the tenant.</string>
 
       <string id="NtlmFallbackRecovery">Offer to repair a stuck NTLM fallback</string>
-      <string id="NtlmFallbackRecovery_Help">Whether the agent detects the SMB redirector's stuck NTLM fallback and offers the elevated LanmanWorkstation restart that clears it.
+      <string id="NtlmFallbackRecovery_Help">Whether the agent offers the elevated LanmanWorkstation restart that clears the SMB redirector's stuck NTLM fallback. The agent never starts it on its own. A Kerberos TGT that disappears early gets a silent re-injection whatever this setting says.
 
-Enabled: the agent watches for the fallback and asks the user before it repairs.
+Enabled: the agent offers the repair and asks the user before it runs.
 
-Disabled: the whole mechanism is off. A stuck fallback is then cleared only by a reboot or by IT, and the agent does not name it.
+Disabled: the repair is not offered. A stuck fallback is then cleared only by a reboot or by IT.
 
-Not Configured: the user's own choice stands, and the mechanism is on by default.
+Not Configured: the user's own choice stands, and the repair is offered by default.
 
 The fallback can never succeed on its own: the realm holds no password for a cloud identity.</string>
 

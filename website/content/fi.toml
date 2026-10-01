@@ -176,7 +176,7 @@ blockers = [
   { blocker = "blk_network_error",        arg = "kerbridge.example.site", plain = "Sovellus ei saa yhteyttä IT-tukesi palvelimeen.", todo = "Tarkista, että olet verkossa tai VPN:ssä. Jo avoinna olevat asemat toimivat yleensä edelleen." },
   { blocker = "blk_realm_unknown",        arg = "kerbridge.example.site", plain = "Sovellus tavoitti palvelimen, mutta ei ole vielä saanut sen asetuksia.", todo = "Odota. Se yrittää uudelleen itsestään." },
   { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "Tämän koneen kertaluonteinen määritysvaihe on vielä tekemättä.", todo = "Käytä määrityspainiketta. Se pyytää järjestelmänvalvojan oikeuksia ja uudelleenkäynnistystä." },
-  { blocker = "blk_ntlm_fallback",        os = "win", plain = "Tunnettu Windowsin häiriö kulkuluvan umpeuduttua. Asemasi ovat jumissa.", todo = "Tallenna työsi ja käytä sitten korjauspainiketta." },
+  { blocker = "blk_tgt_absent",           plain = "Tämän laitteen kulkulupa katosi ennen aikojaan. Pääsy voi silti toimia.", todo = "Yleensä ei mitään: sovellus hakee uuden itsestään. Jos asema kysyy salasanaa, uusi." },
   { blocker = "blk_refused",              plain = "Organisaatiosi palvelin ei hyväksynyt tunnustasi näille asemille.", todo = "Tämä ei ole korjattavissa tällä koneella — ota yhteyttä IT-tukeen." },
   { blocker = "blk_no_grant",             arg = "svc-builder", plain = "Jaetun tunnuksen kone, jota ei ole vielä valtuutettu.", todo = "Jonkun, jolla on oikeus valtuuttaa se, on kirjauduttava sisään täällä." },
   { blocker = "blk_grant_refused",        plain = "Käytäntö ei salli tämän laitteen ohittaa selainta.", todo = "Uudelleenyrittäminen ei auta. Ota yhteyttä IT-tukeen." },

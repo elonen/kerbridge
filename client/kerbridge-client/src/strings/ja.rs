@@ -35,7 +35,7 @@ pub(super) static JA: Strings = Strings {
     blk_no_grant: "このデバイスは {account} として動作する承認がありません",
     blk_grant_refused: "組織がこの承認を拒否しました",
     blk_refused: "アカウントが拒否されました",
-    blk_ntlm_fallback: "ネットワーク ドライブが動作しなくなりました (NTLM)",
+    blk_tgt_absent: "Kerberos TGT が期限前に消えました",
 
     details_heading: "Kerberos の詳細",
     meter_label: "アクセスの有効期間",

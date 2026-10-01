@@ -34,7 +34,7 @@ schedule is what stops the worst measured failure mode, and the translated
 string tables are the product's voice; neither is Windows' business, so both are
 in the core. A platform supplies the methods behind `agent::Host` — wake
 the UI thread, notify, report an outcome, say that an elevation has started, name
-the primary action, raise the status window, open a path, ask the OS for a token
+the primary action, open a path, ask the OS for a token
 — and that is the whole of what the core knows about it.
 
 The other seams go the other way: `#[cfg]`-selected calls *down* into an OS that

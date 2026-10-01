@@ -184,7 +184,7 @@ blockers = [
   { blocker = "blk_network_error",        arg = "server", plain = "The app cannot get to your IT team's server.", todo = "Check you're on the network or VPN. Drives you already have open usually keep working." },
   { blocker = "blk_realm_unknown",        arg = "server", plain = "The app reached the server but hasn't got its configuration yet.", todo = "Wait. It retries on its own." },
   { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "A one-time setup step for this computer hasn't been done.", todo = "Use the setup button. It asks for administrator permission and a restart." },
-  { blocker = "blk_ntlm_fallback",        os = "win", plain = "A known Windows hiccup after a pass runs out. Your drives are stuck.", todo = "Save your work, then use the repair button." },
+  { blocker = "blk_tgt_absent",           plain = "This device's pass vanished before its time. Access may still be working.", todo = "Usually nothing: the app fetches a new one by itself. If a drive asks for a password, renew." },
   { blocker = "blk_refused",              plain = "Your organisation's server did not accept your account for these drives.", todo = "Not something this computer can fix — contact IT." },
   { blocker = "blk_no_grant",             arg = "account", plain = "A shared-account machine that has not been authorized yet.", todo = "Someone permitted to authorize it must sign in here." },
   { blocker = "blk_grant_refused",        plain = "Policy does not permit this device to skip the browser.", todo = "Trying again will not help. Contact IT." },

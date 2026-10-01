@@ -60,7 +60,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SystemParametersInfoW, TranslateMessage, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
-use kerbridge_client::agent::{self, NativeToken, Outcome, Raise, Severity};
+use kerbridge_client::agent::{self, NativeToken, Outcome, Severity};
 use kerbridge_client::describe::Action;
 use kerbridge_client::discovery::OidcConfig;
 use kerbridge_client::present::action_label;
@@ -113,15 +113,6 @@ impl agent::Host for WinHost {
     fn primary_action_label(&self) -> String {
         let st = agent::status();
         ranked(&st).first().map(|a| action_label(*a, &st)).unwrap_or_else(|| tr().no_action.into())
-    }
-
-    fn raise(&self, _target: Raise) {
-        // One surface answers both targets: the flyout draws the `NtlmFallback`
-        // blocker and the repair button from the same status it always did, so
-        // there is nothing for a repair-shaped raise to open instead.
-        if !agent::silent() {
-            flyout::show_unfocused();
-        }
     }
 
     fn open_path(&self, path: &str) {

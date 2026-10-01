@@ -27,9 +27,9 @@ use super::failure::{
     describe_token_error,
 };
 use super::{
-    Agent, BROWSER_LEG, BUSY, BrokerSnapshot, CANCEL, DiscoveryStamp, FALLBACK_POLL_SECS,
-    GRANT_CLEANUP, MIN_REFRESH_DELAY, NativeToken, NtlmFallback, Outcome, PROBE_MAX_SECS, Phase,
-    REFRESH_TOKEN, STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS, Severity, host, host_of,
+    Agent, BROWSER_LEG, BUSY, BrokerSnapshot, CANCEL, DiscoveryStamp, GRANT_CLEANUP,
+    LOSS_POLL_SECS, MIN_REFRESH_DELAY, NativeToken, Outcome, PROBE_MAX_SECS, Phase, REFRESH_TOKEN,
+    STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS, Severity, TgtLoss, host, host_of,
     is_the_grants, midpoint, next_backoff, notify, purge_realm, with,
 };
 
@@ -328,8 +328,11 @@ fn apply(ev: Event) -> bool {
                 effects.apply(a);
                 // Gate 1: a session starting is news, and so is a fault clearing.
                 // A midpoint renewal that simply worked moves no condition and says
-                // nothing.
-                let news = a.phase != Phase::Connected || a.fault.is_some() || a.silent_failed;
+                // nothing, and neither does a replaced TGT -- unless the
+                // escalation already announced its episode's failures.
+                let recovered = a.loss_landed();
+                let news = a.phase != Phase::Connected
+                    || ((!recovered || a.escalated) && (a.fault.is_some() || a.silent_failed));
                 // Recorded before anything else reads it: this is how a later
                 // startup knows the ticket in the cache is this machine's own.
                 if via_grant && a.settings.set_grant_principal(&injected.principal) {
@@ -361,11 +364,9 @@ fn apply(ev: Event) -> bool {
                 } else {
                     a.just_authorized = false;
                 }
-                // A landed exchange is what ends a fallback episode and re-arms
-                // detection -- see [`NtlmFallback`]. Nothing else does, so a broker
-                // outage cannot turn it into a raise loop.
-                a.fallback = NtlmFallback::Clear;
-                a.fallback_check_at = time::now() + FALLBACK_POLL_SECS;
+                // The episode stays open -- see [`TgtLoss`] -- and the next look
+                // for the TGT is a poll interval away.
+                a.loss_check_at = time::now() + LOSS_POLL_SECS;
                 // The accepted broker snapshot already supplied the realm. Success
                 // changes ticket and session facts only.
                 a.expect(true);
@@ -416,8 +417,11 @@ fn apply(ev: Event) -> bool {
                     // often -- never later than the midpoint `tick()` already armed
                     // before this attempt. A refused credential is not: hammering
                     // that helps nothing and risks the IdP's own lockout policy, so
-                    // it keeps the ordinary midpoint schedule untouched.
-                    if fault == Some(Fault::Network) {
+                    // it keeps the ordinary midpoint schedule untouched. With the
+                    // TGT absent, the episode's own backoff decides instead.
+                    if a.loss.absent {
+                        a.loss_failed(fault, time::now());
+                    } else if fault == Some(Fault::Network) {
                         a.refresh_backoff = if fresh_streak {
                             MIN_REFRESH_DELAY
                         } else {
@@ -431,6 +435,7 @@ fn apply(ev: Event) -> bool {
                     // no credential should look -- not signed in, one click away -- and
                     // give the network a moment in case that was the problem.
                     a.phase = Phase::SignedOut;
+                    a.refresh_at = None;
                     if fault == Some(Fault::Network) {
                         // A network fault at logon is the case this exists for --
                         // Wi-Fi or a VPN still coming up -- so it backs off instead
@@ -446,12 +451,13 @@ fn apply(ev: Event) -> bool {
                         a.startup_retry_at = Some(time::now() + STARTUP_RETRY_BOUNDED_SECS);
                     }
                 } else {
-                    // Somebody asked for this, and there is no ticket to show for
-                    // it. There is no per-failure headline anywhere in the product,
-                    // so the condition this leaves the machine in is the title and
-                    // the mechanism sentence is the body -- and the flyout, if it is
-                    // up, suppresses the toast under gate 2.
+                    // Somebody asked for this, or an overdue re-injection ran
+                    // after End Time, and no ticket came of it. The product has
+                    // no per-failure headline: the resulting condition is the
+                    // title, and the mechanism sentence is the body. If the
+                    // flyout is up, gate 2 suppresses the toast.
                     a.phase = Phase::Error;
+                    a.refresh_at = None;
                     pending = Some((tr().cond_stopped.into(), a.message.clone(), Severity::Error));
                 }
             }
@@ -604,12 +610,11 @@ fn apply(ev: Event) -> bool {
                 if recheck_enrollment && !a.kerberos.realm.is_empty() {
                     a.enroll_state = enroll::state(&a.kerberos);
                 }
-                let succeeded = matches!(outcome, Outcome::Done { .. });
-                // A successful repair requests a ticket but leaves the episode open.
-                // Re-arming before the exchange lands detects the still-missing TGT
-                // again. Only a landed exchange ends the episode.
-                if succeeded && a.fallback != NtlmFallback::Clear {
-                    a.refresh_at = Some(time::now());
+                // A successful repair ends the loss episode. The TGT is looked
+                // for at once, and a fresh episode starts if it is still absent.
+                if action == Action::RestartWorkstation && matches!(outcome, Outcome::Done { .. }) {
+                    a.loss = TgtLoss::default();
+                    a.loss_check_at = 0;
                 }
                 // A failure is also a fault the surface has to keep showing after
                 // the dialog is dismissed; a decline and a success are not.
@@ -1617,5 +1622,247 @@ mod tests {
 
         assert_eq!(result, Ok(None));
         assert!(!oidc_started.get());
+    }
+
+    // ---- TGT loss --------------------------------------------------------------
+
+    /// Counts notifications, so a test can say none was raised.
+    struct TestHost;
+
+    static NOTIFIED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    impl super::super::Host for TestHost {
+        fn wake(&self) {}
+        fn notify(&self, _: &str, _: &str, _: Severity) {
+            NOTIFIED.fetch_add(1, Ordering::Relaxed);
+        }
+        fn finished(&self, _: Action, _: Outcome) {}
+        fn elevating(&self, _: Action) {}
+        fn primary_action_label(&self) -> String {
+            String::new()
+        }
+        fn open_path(&self, _: &str) {}
+        fn native_token(&self, _: &crate::discovery::OidcConfig) -> NativeToken {
+            NativeToken::Unavailable
+        }
+    }
+
+    /// A live ticket whose TGT is absent, one recovery attempt already failed on
+    /// transport, and the next one running in the busy slot.
+    fn recovering() -> DiscoveryStamp {
+        install_agent("https://a.example.site");
+        let _ = super::super::HOST.set(&TestHost);
+        let accepted = with(Agent::advance_discovery).unwrap();
+        assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
+        let now = time::now();
+        let stamp = with(|a| {
+            a.phase = Phase::Connected;
+            a.principal = "riku@A.SITE".into();
+            a.start = now - 600;
+            a.end = now + 36_000;
+            a.refresh_at = Some(now + 17_000);
+            a.loss = TgtLoss { streak: 2, absent: true, ..TgtLoss::default() };
+            a.silent_failed = true;
+            a.record(Some(Fault::Network), "broker down".into());
+            let stamp = a.advance_discovery().unwrap();
+            a.started_busy(stamp.clone(), Action::ReinjectTicket);
+            stamp
+        });
+        BUSY.store(true, Ordering::Relaxed);
+        stamp
+    }
+
+    fn landed(stamp: DiscoveryStamp) -> Event {
+        let now = time::now();
+        Event::SignedIn {
+            stamp,
+            injected: Injected {
+                principal: "riku@A.SITE".into(),
+                start: now,
+                end: now + 36_000,
+                renew_till: now + 36_000,
+            },
+            realm: "A.SITE".into(),
+            effects: WorkerEffects::default(),
+            via_grant: false,
+        }
+    }
+
+    fn failed(stamp: DiscoveryStamp, fault: Option<Fault>) -> Event {
+        Event::SignInFailed {
+            stamp,
+            effects: WorkerEffects::default(),
+            fault,
+            message: "no".into(),
+            quiet: false,
+        }
+    }
+
+    #[test]
+    fn a_replaced_tgt_lands_silently_and_keeps_the_streak() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        let stamp = recovering();
+        let notified = NOTIFIED.load(Ordering::Relaxed);
+
+        assert!(apply(landed(stamp)));
+
+        assert_eq!(NOTIFIED.load(Ordering::Relaxed), notified, "a recovery says nothing");
+        with(|a| {
+            assert!(!a.loss.absent);
+            assert_eq!(a.loss.streak, 2, "injection success alone resets nothing");
+            assert!(a.fault.is_none());
+            assert!(a.phase == Phase::Connected);
+        });
+        assert!(!BUSY.load(Ordering::Relaxed));
+        finish_test();
+    }
+
+    #[test]
+    fn a_failed_recovery_follows_the_episode_backoff() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        let stamp = recovering();
+        let refresh_at = with(|a| a.refresh_at);
+
+        assert!(apply(Event::SignInFailed {
+            stamp,
+            effects: WorkerEffects::default(),
+            fault: Some(Fault::Network),
+            message: "broker down".into(),
+            quiet: false,
+        }));
+
+        with(|a| {
+            assert!(a.phase == Phase::Connected);
+            assert_eq!(a.refresh_at, refresh_at, "the midpoint schedule is untouched");
+            assert_eq!(a.loss.streak, 3);
+            let wait = a.loss.retry_at.unwrap() - time::now();
+            assert!((107..=120).contains(&wait), "{wait}");
+        });
+        finish_test();
+    }
+
+    #[test]
+    fn only_a_repair_that_worked_ends_the_loss_episode() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        let cases = [
+            (
+                Action::RestartWorkstation,
+                Outcome::Done { message: "ok".into(), detail: None },
+                true,
+            ),
+            (Action::RestartWorkstation, Outcome::Declined, false),
+            (Action::Reenroll, Outcome::Done { message: "ok".into(), detail: None }, false),
+        ];
+        for (action, outcome, ends) in cases {
+            recovering();
+            let before = with(|a| a.loss);
+            assert!(apply(Event::ElevatedFinished { action, outcome, recheck_enrollment: false }));
+            with(|a| {
+                if ends {
+                    assert_eq!(a.loss, TgtLoss::default());
+                    assert_eq!(a.loss_check_at, 0, "the TGT is looked for at once");
+                } else {
+                    assert_eq!(a.loss, before, "{action:?}");
+                }
+            });
+            finish_test();
+        }
+    }
+
+    /// Once the escalation has spoken about the episode, its end is news.
+    #[test]
+    fn a_recovery_after_the_escalation_sends_one_all_clear() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        let stamp = recovering();
+        let due = with(|a| {
+            let near = a.end - 60;
+            super::super::tick_at(a, near, true, &|_| Ok(false))
+        });
+        assert!(due.notice.is_some(), "the escalation fired");
+        assert!(with(|a| a.escalated));
+        let notified = NOTIFIED.load(Ordering::Relaxed);
+
+        assert!(apply(landed(stamp)));
+
+        assert_eq!(NOTIFIED.load(Ordering::Relaxed), notified + 1);
+        with(|a| assert!(!a.escalated && !a.loss.absent));
+        finish_test();
+    }
+
+    #[test]
+    fn a_refusal_or_no_credential_suspends_recovery_quietly() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        for fault in [Some(Fault::Refused), None] {
+            let stamp = recovering();
+            let (refresh_at, notified) = (with(|a| a.refresh_at), NOTIFIED.load(Ordering::Relaxed));
+
+            assert!(apply(failed(stamp, fault)));
+
+            assert_eq!(NOTIFIED.load(Ordering::Relaxed), notified, "{fault:?}");
+            with(|a| {
+                assert!(a.loss.suspended && a.loss.absent, "{fault:?}");
+                assert!(a.loss.retry_at.is_none(), "{fault:?}");
+                assert_eq!(a.refresh_at, refresh_at, "{fault:?}: the midpoint continues");
+                assert!(a.phase == Phase::Connected, "{fault:?}");
+            });
+            finish_test();
+        }
+    }
+
+    /// *Renew now* is not gated by a suspension: it takes the busy slot and
+    /// runs, and a transient failure of it leaves the suspension standing.
+    #[test]
+    fn renew_now_runs_while_recovery_is_suspended() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        recovering();
+        with(|a| {
+            // Plaintext: the HTTPS-only agent refuses it before any socket or
+            // proxy is used.
+            a.settings.set_broker_url("http://127.0.0.1:1");
+            a.busy_operation = None;
+            a.in_flight.clear();
+            a.loss.suspended = true;
+            a.loss.retry_at = None;
+        });
+        BUSY.store(false, Ordering::Relaxed);
+
+        super::super::renew_now();
+        assert!(BUSY.load(Ordering::Relaxed));
+        assert!(with(|a| a.in_flight.contains(&Action::ReinjectTicket)));
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        while BUSY.load(Ordering::Relaxed) {
+            assert!(std::time::Instant::now() < deadline, "the worker never reported");
+            drain();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        with(|a| {
+            assert_eq!(a.fault, Some(Fault::Network));
+            assert!(a.loss.suspended && a.loss.retry_at.is_none());
+        });
+        finish_test();
+    }
+
+    #[test]
+    fn a_failed_re_injection_after_end_time_says_so_once() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        let stamp = recovering();
+        let now = time::now();
+        with(|a| {
+            a.phase = Phase::Expired;
+            a.end = now - 60;
+            a.refresh_at = Some(now + MIN_REFRESH_DELAY);
+            a.loss = TgtLoss::default();
+        });
+        let notified = NOTIFIED.load(Ordering::Relaxed);
+
+        assert!(apply(failed(stamp, Some(Fault::Network))));
+
+        assert_eq!(NOTIFIED.load(Ordering::Relaxed), notified + 1);
+        with(|a| {
+            assert!(a.phase == Phase::Error);
+            assert!(a.refresh_at.is_none(), "nothing further comes round");
+        });
+        finish_test();
     }
 }

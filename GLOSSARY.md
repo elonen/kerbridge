@@ -549,7 +549,8 @@ lists use the resource group's [SID](#sid). You can use the [kbmanage](#kbmanage
 
 A Windows failure in which an SMB connection changes from Kerberos to NTLM after
 a [TGT](#tgt) expires. The KerBridge [realm](#realm) cannot authenticate cloud
-users with NTLM. A [repair](#repair) clears the failed connection state.
+users with NTLM. A [repair](#repair) clears the failed connection state. A TGT
+that disappears before its End Time is not proof of it.
 <!-- avoid: NTLM latch, stuck redirector -->
 
 ### operator
@@ -673,7 +674,8 @@ deletes the [realm](#realm).
 The action that restarts the Windows Workstation service to clear
 [NTLM fallback](#ntlm-fallback). It disconnects all SMB sessions on the
 [workstation](#workstation). It runs after interactive confirmation, or after an
-operator authorizes the already elevated `kerbridge --repair --yes` command.
+operator authorizes the already elevated `kerbridge --repair --yes` command, and
+never on its own.
 <!-- refs: service `LanmanWorkstation`, `kerbridge_client::repair::restart_workstation` -->
 <!-- avoid: restartworkstation, restart workstation, restart the redirector, service restart, fix drives -->
 

@@ -25,16 +25,15 @@
 
 use std::cell::RefCell;
 
+use objc2::MainThreadMarker;
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
-use objc2::{MainThreadMarker, msg_send};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSStatusBar, NSStatusItem,
     NSVariableStatusItemLength,
 };
 use objc2_foundation::NSString;
 
-use kerbridge_client::agent::{self, NativeToken, Outcome, Raise, Severity, Status};
+use kerbridge_client::agent::{self, NativeToken, Outcome, Severity, Status};
 use kerbridge_client::describe::{Action, Condition};
 use kerbridge_client::discovery::OidcConfig;
 use kerbridge_client::log;
@@ -184,14 +183,6 @@ impl agent::Host for MacHost {
         menu::plan(&agent::status()).primary_label()
     }
 
-    /// One surface answers both targets, and only one of them is reachable: the
-    /// NTLM-fallback episode that raises `Repair` is switched off on macOS.
-    fn raise(&self, _target: Raise) {
-        if !agent::silent() {
-            ui::show_status_later();
-        }
-    }
-
     fn open_path(&self, path: &str) {
         ui::open_path(path);
     }
@@ -207,20 +198,6 @@ impl agent::Host for MacHost {
     fn native_token(&self, _oidc: &OidcConfig) -> NativeToken {
         NativeToken::Unavailable
     }
-}
-
-/// Drop the menu open, as if the menu-bar item had been clicked.
-pub fn show_status() {
-    let mtm = MainThreadMarker::new().expect("show_status runs on the main thread");
-    STATUS_ITEM.with(|item| {
-        if let Some(item) = item.borrow().as_ref()
-            && let Some(button) = item.button(mtm)
-        {
-            unsafe {
-                let _: () = msg_send![&*button, performClick: std::ptr::null::<AnyObject>()];
-            }
-        }
-    });
 }
 
 /// Menu commands, dispatched from [`menu`] by tag.

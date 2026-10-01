@@ -182,7 +182,7 @@ BrokerUrl             (REG_SZ)    -> Settings field goes read-only
 GrantFor              (REG_SZ)    -> the account a device grant works as
 Autostart             (REG_DWORD) -> 1 starts the agent at sign-in, 0 forbids it
 WindowsSignIn         (REG_DWORD) -> 0 forces the browser flow
-NtlmFallbackRecovery  (REG_DWORD) -> 0 disables all NTLM-fallback machinery
+NtlmFallbackRecovery  (REG_DWORD) -> 0 removes the repair offer; TGT recovery still runs
 Silent                (REG_DWORD) -> 1 suppresses notifications and automatic flyouts
 ```
 

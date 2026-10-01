@@ -51,7 +51,6 @@ const CMD_TOGGLE_DETAILS: u16 = 122;
 const IDCANCEL: u16 = 2;
 
 const STM_SETICON: u32 = 0x0170;
-const SW_SHOWNA: i32 = 8; // show, without taking activation
 const WA_INACTIVE: usize = 0;
 
 pub(crate) unsafe extern "system" fn wndproc(
@@ -146,19 +145,6 @@ pub(crate) fn show() {
         SetForegroundWindow(a.flyout);
         SetFocus(a.flyout);
     }
-}
-
-/// Raise the flyout without taking activation.
-///
-/// The tray opens it by itself when it has detected an NTLM fallback it could not
-/// clear. Broken network drives justify an interruption; they do not justify
-/// pulling the foreground out from under a full-screen build or game, which is
-/// exactly the machine this is most likely to happen on.
-pub(crate) fn show_unfocused() {
-    let a = app();
-    a.flyout_visible.set(true);
-    rebuild();
-    unsafe { ShowWindow(a.flyout, SW_SHOWNA) };
 }
 
 fn hide() {

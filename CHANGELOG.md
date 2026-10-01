@@ -31,6 +31,10 @@ names the tag, and it stops if that section is absent or empty.
 - Agents now ignore stale discovery documents.
 - macOS asks notification permission only when it has a notification.
 - A successful network-drive repair now closes without a success message.
+- Agents silently replace a Kerberos TGT that disappears before it ends,
+  and no longer call it an NTLM fallback.
+- The `NtlmFallbackRecovery=0` policy now removes only the repair offer.
+- Agents renew at once after the computer sleeps past a ticket's end.
 
 ## 1.0.1
 

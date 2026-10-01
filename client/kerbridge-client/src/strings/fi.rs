@@ -35,7 +35,7 @@ pub(super) static FI: Strings = Strings {
     blk_no_grant: "Tätä laitetta ei ole valtuutettu toimimaan tunnuksella {account}",
     blk_grant_refused: "Organisaatiosi hylkäsi tämän valtuutuksen",
     blk_refused: "Tilisi hylättiin",
-    blk_ntlm_fallback: "Verkkoasemat lakkasivat toimimasta (NTLM)",
+    blk_tgt_absent: "Kerberos-TGT katosi ennen aikojaan",
 
     details_heading: "Kerberos-tiedot",
     meter_label: "Käyttöoikeus voimassa",

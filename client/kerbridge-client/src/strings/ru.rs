@@ -35,7 +35,7 @@ pub(super) static RU: Strings = Strings {
     blk_no_grant: "Это устройство не авторизовано для работы как {account}",
     blk_grant_refused: "Ваша организация отклонила эту авторизацию",
     blk_refused: "Вашей учётной записи отказано",
-    blk_ntlm_fallback: "Сетевые диски перестали работать (NTLM)",
+    blk_tgt_absent: "Kerberos TGT пропал раньше срока",
 
     details_heading: "Сведения о Kerberos",
     meter_label: "Доступ действителен ещё",

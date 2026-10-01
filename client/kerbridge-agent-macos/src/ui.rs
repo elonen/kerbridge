@@ -145,8 +145,6 @@ enum Job {
     Drain,
     /// Draw everything again, whatever was last shown.
     Redraw,
-    /// Show the status menu.
-    ShowStatus,
     /// Finish the UserNotifications callback on the UI thread.
     AuthorizationCompleted(AuthorizationResult),
     Alert {
@@ -192,7 +190,6 @@ define_class!(
                         }
                     }
                     Job::Redraw => crate::redraw(),
-                    Job::ShowStatus => crate::show_status(),
                     Job::AuthorizationCompleted(result) => complete_notification_authorization(result),
                     Job::Alert { caption, body, ok } => alert(&caption, &body, ok),
                 }
@@ -247,11 +244,6 @@ pub fn alert_later(caption: &str, body: &str, ok: bool) {
     queue(Job::Alert { caption: caption.to_owned(), body: body.to_owned(), ok });
 }
 
-/// Open the status menu, on the next pass of the run loop.
-pub fn show_status_later() {
-    next_pass(Job::ShowStatus);
-}
-
 /// Redraw the menu bar, on the next pass of the run loop.
 pub fn redraw_later() {
     next_pass(Job::Redraw);
@@ -274,11 +266,9 @@ fn queue(job: Job) {
 
 /// Queue for the *next* pass of the run loop, whichever thread asks.
 ///
-/// Two callers need that even though they are already on the main thread. A
-/// menu-delegate callback is one: the menu it is telling us about is still on
-/// AppKit's stack, and replacing the status item's menu from inside the callback
-/// would release it under them. Opening the menu before `NSApplication::run` is
-/// the other -- there is no run loop yet to track it in.
+/// A menu-delegate callback needs this, though it is on the main thread: its
+/// menu is still on AppKit's stack, and to replace the status item's menu
+/// inside the callback releases that menu under AppKit.
 fn next_pass(job: Job) {
     MAIN_QUEUE.lock().unwrap().push(job);
     // `class()` registers the class on first use; `define_class!` alone does

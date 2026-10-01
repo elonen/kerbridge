@@ -60,17 +60,21 @@ the wrong user.
 
 ## The repair of the NTLM fallback
 
-How the fallback is detected is in [`../DESIGN.md`](../DESIGN.md). What is left
-here is the mechanism.
+The agent never infers the fallback and never starts the repair. A TGT absent
+before its End Time gets a silent re-injection instead; see
+[`../DESIGN.md`](../DESIGN.md) § TGT absent before End Time. What is left here is
+the repair's mechanism.
 
-When the agent detects the fallback, it opens the repair explanation. After the
-user confirms, the agent starts the elevated `--repair` command. **The
-confirmation warns that every network drive and shared folder on the device
-disconnects, and not only the realm's.** A successful repair closes the dialog; it
-shows no success result or notification.
+The user starts the repair from the tray menu, or from the flyout while the
+`TgtAbsent` blocker stands. After the user confirms, the agent starts the
+elevated `--repair` command. **The confirmation warns that every network drive
+and shared folder on the device disconnects, and not only the realm's.** A
+successful repair closes the dialog; it shows no success result or
+notification.
 
-The agent does **not** try a re-injection first. Into a redirector that is stuck
-on NTLM, that is the attempt the research measured going nowhere.
+Whether re-injection alone clears a redirector stuck on NTLM is not settled. An
+older measurement found that it did not. A newer one, after sleep across End
+Time, found that a fresh TGT and new access did.
 
 The elevated child restarts `LanmanWorkstation` through the SCM, stopping and
 restarting its running dependents. The list of dependents is computed in the
@@ -136,7 +140,7 @@ OpenSettings → SignOutEntra → Enroll → RestartWorkstation
              → CreateGrant → ReinjectTicket → SignIn → DropKrbTicket
 ```
 
-Gates apply. `RestartWorkstation` appears only while the `NtlmFallback`
+Gates apply. `RestartWorkstation` appears only while the `TgtAbsent`
 blocker is present, because the menu already offers the repair to a user who
 suspects the fault. `CreateGrant` appears only when the machine is delegated and
 grantless, or when the grant is due soon. `SignIn` never appears on `Working`.
@@ -199,7 +203,7 @@ computable in the parent.
 | Action | Home | Shield |
 |---|---|---|
 | Set up Windows… | flyout primary while `RealmNotRegistered`, plus the tray menu | ✔ |
-| Repair network drives… | flyout while the `NtlmFallback` blocker is present; tray menu always | ✔ |
+| Repair network drives… | flyout while the `TgtAbsent` blocker is present; tray menu always | ✔ |
 | Set up Windows again… | Settings ▸ Advanced ▸ Windows setup | ✔ |
 | Forget {realm}… | Settings ▸ Advanced ▸ Windows setup | ✔ |
 | Authorize access… | Settings ▸ Advanced ▸ Authorization, beside the *Authorize this device for* field; reads *Authorize again…* once a grant is held | ✘ |

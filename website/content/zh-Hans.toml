@@ -175,7 +175,7 @@ blockers = [
   { blocker = "blk_network_error",        arg = "服务器", plain = "应用连不上你 IT 团队的服务器。", todo = "检查你是否在内网或 VPN 上。已经打开的驱动器通常还能继续用。" },
   { blocker = "blk_realm_unknown",        arg = "服务器", plain = "应用连上了服务器，但还没拿到它的配置。", todo = "等一等。它会自己重试。" },
   { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "这台电脑的一次性配置步骤还没做。", todo = "用配置按钮。它会请求管理员权限，之后要重启一次。" },
-  { blocker = "blk_ntlm_fallback",        os = "win", plain = "通行证到期后的一个已知 Windows 小毛病。你的驱动器卡住了。", todo = "先保存工作，然后用修复按钮。" },
+  { blocker = "blk_tgt_absent",           plain = "这台设备的通行证提前消失了。访问可能仍然正常。", todo = "通常什么都不用做：应用会自己取一个新的。如果驱动器要密码，就续期。" },
   { blocker = "blk_refused",              plain = "你所在组织的服务器不接受你的账户使用这些驱动器。", todo = "这台电脑修不了这个 — 请联系 IT。" },
   { blocker = "blk_no_grant",             arg = "账户", plain = "一台还没有获得授权的共享账户机器。", todo = "得由有权授权它的人在这里登录。" },
   { blocker = "blk_grant_refused",        plain = "策略不允许此设备跳过浏览器。", todo = "再试也没用。请联系 IT。" },

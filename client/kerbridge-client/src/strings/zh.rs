@@ -35,7 +35,7 @@ pub(super) static ZH: Strings = Strings {
     blk_no_grant: "此设备未获授权以 {account} 身份运行",
     blk_grant_refused: "贵组织拒绝了此授权",
     blk_refused: "你的账户被拒绝",
-    blk_ntlm_fallback: "网络驱动器已停止工作 (NTLM)",
+    blk_tgt_absent: "Kerberos TGT 提前消失",
 
     details_heading: "Kerberos 详情",
     meter_label: "访问有效期",

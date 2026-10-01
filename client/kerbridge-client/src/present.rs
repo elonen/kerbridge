@@ -68,7 +68,7 @@ pub fn blocker_line(b: Blocker, st: &Status) -> String {
         Blocker::NoGrant => fill(s.blk_no_grant, &[("account", &st.grant_target)]),
         Blocker::GrantRefused => s.blk_grant_refused.into(),
         Blocker::Refused => s.blk_refused.into(),
-        Blocker::NtlmFallback => s.blk_ntlm_fallback.into(),
+        Blocker::TgtAbsent => s.blk_tgt_absent.into(),
     }
 }
 

@@ -76,7 +76,7 @@ platform's.
 ### blocker
 
 What is missing right now, immediate and unentailed: from
-`NoBrokerUrl` to `NtlmFallback`. Blockers explain, `action`s resolve; they are
+`NoBrokerUrl` to `TgtAbsent`. Blockers explain, `action`s resolve; they are
 not parallel lists and nothing lines up between them. `NoBrokerUrl` swallows
 everything downstream of it, so a first-run machine emits one entry rather than
 that entry and its consequences.
@@ -149,11 +149,12 @@ it, and reaching it without a renewal landing is its own agent phase.
 
 ### episode
 
-One run of an `NTLM fallback`, opened when the injected TGT vanishes before its
-End Time and closed by a landed exchange or an agent restart; it limits
-machine-raised status surfaces to one. A successful repair deliberately leaves
-it open, because the evicted TGT is still gone.
-<!-- refs: `agent::NtlmFallback` -->
+One run of TGT loss: opened when the injected TGT is seen absent before its End
+Time, and holding the loss streak that paces silent `re-injection`. A landed
+exchange pauses it and does not close it. Only a replacement that lasts until
+its scheduled re-injection, a successful repair, or a session reset closes it.
+An observation, never an `NTLM fallback` diagnosis.
+<!-- refs: `agent::TgtLoss` -->
 <!-- avoid: incident, event, occurrence -->
 
 ### expectation
@@ -207,7 +208,7 @@ headline at all.
 
 The seam for everything the agent needs a UI for, installed at
 runtime by the platform's agent binary. Not the platform seam for non-UI work.
-<!-- refs: methods `wake`, `notify`, `finished`, `elevating`, `primary_action_label`, `raise`, `open_path`, `native_token`; non-UI seam is `sys` -->
+<!-- refs: methods `wake`, `notify`, `finished`, `elevating`, `primary_action_label`, `open_path`, `native_token`; non-UI seam is `sys` -->
 <!-- avoid: ui seam, platform seam, backend, the host app -->
 
 ### `kerbridge-agent`

@@ -57,9 +57,10 @@ pub enum Blocker {
     GrantRefused,
     /// The broker or the IdP said no to this identity.
     Refused,
-    /// The ticket is fine, the drives are not. The agent's diagnosis, never a
-    /// hunch -- [`Action::RestartWorkstation`] carries the hunch path.
-    NtlmFallback,
+    /// The TGT was seen absent before its End Time, and nothing has landed
+    /// since. An observation, not a diagnosis: it proves nothing about NTLM or
+    /// the drives. [`Action::RestartWorkstation`] is the hunch path.
+    TgtAbsent,
 }
 
 /// What may be started. Flat and unordered; the surface presents or ignores.
@@ -155,10 +156,11 @@ pub struct Facts {
     /// than no offer: macOS has no Secure Enclave key yet and would answer the
     /// click with a refusal.
     pub grants_enabled: bool,
-    /// Policy allows the NTLM-fallback machinery.
+    /// Policy allows the repair of the NTLM fallback.
     pub ntlm_recovery: bool,
-    /// A fallback was diagnosed and the unelevated restart did not clear it.
-    pub ntlm_confirmed: bool,
+    /// The live injected TGT was seen absent before its End Time, and no
+    /// exchange has landed since.
+    pub tgt_absent: bool,
     pub fault: Option<Fault>,
     /// Transport has been failing since the first failure with nothing landed
     /// after it, for longer than the agent's quiet period.
@@ -291,8 +293,8 @@ fn blockers(f: &Facts, supply: Supply) -> Vec<Blocker> {
     if !f.delegated && supply == Supply::None {
         out.push(Blocker::NoSupply);
     }
-    if f.ntlm_confirmed {
-        out.push(Blocker::NtlmFallback);
+    if f.tgt_absent {
+        out.push(Blocker::TgtAbsent);
     }
     out
 }
@@ -322,9 +324,8 @@ fn actions(f: &Facts, supply: Supply, blockers: &[Blocker]) -> Vec<Action> {
                 out.push(Action::Enroll);
             }
         }
-        // Offered with no blocker present, which is the user's hunch rather than
-        // the agent's diagnosis: broken drives are what someone reaches for this
-        // with, and the agent only sometimes knows why.
+        // Offered whatever the blockers: a user reaches for this when the
+        // drives break, and no signal proves the cause.
         if f.ntlm_recovery && f.realm_known {
             out.push(Action::RestartWorkstation);
         }
@@ -387,7 +388,7 @@ mod tests {
             windows_sign_in: true,
             grants_enabled: true,
             ntlm_recovery: true,
-            ntlm_confirmed: false,
+            tgt_absent: false,
             fault: None,
             flaky_elapsed: false,
             enrollment_platform: true,
@@ -591,17 +592,18 @@ mod tests {
         assert!(describe(&f).actions.contains(&Action::SignOutIdp));
     }
 
-    /// The repair is the user's hunch as well as the agent's diagnosis, so the
-    /// action stands without the blocker -- but not where policy turned the
-    /// whole machinery off.
+    /// The repair is a user hunch: offered with or without
+    /// [`Blocker::TgtAbsent`], but not where policy turns it off.
     #[test]
-    fn the_repair_is_offered_without_a_diagnosis() {
+    fn the_repair_is_offered_whatever_the_ticket_cache_shows() {
         let d = describe(&working());
         assert!(d.actions.contains(&Action::RestartWorkstation));
-        assert!(!d.blockers.contains(&Blocker::NtlmFallback));
+        assert!(!d.blockers.contains(&Blocker::TgtAbsent));
 
-        let f = Facts { ntlm_confirmed: true, ..working() };
-        assert!(describe(&f).blockers.contains(&Blocker::NtlmFallback));
+        let f = Facts { tgt_absent: true, ..working() };
+        let d = describe(&f);
+        assert!(d.blockers.contains(&Blocker::TgtAbsent));
+        assert!(d.actions.contains(&Action::RestartWorkstation));
 
         let f = Facts { ntlm_recovery: false, ..working() };
         assert!(!describe(&f).actions.contains(&Action::RestartWorkstation));

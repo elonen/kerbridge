@@ -116,12 +116,17 @@ const LATE_ELAPSED: f32 = 0.8;
 /// with can usefully ask.
 const PROBE_FIRST_SECS: i64 = 30;
 const PROBE_MAX_SECS: i64 = 10 * 60;
-/// How often to look for a vanished TGT (the NTLM-fallback signature).
+/// How often to look for a TGT absent before its End Time.
 ///
 /// The check is an LSA round trip and the condition it finds persists until
 /// something clears it, so running it at the tick's 1 Hz would buy nothing but
 /// wake-ups.
-const FALLBACK_POLL_SECS: i64 = 30;
+const LOSS_POLL_SECS: i64 = 30;
+/// The delay before the second recovery attempt of a [`TgtLoss`] episode, and
+/// the ceiling it doubles to. The first attempt is immediate; the ceiling
+/// repeats rather than ending the sequence.
+const LOSS_FIRST_SECS: i64 = 60;
+const LOSS_MAX_SECS: i64 = 3_600;
 
 // ---- the UI seam -----------------------------------------------------------
 
@@ -136,14 +141,6 @@ pub enum NativeToken {
     /// is silent or it is nothing, because the dialog worth showing is a sign-in
     /// and the OS has none to show that this agent is allowed to want.
     Unavailable,
-}
-
-/// What a raise-request is about: the subject the surface should open on, never
-/// a view for it to render.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Raise {
-    Status,
-    Repair,
 }
 
 /// How loud a notification is. Keyed on the condition it announces, never on
@@ -210,11 +207,6 @@ pub trait Host: Sync {
     /// notifications that name it. The priority that picks it is the surface's:
     /// `actions` is deliberately flat and each platform arranges it differently.
     fn primary_action_label(&self) -> String;
-    /// Bring the status surface up *without* taking the foreground, and say
-    /// what it is about: a machine whose drives just broke would otherwise get
-    /// an unexplained flyout. It must never open a modal -- a machine-initiated
-    /// modal is a rung of the escalation ladder the situation has not earned.
-    fn raise(&self, target: Raise);
     /// Hand a file or folder to the desktop shell.
     fn open_path(&self, path: &str);
     /// Ask the platform's token store for a broker token, so sign-in and
@@ -275,24 +267,29 @@ struct BusyOperation {
     action: Action,
 }
 
-/// Where the agent is in an NTLM-fallback episode.
+/// Silent recovery from a TGT seen absent before its End Time.
 ///
-/// An episode opens when the injected TGT vanishes *before* its End Time -- the
-/// measured signature of an access that fell back to NTLM, which evicts the
-/// TGT `(1)→(0)` immediately
-/// (research spike `windows-tgt-followup-entra-joined`, lines 787-792)
-/// -- and closes only when a ticket exchange lands or the agent restarts.
+/// Absence is an observation, not a diagnosis. An access that falls back to
+/// NTLM evicts the TGT (research spike `windows-tgt-followup-entra-joined`,
+/// lines 787-792), but the TGT has also gone with access intact on an
+/// Entra-joined Windows 11 25H2 workstation. So the response is a silent
+/// re-injection. It is never a browser and never a Workstation restart.
 ///
-/// That is the whole rate limit: one raised status window per episode.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum NtlmFallback {
-    /// No episode open.
-    Clear,
-    /// Detected. Restarting `LanmanWorkstation` drops every SMB session on the
-    /// machine, not just the realm's, so the agent never does it on its own --
-    /// this state only raises the surface for the user-consented elevated
-    /// repair.
-    Confirmed,
+/// An episode opens at the first absence. A landed re-injection pauses it but
+/// does not end it, so a replacement that disappears too backs off further.
+/// Only a replacement that survives to its scheduled re-injection, a successful
+/// repair, or a session reset ends it.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+struct TgtLoss {
+    /// Absences seen and recovery attempts failed in this episode. 0 = none open.
+    streak: u32,
+    /// Seen absent, and no exchange has landed since.
+    absent: bool,
+    /// When the next recovery attempt is due, while absent.
+    retry_at: Option<i64>,
+    /// A hard refusal, or nothing to be silent with: no recovery attempt until
+    /// an exchange lands. The midpoint re-injection continues.
+    suspended: bool,
 }
 
 struct Agent {
@@ -375,9 +372,9 @@ struct Agent {
     /// `base_url` is never persisted, so this is known only per run: empty until
     /// a discovery lands, and on a broker that names no source.
     source: String,
-    fallback: NtlmFallback,
-    /// When the next NTLM-fallback check is due; 0 = as soon as the conditions hold.
-    fallback_check_at: i64,
+    loss: TgtLoss,
+    /// When the TGT is next looked for; 0 = as soon as the conditions hold.
+    loss_check_at: i64,
     /// When the grant deadline was last announced. The one notification with
     /// slack, so the one that waits for a human -- and then stays quiet for a day
     /// whether or not they acted.
@@ -449,8 +446,8 @@ impl Agent {
             help_url: None,
             idp_name: String::new(),
             source: String::new(),
-            fallback: NtlmFallback::Clear,
-            fallback_check_at: 0,
+            loss: TgtLoss::default(),
+            loss_check_at: 0,
             grant_notified_at: None,
         }
     }
@@ -597,8 +594,8 @@ impl Agent {
         self.first_failure_at = None;
         self.probe_at = None;
         // The episode was about a ticket this session no longer has.
-        self.fallback = NtlmFallback::Clear;
-        self.fallback_check_at = 0;
+        self.loss = TgtLoss::default();
+        self.loss_check_at = 0;
     }
 
     /// What this machine would be working as right now: the realm, and the
@@ -729,6 +726,66 @@ impl Agent {
         self.grant_cleanup = None;
         self.in_flight.retain(|action| *action != Action::GiveUpGrant);
         true
+    }
+
+    /// The TGT was seen absent. Opens or advances the episode and schedules
+    /// its attempt, unless there is nothing to be silent with.
+    fn loss_observed(&mut self, now: i64, supply: bool) {
+        self.loss.absent = true;
+        self.loss.streak += 1;
+        log::warn(&format!(
+            "the {} TGT is absent {} before its End Time (loss streak {})",
+            self.kerberos.realm,
+            duration(self.end - now),
+            self.loss.streak
+        ));
+        if !supply {
+            self.loss_suspend();
+        } else if !self.loss.suspended {
+            self.loss.retry_at = Some(now + loss_delay(self.loss.streak));
+        }
+    }
+
+    /// The TGT is back without an exchange of ours landing.
+    fn loss_present(&mut self) {
+        self.loss.absent = false;
+        self.loss.retry_at = None;
+        log::info(&format!(
+            "the {} TGT is present again{}",
+            self.kerberos.realm,
+            if self.loss.suspended { "" } else { "; recovery paused" }
+        ));
+    }
+
+    /// An exchange landed. Returns true when it replaced an absent TGT.
+    fn loss_landed(&mut self) -> bool {
+        let recovered = self.loss.absent;
+        self.loss.absent = false;
+        self.loss.retry_at = None;
+        self.loss.suspended = false;
+        recovered
+    }
+
+    /// An exchange failed while the TGT was absent. Transport, server and local
+    /// failures retry on the backoff; a refusal, or nothing to be silent with,
+    /// suspends. Only a landed exchange lifts a suspension.
+    fn loss_failed(&mut self, fault: Option<Fault>, now: i64) {
+        self.loss.streak += 1;
+        match fault {
+            Some(Fault::Network | Fault::Other) if !self.loss.suspended => {
+                self.loss.retry_at = Some(now + loss_delay(self.loss.streak));
+            }
+            Some(Fault::Network | Fault::Other) => {}
+            None | Some(Fault::Refused | Fault::GrantRefused) => self.loss_suspend(),
+        }
+    }
+
+    fn loss_suspend(&mut self) {
+        self.loss.suspended = true;
+        self.loss.retry_at = None;
+        // Without recovery the ticket runs out: arm the escalation.
+        self.silent_failed = true;
+        log::warn("TGT recovery attempts suspended until an exchange lands");
     }
 }
 
@@ -894,6 +951,17 @@ fn next_backoff(held: i64, first: i64, max: i64) -> i64 {
     (held * 2).clamp(first, max)
 }
 
+/// The wait before recovery attempt `streak` of a [`TgtLoss`] episode: none for
+/// the first, then [`LOSS_FIRST_SECS`] doubling to [`LOSS_MAX_SECS`], less up to
+/// a tenth. The jitter subtracts, as in [`midpoint`], so the ceiling holds.
+fn loss_delay(streak: u32) -> i64 {
+    if streak <= 1 {
+        return 0;
+    }
+    let base = (LOSS_FIRST_SECS << (streak - 2).min(16)).min(LOSS_MAX_SECS);
+    base - jitter(base / 10)
+}
+
 /// A uniform value in `0..=span` seconds, and 0 for a span that is not positive.
 ///
 /// An RNG failure degrades to the unjittered schedule rather than to an error:
@@ -922,122 +990,159 @@ fn jitter(span: i64) -> i64 {
 /// the state is still borrowed would be a latent panic.
 pub fn tick() -> bool {
     let now = time::now();
-    let mut redraw = false;
-    let mut want_refresh = false;
-    let mut want_startup = false;
-    let mut want_raise = false;
-    let mut want_probe = false;
-    let mut pending: Option<(String, String, Severity)> = None;
+    let busy = BUSY.load(Ordering::Relaxed);
+    let due = with(|a| {
+        tick_at(a, now, busy, &|realm| tickets::realm_tgt(realm).map(|tgt| tgt.is_some()))
+    });
 
-    with(|a| {
-        if let Some(due) = grant_deadline_due(a, now) {
-            a.grant_notified_at = Some(now);
-            pending = Some(due);
+    if let Some((title, body, severity)) = due.notice {
+        notify(&title, &body, severity);
+    }
+    if due.probe {
+        worker::discover_in_background();
+    }
+    if let Some(trigger) = due.start {
+        if trigger == Trigger::Startup {
+            log::info("autostart: retrying the silent sign-in");
         }
-        // Above the phase gate, because a broker that went away is worth asking
-        // about whether or not this machine holds a ticket. Re-armed before the
-        // attempt, so a failure cannot produce a tight loop; skipped while a
-        // worker holds the slot, which is already asking that endpoint the same
-        // question.
-        if a.probe_at.is_some_and(|t| now >= t) && !BUSY.load(Ordering::Relaxed) {
-            a.probe_backoff = next_backoff(a.probe_backoff, PROBE_FIRST_SECS, PROBE_MAX_SECS);
-            a.probe_at = Some(now + a.probe_backoff);
-            want_probe = true;
-        }
-        if a.phase != Phase::Connected {
-            if a.startup_retry_at.is_some_and(|t| now >= t) && !BUSY.load(Ordering::Relaxed) {
-                a.startup_retry_at = None;
-                want_startup = a.phase == Phase::SignedOut;
-            }
-            return;
-        }
-        // The ticket ran out: with an SMB session open this is the state that
-        // drops the redirector into a stuck NTLM fallback, and the whole of what
-        // the re-injection schedule exists to prevent.
-        if now >= a.end {
-            log::warn(&format!(
-                "{} ticket expired at {}",
-                a.kerberos.realm,
-                time::local_stamp(a.end)
-            ));
-            a.phase = Phase::Expired;
-            a.refresh_at = None;
-            redraw = true;
-            pending = Some((
+        worker::start_worker(trigger);
+    }
+    due.redraw
+}
+
+/// What one [`tick`] decided, for it to carry out once the borrow is released.
+#[derive(Default)]
+struct Due {
+    redraw: bool,
+    notice: Option<(String, String, Severity)>,
+    probe: bool,
+    /// One worker at most: the busy slot takes one, and every schedule that is
+    /// due in the same second wants the same exchange.
+    start: Option<Trigger>,
+}
+
+/// [`tick`] against one reading of the clock and the busy slot. `present` asks
+/// the ticket cache whether the realm's TGT is there.
+fn tick_at(
+    a: &mut Agent,
+    now: i64,
+    busy: bool,
+    present: &dyn Fn(&str) -> anyhow::Result<bool>,
+) -> Due {
+    let mut due = Due::default();
+    if let Some(notice) = grant_deadline_due(a, now) {
+        a.grant_notified_at = Some(now);
+        due.notice = Some(notice);
+    }
+    // Above the phase gate, because a broker that went away is worth asking
+    // about whether or not this machine holds a ticket. Re-armed before the
+    // attempt, so a failure cannot produce a tight loop; skipped while a
+    // worker holds the slot, which is already asking that endpoint the same
+    // question.
+    if a.probe_at.is_some_and(|t| now >= t) && !busy {
+        a.probe_backoff = next_backoff(a.probe_backoff, PROBE_FIRST_SECS, PROBE_MAX_SECS);
+        a.probe_at = Some(now + a.probe_backoff);
+        due.probe = true;
+    }
+    // The ticket ran out: with an SMB session open this is the state that
+    // drops the redirector into a stuck NTLM fallback, and the whole of what
+    // the re-injection schedule exists to prevent.
+    if a.phase == Phase::Connected && now >= a.end {
+        log::warn(&format!("{} ticket expired at {}", a.kerberos.realm, time::local_stamp(a.end)));
+        a.phase = Phase::Expired;
+        a.loss.absent = false;
+        a.loss.retry_at = None;
+        due.redraw = true;
+        // With a re-injection still due, its outcome is the announcement.
+        if a.refresh_at.is_none() {
+            due.notice = Some((
                 fill(tr().notify_stopped_title, &[("realm", &a.kerberos.realm)]),
                 tr().notify_stopped_body.into(),
                 Severity::Error,
             ));
-            return;
         }
-        // The NTLM fallback, detected rather than guessed at. An access that
-        // fell back evicts the injected TGT immediately, before its End Time
-        // (research spike `windows-tgt-followup-entra-joined`, lines 787-792),
-        // so a TGT that is simply *gone* while the agent still believes in one is
-        // the positive signal the restart has to be gated behind -- through the
-        // LSA query the agent already runs, with no SMB knowledge involved.
-        //
-        // Skipped while a worker holds the busy slot: re-injection purges the
-        // realm before it submits, and that window looks exactly like this.
-        if a.fallback == NtlmFallback::Clear
-            && a.settings.ntlm_fallback_recovery()
-            && now >= a.fallback_check_at
-            && !a.kerberos.realm.is_empty()
-            && !BUSY.load(Ordering::Relaxed)
-        {
-            a.fallback_check_at = now + FALLBACK_POLL_SECS;
-            if matches!(tickets::realm_tgt(&a.kerberos.realm), Ok(None)) {
-                log::warn(&format!(
-                    "the injected {} ticket is gone {} before its End Time -- treating it as an \
-                     NTLM fallback; repairing it requires a LanmanWorkstation restart",
-                    a.kerberos.realm,
-                    duration(a.end - now)
-                ));
-                a.fallback = NtlmFallback::Confirmed;
-                want_raise = true;
-                redraw = true;
+    }
+    // A re-injection due before End Time that never ran: after sleep, one tick
+    // passes both. It runs silently, and the status shows no access until it
+    // lands. Re-armed, not cleared: `start_worker` can decline without a trace,
+    // and only the worker's outcome clears it.
+    if a.phase == Phase::Expired {
+        if a.refresh_at.is_some_and(|t| now >= t) && !busy {
+            a.refresh_at = Some(now + MIN_REFRESH_DELAY);
+            due.start = Some(Trigger::Renewal);
+        }
+        return due;
+    }
+    if a.phase != Phase::Connected {
+        if a.startup_retry_at.is_some_and(|t| now >= t) && !busy {
+            a.startup_retry_at = None;
+            if a.phase == Phase::SignedOut {
+                due.start = Some(Trigger::Startup);
             }
         }
-        if a.refresh_at.is_some_and(|t| now >= t) && !BUSY.load(Ordering::Relaxed) {
-            // Re-arm before the attempt so a failure cannot produce a tight loop;
-            // a failed silent renewal retries at the next midpoint, and the user
-            // gets a notification either way.
-            a.refresh_at = Some(midpoint(now, a.end));
-            want_refresh = true;
+        return due;
+    }
+    // Look for the TGT the agent believes in. A query error is unknown, never
+    // an absence. Skipped while a worker holds the busy slot: re-injection
+    // purges the realm before it submits, and that window looks exactly like
+    // an absence.
+    let mut seen = None;
+    if now >= a.loss_check_at && !a.kerberos.realm.is_empty() && !busy {
+        a.loss_check_at = now + LOSS_POLL_SECS;
+        seen = Some(present(&a.kerberos.realm).ok());
+        match seen {
+            Some(Some(false)) if !a.loss.absent => {
+                a.loss_observed(now, status::silent_supply(a, now));
+                due.redraw = true;
+            }
+            Some(Some(true)) if a.loss.absent => {
+                a.loss_present();
+                due.redraw = true;
+            }
+            _ => {}
         }
-        if !a.escalated && a.silent_failed && a.end - now <= ESCALATE_SECS {
-            a.escalated = true;
-            redraw = true;
-            pending = Some((
-                fill(
-                    tr().notify_expiring_title,
-                    &[("realm", &a.kerberos.realm), ("duration", &duration(a.end - now))],
-                ),
-                tr().notify_expiring_body.into(),
-                Severity::Warning,
-            ));
+    }
+    // A recovery attempt goes ahead only while the TGT is still absent.
+    // Re-armed before the attempt, so one that never reports back cannot stall
+    // the episode.
+    if a.loss.absent && a.loss.retry_at.is_some_and(|t| now >= t) && !busy {
+        match seen.unwrap_or_else(|| present(&a.kerberos.realm).ok()) {
+            None => a.loss.retry_at = Some(now + LOSS_POLL_SECS),
+            Some(true) => {
+                a.loss_present();
+                due.redraw = true;
+            }
+            Some(false) => {
+                a.loss.retry_at = Some(now + loss_delay(a.loss.streak + 1));
+                due.start = Some(Trigger::Renewal);
+            }
         }
-    });
-
-    if let Some((title, body, severity)) = pending {
-        notify(&title, &body, severity);
     }
-    // Without focus, same as any other raise: worth interrupting for broken
-    // drives, not worth stealing the foreground for.
-    if want_raise {
-        host().raise(Raise::Repair);
+    if a.refresh_at.is_some_and(|t| now >= t) && !busy {
+        // The replacement lasted its whole interval: the episode is over.
+        if a.loss.streak > 0 && !a.loss.absent {
+            log::info(&format!("the {} TGT is stable again; loss streak reset", a.kerberos.realm));
+            a.loss = TgtLoss::default();
+        }
+        // Re-arm before the attempt so a failure cannot produce a tight loop;
+        // a failed silent renewal retries at the next midpoint, and the user
+        // gets a notification either way.
+        a.refresh_at = Some(midpoint(now, a.end));
+        due.start = Some(Trigger::Renewal);
     }
-    if want_probe {
-        worker::discover_in_background();
+    if !a.escalated && a.silent_failed && a.end - now <= ESCALATE_SECS {
+        a.escalated = true;
+        due.redraw = true;
+        due.notice = Some((
+            fill(
+                tr().notify_expiring_title,
+                &[("realm", &a.kerberos.realm), ("duration", &duration(a.end - now))],
+            ),
+            tr().notify_expiring_body.into(),
+            Severity::Warning,
+        ));
     }
-    if want_refresh {
-        worker::start_worker(Trigger::Renewal);
-    }
-    if want_startup {
-        log::info("autostart: retrying the silent sign-in");
-        worker::start_worker(Trigger::Startup);
-    }
-    redraw
+    due
 }
 
 // ---- notifications ---------------------------------------------------------
@@ -1102,6 +1207,7 @@ fn notify(title: &str, body: &str, severity: Severity) {
 mod tests {
     use super::*;
     use crate::config::FileConfig;
+    use crate::describe::Blocker;
 
     fn test_agent(broker_url: &str) -> Agent {
         Agent::new(Settings::for_test(FileConfig {
@@ -1232,7 +1338,7 @@ mod tests {
         a.start = 100;
         a.end = 200;
         a.refresh_at = Some(150);
-        a.fallback = NtlmFallback::Confirmed;
+        a.loss = TgtLoss { streak: 2, absent: true, ..TgtLoss::default() };
         a.expect(true);
 
         let next = a.advance_discovery().unwrap();
@@ -1244,7 +1350,7 @@ mod tests {
         assert_eq!(a.start, 0);
         assert_eq!(a.end, 0);
         assert!(a.refresh_at.is_none());
-        assert!(a.fallback == NtlmFallback::Clear);
+        assert_eq!(a.loss, TgtLoss::default());
         assert!(!a.expected());
     }
 
@@ -1388,5 +1494,291 @@ mod tests {
         // knew, and offline that is a session spent reporting "not signed in"
         // over a cache that works.
         assert!(is_the_grants(Some(&grant(None)), false, "riku@EXAMPLE.SITE"));
+    }
+
+    // ---- TGT loss --------------------------------------------------------------
+
+    const T0: i64 = 1_000_000;
+    const LIFETIME: i64 = 36_000;
+    const REALM: &str = "EXAMPLE.SITE";
+
+    /// A live ticket for `[T0, T0 + LIFETIME)`, its midpoint re-injection armed
+    /// and its first TGT check due. `supply` is a device grant; without one the
+    /// machine is delegated, which has nothing to be silent with on any platform
+    /// whatever the refresh token holds.
+    fn holding(supply: bool) -> Agent {
+        let mut a = Agent::new(Settings::for_test(FileConfig {
+            broker_url: Some("https://kerbridge.example.site".into()),
+            grant_for: (!supply).then(|| "svc-builder".into()),
+            cache: crate::config::Cache { realm: REALM.into(), ..crate::config::Cache::default() },
+            ..FileConfig::default()
+        }));
+        if supply {
+            a.settings.set_grant(Some(Grant {
+                sign_in_required_by: T0 + 30 * 86_400,
+                ..grant(Some("riku@EXAMPLE.SITE"))
+            }));
+        }
+        a.enroll_state = enroll::State::Enrolled;
+        a.phase = Phase::Connected;
+        a.principal = "riku@EXAMPLE.SITE".into();
+        a.start = T0;
+        a.end = T0 + LIFETIME;
+        a.renew_till = a.end;
+        a.refresh_at = Some(T0 + LIFETIME / 2);
+        a.expect(true);
+        a
+    }
+
+    fn gone(_: &str) -> anyhow::Result<bool> {
+        Ok(false)
+    }
+
+    fn there(_: &str) -> anyhow::Result<bool> {
+        Ok(true)
+    }
+
+    fn unreadable(_: &str) -> anyhow::Result<bool> {
+        Err(anyhow::anyhow!("LSA said no"))
+    }
+
+    fn not_polled(_: &str) -> anyhow::Result<bool> {
+        panic!("the ticket cache was read while a worker held the busy slot")
+    }
+
+    /// `Trigger::Renewal` is the silent trigger: no browser and no platform
+    /// dialog can open from it.
+    fn silent_attempt(due: &Due) -> bool {
+        due.start == Some(Trigger::Renewal)
+    }
+
+    #[test]
+    fn the_first_absence_starts_one_silent_attempt_at_once() {
+        let mut a = holding(true);
+        let now = T0 + 600;
+
+        let due = tick_at(&mut a, now, false, &gone);
+        assert!(silent_attempt(&due));
+        assert_eq!((a.loss.streak, a.loss.absent, a.loss.suspended), (1, true, false));
+        assert_eq!(a.refresh_at, Some(T0 + LIFETIME / 2), "the midpoint schedule stands");
+        let st = status::status_at(&a, now);
+        assert!(st.blockers.contains(&Blocker::TgtAbsent));
+        assert_eq!(
+            st.actions.contains(&Action::RestartWorkstation),
+            a.settings.ntlm_fallback_recovery(),
+            "offered where policy allows it, and never started"
+        );
+
+        // The worker holds the slot: no second attempt, and no read of a cache
+        // the re-injection is about to purge.
+        let due = tick_at(&mut a, now + 1, true, &not_polled);
+        assert!(due.start.is_none());
+    }
+
+    #[test]
+    fn a_query_error_is_unknown_and_starts_nothing() {
+        let mut a = holding(true);
+        let due = tick_at(&mut a, T0 + 600, false, &unreadable);
+        assert!(due.start.is_none());
+        assert_eq!(a.loss, TgtLoss::default());
+        assert!(!status::status_at(&a, T0 + 600).blockers.contains(&Blocker::TgtAbsent));
+    }
+
+    #[test]
+    fn a_delayed_attempt_rechecks_the_cache_first() {
+        let failed_once = || {
+            let mut a = holding(true);
+            let now = T0 + 600;
+            assert!(silent_attempt(&tick_at(&mut a, now, false, &gone)));
+            a.loss_failed(Some(Fault::Network), now + 5);
+            let due_at = a.loss.retry_at.expect("a transport failure retries");
+            assert!((now + 5 + 54..=now + 5 + 60).contains(&due_at));
+            assert!(tick_at(&mut a, due_at - 1, false, &gone).start.is_none());
+            (a, due_at)
+        };
+
+        // Unknown: the attempt waits for one poll interval rather than guessing.
+        let (mut unknown, due_at) = failed_once();
+        unknown.loss_check_at = due_at + 1_000;
+        assert!(tick_at(&mut unknown, due_at, false, &unreadable).start.is_none());
+        assert_eq!(unknown.loss.retry_at, Some(due_at + LOSS_POLL_SECS));
+        assert!(unknown.loss.absent);
+
+        // Present again: nothing to do, and nothing further scheduled.
+        let (mut back, due_at) = failed_once();
+        let due = tick_at(&mut back, due_at, false, &there);
+        assert!(due.start.is_none());
+        assert!(!back.loss.absent);
+        assert_eq!(back.loss.retry_at, None);
+        assert_eq!(back.loss.streak, 2, "the streak outlives the pause");
+
+        // Still absent: it goes ahead, with its watchdog re-armed first.
+        let (mut a, due_at) = failed_once();
+        let due = tick_at(&mut a, due_at, false, &gone);
+        assert!(silent_attempt(&due));
+        assert!(a.loss.retry_at.is_some_and(|t| t > due_at));
+    }
+
+    #[test]
+    fn a_replacement_that_disappears_keeps_the_streak_and_backs_off() {
+        let mut a = holding(true);
+        let mut now = T0 + 600;
+        assert!(silent_attempt(&tick_at(&mut a, now, false, &gone)));
+
+        for streak in 2..=9u32 {
+            // The attempt landed: paused while the replacement is present.
+            assert!(a.loss_landed());
+            a.loss_check_at = 0;
+            now += 1;
+            assert!(tick_at(&mut a, now, false, &there).start.is_none());
+            assert!(!a.loss.absent);
+
+            // It vanished too. The streak goes on; the wait grows.
+            now += LOSS_POLL_SECS;
+            let due = tick_at(&mut a, now, false, &gone);
+            assert!(due.start.is_none(), "streak {streak}: waits");
+            assert_eq!(a.loss.streak, streak);
+            let base = (LOSS_FIRST_SECS << (streak - 2)).min(LOSS_MAX_SECS);
+            let wait = a.loss.retry_at.unwrap() - now;
+            assert!((base - base / 10..=base).contains(&wait), "streak {streak}: {wait}");
+
+            now = a.loss.retry_at.unwrap();
+            assert!(silent_attempt(&tick_at(&mut a, now, false, &gone)), "streak {streak}");
+        }
+    }
+
+    #[test]
+    fn the_recovery_backoff_doubles_to_an_hour_and_stays() {
+        assert_eq!(loss_delay(0), 0);
+        assert_eq!(loss_delay(1), 0, "the first attempt does not wait");
+        let bases = [60, 120, 240, 480, 960, 1_920, 3_600, 3_600, 3_600, 3_600];
+        for (i, base) in bases.into_iter().enumerate() {
+            let streak = i as u32 + 2;
+            for _ in 0..50 {
+                let d = loss_delay(streak);
+                assert!((base - base / 10..=base).contains(&d), "streak {streak}: {d}");
+            }
+        }
+        assert!((3_240..=3_600).contains(&loss_delay(u32::MAX)), "no overflow past the ceiling");
+    }
+
+    #[test]
+    fn transient_failures_retry_and_refusals_suspend() {
+        for fault in [Fault::Network, Fault::Other] {
+            let mut a = holding(true);
+            assert!(silent_attempt(&tick_at(&mut a, T0 + 600, false, &gone)));
+            a.loss_failed(Some(fault), T0 + 605);
+            assert!(!a.loss.suspended, "{fault:?}");
+            assert_eq!(a.loss.streak, 2, "{fault:?}");
+            assert!(a.loss.retry_at.is_some(), "{fault:?}");
+            assert_eq!(a.refresh_at, Some(T0 + LIFETIME / 2), "{fault:?}");
+        }
+        for fault in [None, Some(Fault::Refused), Some(Fault::GrantRefused)] {
+            let mut a = holding(true);
+            assert!(silent_attempt(&tick_at(&mut a, T0 + 600, false, &gone)));
+            a.loss_failed(fault, T0 + 605);
+            assert!(a.loss.suspended, "{fault:?}");
+            assert!(a.loss.retry_at.is_none(), "{fault:?}");
+            assert!(a.silent_failed, "{fault:?}: the escalation is armed");
+
+            // Suspended: no recovery attempt before the midpoint, and a
+            // transient failure of another exchange does not lift it.
+            a.loss_failed(Some(Fault::Network), T0 + 606);
+            assert!(a.loss.suspended && a.loss.retry_at.is_none(), "{fault:?}");
+            for now in (T0 + 607..T0 + LIFETIME / 2).step_by(997) {
+                assert!(tick_at(&mut a, now, false, &gone).start.is_none(), "{fault:?} {now}");
+            }
+
+            // An explicit exchange that lands lifts it; the streak stays.
+            assert!(a.loss_landed());
+            assert!(!a.loss.suspended);
+            assert_eq!(a.loss.streak, 3);
+        }
+    }
+
+    #[test]
+    fn nothing_to_be_silent_with_suspends_without_an_attempt() {
+        let mut a = holding(false);
+        let due = tick_at(&mut a, T0 + 600, false, &gone);
+        assert!(due.start.is_none());
+        assert!(a.loss.absent && a.loss.suspended);
+        assert!(a.silent_failed);
+        assert!(status::status_at(&a, T0 + 600).blockers.contains(&Blocker::TgtAbsent));
+    }
+
+    #[test]
+    fn the_loss_episode_ends_only_on_a_reset_condition() {
+        // A replacement that lasts to its scheduled re-injection.
+        let mut a = holding(true);
+        assert!(silent_attempt(&tick_at(&mut a, T0 + 600, false, &gone)));
+        assert!(a.loss_landed());
+        a.refresh_at = Some(midpoint(T0 + 605, a.end));
+        let due_at = a.refresh_at.unwrap();
+        assert!(tick_at(&mut a, due_at - 1, false, &there).start.is_none());
+        assert_eq!(a.loss.streak, 1, "the landing alone resets nothing");
+        assert!(silent_attempt(&tick_at(&mut a, due_at, false, &there)));
+        assert_eq!(a.loss, TgtLoss::default());
+
+        // A session reset.
+        let mut a = holding(true);
+        assert!(silent_attempt(&tick_at(&mut a, T0 + 600, false, &gone)));
+        a.reset_session();
+        assert_eq!(a.loss, TgtLoss::default());
+    }
+
+    /// Field case: the machine slept across End Time with its midpoint
+    /// re-injection overdue. The first tick after resume starts it, silently,
+    /// and says there is no access until it lands.
+    #[test]
+    fn a_tick_past_end_time_runs_the_overdue_re_injection() {
+        let mut a = holding(true);
+        let now = a.end + 4 * 3_600;
+
+        let due = tick_at(&mut a, now, false, &not_polled);
+        assert!(silent_attempt(&due));
+        assert!(due.notice.is_none(), "the attempt's outcome is the announcement");
+        assert!(a.phase == Phase::Expired);
+        let st = status::status_at(&a, now);
+        assert_eq!(st.condition, crate::describe::Condition::Stopped);
+        assert!(st.ticket.is_none());
+        assert!(!st.blockers.contains(&Blocker::TgtAbsent));
+
+        // Not again while it runs; the phase stays stopped until it lands.
+        assert!(tick_at(&mut a, now + 1, false, &not_polled).start.is_none());
+        assert_eq!(a.refresh_at, Some(now + MIN_REFRESH_DELAY));
+    }
+
+    /// `start_worker` declines without a trace during grant cleanup, a cloud
+    /// sign-out, or with no broker to stamp. The attempt comes round again
+    /// until an outcome clears it.
+    #[test]
+    fn an_overdue_re_injection_that_never_started_comes_round_again() {
+        let mut a = holding(true);
+        let now = a.end + 60;
+        assert!(silent_attempt(&tick_at(&mut a, now, false, &not_polled)));
+        let again = now + MIN_REFRESH_DELAY;
+        assert!(tick_at(&mut a, again - 1, false, &not_polled).start.is_none());
+        assert!(silent_attempt(&tick_at(&mut a, again, false, &not_polled)));
+        assert!(a.phase == Phase::Expired);
+    }
+
+    #[test]
+    fn a_busy_worker_holds_the_overdue_re_injection_after_end_time() {
+        let mut a = holding(true);
+        let now = a.end + 60;
+        assert!(tick_at(&mut a, now, true, &not_polled).start.is_none());
+        assert!(a.phase == Phase::Expired);
+        assert!(silent_attempt(&tick_at(&mut a, now + 5, false, &not_polled)));
+    }
+
+    #[test]
+    fn end_time_with_nothing_scheduled_is_announced() {
+        let mut a = holding(true);
+        a.refresh_at = None;
+        let now = a.end;
+        let due = tick_at(&mut a, now, false, &not_polled);
+        assert!(due.start.is_none());
+        assert!(due.notice.is_some());
+        assert!(a.phase == Phase::Expired);
     }
 }

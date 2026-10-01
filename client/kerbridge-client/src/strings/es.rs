@@ -35,7 +35,7 @@ pub(super) static ES: Strings = Strings {
     blk_no_grant: "Este dispositivo no está autorizado a funcionar como {account}",
     blk_grant_refused: "Tu organización rechazó esta autorización",
     blk_refused: "Tu cuenta fue rechazada",
-    blk_ntlm_fallback: "Las unidades de red dejaron de funcionar (NTLM)",
+    blk_tgt_absent: "El TGT de Kerberos desapareció antes de tiempo",
 
     details_heading: "Detalles de Kerberos",
     meter_label: "Acceso válido durante",

@@ -176,7 +176,7 @@ blockers = [
   { blocker = "blk_network_error",        arg = "서버", plain = "앱이 IT 팀의 서버에 연결하지 못하고 있습니다.", todo = "네트워크나 VPN에 연결되어 있는지 확인하세요. 이미 열어 둔 드라이브는 대개 계속 작동합니다." },
   { blocker = "blk_realm_unknown",        arg = "서버", plain = "서버에는 연결했지만 아직 설정을 받지 못했습니다.", todo = "기다리세요. 알아서 다시 시도합니다." },
   { blocker = "blk_realm_not_registered", arg = "EXAMPLE.SITE", os = "win", plain = "이 컴퓨터에 필요한 일회성 설정 단계가 아직 완료되지 않았습니다.", todo = "설정 버튼을 사용하세요. 관리자 권한을 요청하며, 이후 다시 시작이 필요합니다." },
-  { blocker = "blk_ntlm_fallback",        os = "win", plain = "출입증 만료 후에 생기는 알려진 Windows 문제입니다. 드라이브가 멈춰 있습니다.", todo = "작업을 저장한 뒤 복구 버튼을 사용하세요." },
+  { blocker = "blk_tgt_absent",           plain = "이 장치의 출입증이 만료 전에 사라졌습니다. 접근은 여전히 작동할 수 있습니다.", todo = "대개는 할 일이 없습니다. 앱이 알아서 새것을 받아 옵니다. 드라이브가 암호를 요구하면 갱신하세요." },
   { blocker = "blk_refused",              plain = "조직의 서버가 이 드라이브들에 대해 계정을 받아들이지 않았습니다.", todo = "이 컴퓨터에서 고칠 수 있는 일이 아닙니다 — IT 팀에 문의하세요." },
   { blocker = "blk_no_grant",             arg = "계정", plain = "아직 승인되지 않은 공용 계정 컴퓨터입니다.", todo = "승인 권한이 있는 사람이 여기서 로그인해야 합니다." },
   { blocker = "blk_grant_refused",        plain = "정책상 이 장치는 브라우저를 건너뛸 수 없습니다.", todo = "다시 시도해도 소용없습니다. IT 팀에 문의하세요." },

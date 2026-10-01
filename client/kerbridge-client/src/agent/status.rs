@@ -7,12 +7,10 @@
 
 use std::sync::atomic::Ordering;
 
-use crate::describe::{Action, Blocker, Condition, Facts, Supply, describe};
+use crate::describe::{Action, Blocker, Condition, Description, Facts, Supply, describe};
 use crate::time;
 
-use super::{
-    Agent, BROWSER_LEG, FLAKY_QUIET_SECS, LATE_ELAPSED, NtlmFallback, REFRESH_TOKEN, host_of, with,
-};
+use super::{Agent, BROWSER_LEG, FLAKY_QUIET_SECS, LATE_ELAPSED, REFRESH_TOKEN, host_of, with};
 
 /// An immutable snapshot for rendering. The UI holds one of these for the
 /// duration of a repaint and never reads agent state directly.
@@ -99,10 +97,16 @@ pub fn status() -> Status {
     with(|a| status_at(a, time::now()))
 }
 
-fn status_at(a: &Agent, now: i64) -> Status {
+/// True when a silent exchange has something to run on: the [`Supply`] the
+/// surface shows.
+pub(super) fn silent_supply(a: &Agent, now: i64) -> bool {
+    described_at(a, now).supply != Supply::None
+}
+
+fn described_at(a: &Agent, now: i64) -> Description {
     let grant_expiry = a.settings.grant().map(|g| g.sign_in_required_by);
     let holds_live_ticket = a.holds_live_ticket_at(now);
-    let described = describe(&Facts {
+    describe(&Facts {
         broker: a.settings.broker_url().is_some(),
         realm_known: !a.kerberos.realm.is_empty(),
         enrolled: !a.enroll_state.needs_action(),
@@ -117,12 +121,18 @@ fn status_at(a: &Agent, now: i64) -> Status {
         windows_sign_in: a.settings.windows_sign_in(),
         grants_enabled: a.device_grant.enabled() && crate::device::AVAILABLE,
         ntlm_recovery: a.settings.ntlm_fallback_recovery(),
-        ntlm_confirmed: a.fallback == NtlmFallback::Confirmed,
+        tgt_absent: a.loss.absent && holds_live_ticket,
         fault: a.fault,
         flaky_elapsed: a.first_failure_at.is_some_and(|t| now - t > FLAKY_QUIET_SECS),
         enrollment_platform: cfg!(windows),
         browser_leg: BROWSER_LEG.load(Ordering::Relaxed),
-    });
+    })
+}
+
+pub(super) fn status_at(a: &Agent, now: i64) -> Status {
+    let grant_expiry = a.settings.grant().map(|g| g.sign_in_required_by);
+    let holds_live_ticket = a.holds_live_ticket_at(now);
+    let described = described_at(a, now);
     Status {
         condition: described.condition,
         blockers: described.blockers,
@@ -146,7 +156,12 @@ fn status_at(a: &Agent, now: i64) -> Status {
                 renewable: a.renew_till > a.end,
             }
         }),
-        next_attempt_at_earliest: soonest([a.refresh_at, a.startup_retry_at, a.probe_at]),
+        next_attempt_at_earliest: soonest([
+            a.refresh_at,
+            a.startup_retry_at,
+            a.probe_at,
+            a.loss.retry_at,
+        ]),
         message: a.message.clone(),
         fault: a.fault.is_some(),
         holds_grant: a.settings.grant().is_some(),
@@ -160,7 +175,7 @@ fn status_at(a: &Agent, now: i64) -> Status {
 ///
 /// The re-probe counts: it is the only one a machine with no ticket and nothing
 /// to be silent with ever has, and without it the drawer omits the row entirely.
-fn soonest(clocks: [Option<i64>; 3]) -> Option<i64> {
+fn soonest(clocks: [Option<i64>; 4]) -> Option<i64> {
     clocks.into_iter().flatten().min()
 }
 

@@ -269,9 +269,9 @@ strings! {
     blk_no_grant, // {account}
     blk_grant_refused,
     blk_refused,
-    /// Keeps its `(NTLM)` tag: nothing else nearby names the mechanism, and that
-    /// keyword is what has to reach the support request.
-    blk_ntlm_fallback,
+    /// Names the TGT, the real term a support request has to carry. It claims
+    /// nothing about NTLM or the drives: an absent TGT proves neither.
+    blk_tgt_absent,
 
     // ---- the details drawer ----
     //
