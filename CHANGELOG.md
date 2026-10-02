@@ -41,6 +41,8 @@ names the tag, and it stops if that section is absent or empty.
 - Agents keep looking for the broker and its settings when they start before
   the network.
 - Agents hold startup notifications until they know if silent mode is on.
+- The agent and the CLI no longer undo each other's config.toml changes,
+  and a crash no longer leaves a partial config.toml.
 
 ## 1.0.1
 

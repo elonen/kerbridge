@@ -74,7 +74,7 @@ pub(crate) fn granted_injection(
         .context("asking the broker which source this address reaches")?;
     match session::inject_with_grant(&broker, &grant) {
         Ok(injected) => {
-            record_grant_principal(requested_broker, &injected.principal);
+            record_grant_principal(requested_broker, &grant.grant_id, &injected.principal);
             Ok(Some((Proof::Grant(grant), injected, broker)))
         }
         // Expired, clamped, revoked, or the key is gone. All four are the same
@@ -121,14 +121,14 @@ fn warn_ticket_is_yours() {
 
 /// Remember what the device grant just worked as, so a later run -- and the
 /// agent's startup -- can tell this machine's own ticket from anybody else's.
-fn record_grant_principal(broker_url: &str, principal: &str) {
+fn record_grant_principal(broker_url: &str, grant_id: &str, principal: &str) {
     let mut settings = config::Settings::load();
     if settings.broker_url().is_some_and(|configured| configured != broker_url) {
         return;
     }
-    if settings.set_grant_principal(principal)
-        && let Err(e) = settings.save()
-    {
+    if let Err(e) = settings.update(|f| {
+        f.set_grant_principal(grant_id, principal);
+    }) {
         eprintln!("[kerbridge] could not record what the grant works as: {e:#}");
     }
 }

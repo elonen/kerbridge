@@ -29,10 +29,11 @@
 //! the realm, and check enrollment against it, before the first successful
 //! discovery of a run.
 
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use crate::discovery::{Defaults, KerberosConfig};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(windows, path = "windows/config.rs")]
@@ -113,8 +114,8 @@ pub struct Grant {
     pub sign_in_required_by: i64,
 }
 
-/// `config.toml` itself.
-#[derive(Serialize, Deserialize, Clone, Default)]
+/// `config.toml` itself. A process changes it only through [`Settings::update`].
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Eq)]
 pub struct FileConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub broker_url: Option<String>,
@@ -134,7 +135,7 @@ pub struct FileConfig {
     ///
     /// **Declared before `grant` and `cache`**: `toml::to_string_pretty` cannot
     /// emit a bare value after a table, so moving it below either one makes
-    /// [`Settings::save`] fail at runtime, and only on machines holding a grant.
+    /// [`Settings::update`] fail at runtime, and only on machines holding a grant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_working_as: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -191,6 +192,91 @@ fn with_https(url: &str) -> String {
     if url.contains("://") { url.to_owned() } else { format!("https://{url}") }
 }
 
+/// A user-entered broker URL as stored. A scheme-less entry
+/// (`broker.example.site`) gets `https://` prepended: TLS is mandatory anyway,
+/// so typing it is noise. An empty entry gives `None`.
+pub(crate) fn typed_broker_url(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| with_https(text))
+}
+
+impl FileConfig {
+    /// Read the file at `path`. A missing file is an empty configuration. Any
+    /// other failure is an error, a file that does not parse included.
+    fn read(path: &Path) -> Result<FileConfig> {
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(FileConfig::default()),
+            Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+        };
+        toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
+    }
+
+    pub fn set_grant_for(&mut self, target: &str) {
+        let target = target.trim();
+        self.grant_for = (!target.is_empty()).then(|| target.to_owned());
+    }
+
+    pub fn set_cache(&mut self, k: &KerberosConfig) {
+        self.cache =
+            Cache { realm: k.realm.clone(), kdcs: k.kdcs.clone(), services: k.services.clone() };
+    }
+
+    /// Record what grant `grant_id` just worked as. Returns true when that is
+    /// news. A different grant, or none, stays as it is: it can be newer than
+    /// the grant the exchange used.
+    pub fn set_grant_principal(&mut self, grant_id: &str, principal: &str) -> bool {
+        match self.grant.as_mut() {
+            Some(g) if g.grant_id == grant_id && g.principal.as_deref() != Some(principal) => {
+                g.principal = Some(principal.to_owned());
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Point this file at another broker, and remove every value the old
+    /// broker owned: its cached Kerberos block, the device grant it issued and
+    /// the browser-session marker of its authority. User choices stay.
+    pub fn retarget(&mut self, broker_url: Option<String>) {
+        self.broker_url = broker_url;
+        self.cache = Cache::default();
+        self.grant = None;
+        self.browser_session = false;
+    }
+}
+
+/// Replace `path` with `text` through a temporary file in the same directory.
+/// A reader then sees the complete old file or the complete new one, never an
+/// empty or partial file. The temporary file has the process ID in its name, so
+/// two processes do not write the same one.
+///
+/// `std::fs::rename` replaces an existing file on every platform: on Windows it
+/// is `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`. On Windows the rename
+/// fails while another program holds `config.toml` open without delete sharing;
+/// the old file then stays.
+fn replace(path: &Path, text: &str) -> Result<()> {
+    let dir = path.parent().context("config.toml has no directory")?;
+    std::fs::create_dir_all(dir).context("creating the config directory")?;
+    let mut name = path.file_name().context("config.toml has no file name")?.to_owned();
+    name.push(format!(".{}.tmp", std::process::id()));
+    let tmp = dir.join(name);
+    let _ = std::fs::remove_file(&tmp);
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .and_then(|mut file| file.write_all(text.as_bytes()).and_then(|()| file.sync_all()))
+        .with_context(|| format!("writing {}", tmp.display()))
+        .and_then(|()| {
+            std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))
+        });
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
+}
+
 /// Machine policy. Absent values mean "not managed", which is the normal case.
 #[derive(Default)]
 struct Policy {
@@ -221,24 +307,27 @@ pub struct Settings {
     /// on the operating system rather than a value read back -- see
     /// [`FileConfig::autostart`] and [`Settings::enforce_autostart`].
     defaults: Option<Defaults>,
-    #[cfg(test)]
-    persist: bool,
+    /// Where [`Settings::update`] writes. `None` where no application
+    /// directory resolves; in unit tests, `None` keeps every change in memory.
+    path: Option<PathBuf>,
 }
 
 impl Settings {
     /// Read both layers. Never fails: a missing or malformed `config.toml` is
     /// reported to the log and treated as "unconfigured" -- a tray that refuses
     /// to start because of a typo in a config file is worse than one that asks
-    /// for its broker URL again.
+    /// for its broker URL again. [`Settings::update`] reads the file again and
+    /// refuses to write over one that does not parse, so the defaults used here
+    /// never replace it.
     pub fn load() -> Settings {
-        let file = config_path()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .map(|text| match toml::from_str::<FileConfig>(&text) {
-                Ok(c) => c,
-                Err(e) => {
-                    crate::log::warn(&format!("config.toml unreadable ({e}); using defaults"));
+        let path = config_path();
+        let file = path
+            .as_deref()
+            .map(|p| {
+                FileConfig::read(p).unwrap_or_else(|e| {
+                    crate::log::warn(&format!("config.toml unusable ({e:#}); using defaults"));
                     FileConfig::default()
-                }
+                })
             })
             .unwrap_or_default();
 
@@ -250,36 +339,88 @@ impl Settings {
             silent: imp::policy_bool("Silent"),
             windows_sign_in: imp::policy_bool("WindowsSignIn"),
         };
+        Settings { file, policy, discovered: None, defaults: None, path }
+    }
+
+    /// Settings that hold `file` in memory only.
+    #[cfg(test)]
+    pub(crate) fn for_test(file: FileConfig) -> Settings {
+        Settings { file, policy: Policy::default(), discovered: None, defaults: None, path: None }
+    }
+
+    /// Settings that read and write the file at `path`, as `load` reads it.
+    #[cfg(test)]
+    pub(crate) fn for_test_at(path: &Path) -> Settings {
         Settings {
-            file,
-            policy,
-            discovered: None,
-            defaults: None,
-            #[cfg(test)]
-            persist: true,
+            file: FileConfig::read(path).unwrap_or_default(),
+            path: Some(path.to_owned()),
+            ..Settings::for_test(FileConfig::default())
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_test(file: FileConfig) -> Settings {
-        Settings {
-            file,
-            policy: Policy::default(),
-            discovered: None,
-            defaults: None,
-            persist: false,
-        }
+    /// Apply `change` to `config.toml` as it is on disk now, and make the
+    /// result this process's file layer.
+    ///
+    /// 1. Read and parse the current file. A missing file is empty.
+    /// 2. Apply `change`. It sets or clears only the fields it names, so a
+    ///    value that another process wrote to another field stays.
+    /// 3. If the value changed, write it through [`replace`].
+    ///
+    /// **A file that does not parse is never replaced.** `change` then applies
+    /// in memory only, and the update returns an error if `change` changed the
+    /// value. After a failed write, the merged value stays in memory only until
+    /// the next update reads the file.
+    ///
+    /// This prevents lost updates from a stale snapshot, and a partial file
+    /// after a crash. It is not concurrency control: two processes that read
+    /// the same version can both write, and the last write wins. A resident
+    /// agent sees a change from another process only at its next update.
+    /// Only the file layer is written, so a policy value never goes into the
+    /// user's file.
+    pub fn update(&mut self, change: impl FnOnce(&mut FileConfig)) -> Result<()> {
+        let Some(path) = self.path.as_deref() else {
+            change(&mut self.file);
+            return if cfg!(test) {
+                Ok(())
+            } else {
+                Err(anyhow!("cannot find the application directory"))
+            };
+        };
+        let mut file = match FileConfig::read(path) {
+            Ok(file) => file,
+            Err(e) => {
+                let before = self.file.clone();
+                change(&mut self.file);
+                return if self.file == before {
+                    Ok(())
+                } else {
+                    Err(e.context("not replacing config.toml"))
+                };
+            }
+        };
+        let before = file.clone();
+        change(&mut file);
+        let written = if file == before {
+            Ok(())
+        } else {
+            toml::to_string_pretty(&file)
+                .context("serializing config.toml")
+                .and_then(|text| replace(path, &text))
+        };
+        self.file = file;
+        written
     }
 
     /// Broker URL in precedence order: HKLM policy > `config.toml` > DNS > unset.
     /// What IT decided beats what the user chose, and both beat what the network
     /// volunteered.
     pub fn broker_url(&self) -> Option<&str> {
-        self.policy
-            .broker_url
-            .as_deref()
-            .or(self.file.broker_url.as_deref())
-            .or(self.discovered.as_deref())
+        self.broker_url_with(self.file.broker_url.as_deref())
+    }
+
+    /// What [`Settings::broker_url`] answers when `config.toml` holds `user`.
+    pub(crate) fn broker_url_with<'a>(&'a self, user: Option<&'a str>) -> Option<&'a str> {
+        self.policy.broker_url.as_deref().or(user).or(self.discovered.as_deref())
     }
 
     /// Record what [`crate::srv::discover_broker`] found. It sits below both
@@ -291,21 +432,6 @@ impl Settings {
     /// True when policy supplies the broker URL, so the UI must not offer to edit it.
     pub fn broker_url_locked(&self) -> bool {
         self.policy.broker_url.is_some()
-    }
-
-    /// Store a user-entered broker URL. A scheme-less entry (`broker.example.site`)
-    /// gets `https://` prepended -- TLS is mandatory anyway, so typing it is noise.
-    pub fn set_broker_url(&mut self, url: &str) {
-        let url = url.trim();
-        self.file.broker_url = (!url.is_empty()).then(|| with_https(url));
-    }
-
-    pub(crate) fn user_broker_url(&self) -> Option<String> {
-        self.file.broker_url.clone()
-    }
-
-    pub(crate) fn restore_user_broker_url(&mut self, url: Option<String>) {
-        self.file.broker_url = url;
     }
 
     /// Whom this machine authorizes itself for, machine-wide value first.
@@ -324,25 +450,10 @@ impl Settings {
         self.policy.grant_for.is_some()
     }
 
-    pub fn set_grant_for(&mut self, target: &str) {
-        let target = target.trim();
-        self.file.grant_for = (!target.is_empty()).then(|| target.to_owned());
-    }
-
     /// The scope this machine last landed a ticket in. See
     /// [`FileConfig::expected_working_as`].
     pub fn expected_working_as(&self) -> Option<&str> {
         self.file.expected_working_as.as_deref()
-    }
-
-    /// Record, or forget, that expectation. Returns true when it is news, so the
-    /// ordinary re-injection does not rewrite `config.toml` every few hours --
-    /// a landed exchange is not the same thing as a changed one.
-    pub fn set_expected_working_as(&mut self, scope: Option<&str>) -> bool {
-        let next = scope.map(str::to_owned);
-        let changed = next != self.file.expected_working_as;
-        self.file.expected_working_as = next;
-        changed
     }
 
     /// Replace the deployment defaults from one accepted discovery document.
@@ -392,10 +503,6 @@ impl Settings {
         self.policy.silent.is_some()
     }
 
-    pub fn set_silent(&mut self, on: bool) {
-        self.file.silent = Some(on);
-    }
-
     /// Both halves: the stored preference, **and** a platform with a credential
     /// store to ride. The flag defaults to on and travels with the file, so
     /// without the second half every Mac claims a supply it does not have --
@@ -421,10 +528,6 @@ impl Settings {
         self.policy.windows_sign_in.is_some()
     }
 
-    pub fn set_windows_sign_in(&mut self, on: bool) {
-        self.file.windows_sign_in = Some(on);
-    }
-
     /// True when policy decides it, so the checkbox reads the managed value and
     /// does not move -- the same rule as the machine-wide entry, and for the
     /// same reason: a box the user can move but that changes nothing is a lie.
@@ -432,8 +535,8 @@ impl Settings {
         self.policy.autostart.is_some()
     }
 
-    /// Make the operating system agree with whichever layer decides autostart,
-    /// and report whether `config.toml` now needs saving.
+    /// Make the operating system agree with whichever layer decides autostart.
+    /// An error says only that `config.toml` did not record a seed.
     ///
     /// The login entry is per-user on both platforms, so nothing a policy value
     /// or a deployment default says takes effect until something writes one.
@@ -445,7 +548,7 @@ impl Settings {
     /// starting the agent with nothing left to say why. A deployment default is
     /// recorded, because it is a seed: it decides a profile that has never
     /// decided, once, and a later choice then wins over it.
-    pub fn enforce_autostart(&mut self) -> bool {
+    pub fn enforce_autostart(&mut self) -> Result<()> {
         // Policy is applied on every start, because it is the answer that must
         // hold whatever else touched the entry. A user's own settled answer is *not* re-applied: the entry
         // itself is the truth for that case, and rewriting it here would undo
@@ -453,10 +556,10 @@ impl Settings {
         // applied once, to a profile that has never had an answer.
         let (want, seed) = match (self.policy.autostart, self.file.autostart) {
             (Some(policy), _) => (policy, false),
-            (None, Some(_)) => return false,
+            (None, Some(_)) => return Ok(()),
             (None, None) => match self.defaults.and_then(|defaults| defaults.autostart) {
                 Some(default) => (default, true),
-                None => return false,
+                None => return Ok(()),
             },
         };
         // Machine-wide beats every per-user entry, and no per-user act can
@@ -467,16 +570,25 @@ impl Settings {
                     "autostart is asked to be off, but a machine-wide Run entry starts the agent                      anyway; only an administrator can remove that",
                 );
             }
-            return false;
+            return Ok(());
         }
         if autostart_enabled() != want {
             if let Err(e) = set_autostart(want) {
                 crate::log::warn(&format!("could not apply the autostart entry: {e:#}"));
-                return false;
+                return Ok(());
             }
             crate::log::info(&format!("autostart set to {want} by {}", self.autostart_source()));
         }
-        seed && self.set_autostart_choice(want)
+        if seed { self.seed_autostart(want) } else { Ok(()) }
+    }
+
+    /// Record a deployment default as this profile's autostart answer. A seed
+    /// decides only a profile that has not decided: a choice recorded since,
+    /// by this process or another one, stays.
+    fn seed_autostart(&mut self, want: bool) -> Result<()> {
+        self.update(|f| {
+            f.autostart.get_or_insert(want);
+        })
     }
 
     /// Which layer decided, for the log.
@@ -490,25 +602,8 @@ impl Settings {
         }
     }
 
-    /// Record the autostart answer this machine has settled on. Returns true
-    /// when that is news, so seeding a default does not rewrite `config.toml`
-    /// on every start.
-    pub fn set_autostart_choice(&mut self, on: bool) -> bool {
-        let changed = self.file.autostart != Some(on);
-        self.file.autostart = Some(on);
-        changed
-    }
-
     pub fn browser_session(&self) -> bool {
         self.file.browser_session
-    }
-
-    /// Returns true when that is news, so a re-injection does not rewrite
-    /// `config.toml` every few hours.
-    pub fn set_browser_session(&mut self, on: bool) -> bool {
-        let changed = self.file.browser_session != on;
-        self.file.browser_session = on;
-        changed
     }
 
     pub fn cache(&self) -> &Cache {
@@ -517,55 +612,6 @@ impl Settings {
 
     pub fn grant(&self) -> Option<&Grant> {
         self.file.grant.as_ref()
-    }
-
-    pub(crate) fn clear_broker_state(&mut self) {
-        self.file.cache = Cache::default();
-        self.file.grant = None;
-        self.file.browser_session = false;
-    }
-
-    /// Record, or forget, this machine's device grant. Forgetting is what
-    /// giving the grant up does after the TPM key is already gone.
-    pub fn set_grant(&mut self, grant: Option<Grant>) {
-        self.file.grant = grant;
-    }
-
-    /// Record what the grant just worked as. Returns true when that is news, so
-    /// the ordinary re-injection does not rewrite `config.toml` every few hours.
-    pub fn set_grant_principal(&mut self, principal: &str) -> bool {
-        match self.file.grant.as_mut() {
-            Some(g) if g.principal.as_deref() != Some(principal) => {
-                g.principal = Some(principal.to_owned());
-                true
-            }
-            _ => false,
-        }
-    }
-
-    /// Remember the broker's Kerberos block. Returns true when it changed, which
-    /// is the tray's cue to re-check enrollment.
-    pub fn set_cache(&mut self, k: &KerberosConfig) -> bool {
-        let next =
-            Cache { realm: k.realm.clone(), kdcs: k.kdcs.clone(), services: k.services.clone() };
-        let changed = next != self.file.cache;
-        self.file.cache = next;
-        changed
-    }
-
-    /// Write `config.toml`. Only the file layer is written, so a policy-supplied
-    /// broker URL is never baked into the user's file.
-    pub fn save(&self) -> Result<()> {
-        #[cfg(test)]
-        if !self.persist {
-            return Ok(());
-        }
-        let path = config_path().context("locating the application directory")?;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).context("creating the config directory")?;
-        }
-        let text = toml::to_string_pretty(&self.file).context("serializing config.toml")?;
-        std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))
     }
 }
 
@@ -680,27 +726,23 @@ mod tests {
     }
 
     fn settings(file: FileConfig) -> Settings {
-        Settings {
-            file,
-            policy: Policy::default(),
-            discovered: None,
-            defaults: None,
-            persist: false,
-        }
+        Settings::for_test(file)
     }
 
     #[test]
-    fn restoring_an_unset_user_broker_returns_to_dns() {
+    fn a_cleared_user_broker_returns_to_dns() {
         let mut settings = settings(FileConfig::default());
         settings.set_discovered("https://dns.example.site".into());
-        let before = settings.user_broker_url();
+        let typed = typed_broker_url(" typed.example.site ");
+        assert_eq!(typed.as_deref(), Some("https://typed.example.site"));
+        assert_eq!(settings.broker_url_with(typed.as_deref()), typed.as_deref());
 
-        settings.set_broker_url("https://typed.example.site");
+        settings.update(|f| f.retarget(typed)).unwrap();
         assert_eq!(settings.broker_url(), Some("https://typed.example.site"));
-        settings.restore_user_broker_url(before);
+        settings.update(|f| f.retarget(typed_broker_url("  "))).unwrap();
 
         assert_eq!(settings.broker_url(), Some("https://dns.example.site"));
-        assert!(settings.user_broker_url().is_none());
+        assert!(settings.file.broker_url.is_none());
     }
 
     /// The order the whole feature rests on: what IT decided, then what the
@@ -718,7 +760,7 @@ mod tests {
         assert!(!s.windows_sign_in());
 
         // The user's own choice beats the deployment's default.
-        s.set_windows_sign_in(true);
+        s.update(|f| f.windows_sign_in = Some(true)).unwrap();
         assert_eq!(s.windows_sign_in(), on);
 
         // And policy beats both, and says so, so the checkbox stops offering.
@@ -732,16 +774,19 @@ mod tests {
     /// policy's scope still obeying it, with nothing left to say why.
     #[test]
     fn a_deployment_default_is_recorded_and_a_policy_value_is_not() {
-        let mut s = settings(FileConfig::default());
-        s.set_defaults(Defaults { autostart: Some(true), ..Defaults::default() });
-        assert!(s.set_autostart_choice(true), "the seed is news the first time");
-        assert_eq!(s.file.autostart, Some(true));
-        assert!(!s.set_autostart_choice(true), "and not news the second");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut s = Settings::for_test_at(&path);
+        s.seed_autostart(true).unwrap();
+        assert_eq!(on_disk(&path).autostart, Some(true));
 
-        // A user who then turns it off is not overridden by the same default
-        // arriving again: `enforce_autostart` stops at a file value.
-        s.set_autostart_choice(false);
-        assert_eq!(s.file.autostart, Some(false));
+        // The same default, arriving again, does not override a user who then
+        // turns it off. This holds also when another process records the choice.
+        let mut agent = Settings::for_test_at(&path);
+        Settings::for_test_at(&path).update(|f| f.autostart = Some(false)).unwrap();
+        agent.seed_autostart(true).unwrap();
+        assert_eq!(on_disk(&path).autostart, Some(false));
+        assert_eq!(agent.file.autostart, Some(false));
 
         let mut s = settings(FileConfig::default());
         s.policy.autostart = Some(true);
@@ -806,7 +851,7 @@ mod tests {
     fn silent_precedence_is_builtin_then_broker_then_user_then_policy() {
         let mut s = settings(FileConfig::default());
         s.set_defaults(Defaults { silent: Some(true), ..Defaults::default() });
-        s.set_silent(false);
+        s.update(|f| f.silent = Some(false)).unwrap();
         s.policy.silent = Some(true);
 
         assert_eq!(s.resolved_silent(), Some(true));
@@ -892,27 +937,6 @@ mod tests {
         out
     }
 
-    /// A landed exchange is not the same thing as a changed one: without the
-    /// guard, every silent renewal rewrites `config.toml`.
-    #[test]
-    fn recording_the_same_expectation_twice_is_not_news() {
-        let mut s = Settings {
-            file: FileConfig::default(),
-            policy: Policy::default(),
-            discovered: None,
-            defaults: None,
-            persist: false,
-        };
-        assert!(s.set_expected_working_as(Some("EXAMPLE.SITE|")));
-        assert!(!s.set_expected_working_as(Some("EXAMPLE.SITE|")));
-        assert_eq!(s.expected_working_as(), Some("EXAMPLE.SITE|"));
-
-        // A delegated machine's target is half the scope, so changing it is news.
-        assert!(s.set_expected_working_as(Some("EXAMPLE.SITE|svc-builder")));
-        assert!(s.set_expected_working_as(None));
-        assert!(!s.set_expected_working_as(None));
-    }
-
     /// A device that has never been granted one writes no `[grant]` table at
     /// all, so an existing `config.toml` is untouched by the feature shipping.
     #[test]
@@ -920,5 +944,279 @@ mod tests {
         let text = toml::to_string_pretty(&FileConfig::default()).expect("serializes");
         assert!(!text.contains("grant"), "{text}");
         assert!(toml::from_str::<FileConfig>(&text).unwrap().grant.is_none());
+    }
+
+    // ---- persistence ----------------------------------------------------------
+
+    fn on_disk(path: &Path) -> FileConfig {
+        FileConfig::read(path).expect("config.toml parses")
+    }
+
+    fn grant(id: &str) -> Grant {
+        Grant {
+            grant_id: id.into(),
+            identity: "kb1|entra|33334444-dddd-5555-eeee-6666ffff7777".into(),
+            principal: None,
+            audience: "kerbridge://EXAMPLE.SITE".into(),
+            sign_in_required_by: 1_785_000_000,
+        }
+    }
+
+    fn kerberos(realm: &str) -> KerberosConfig {
+        KerberosConfig {
+            realm: realm.into(),
+            kdcs: vec!["kerbridge.example.site".into()],
+            services: vec![],
+        }
+    }
+
+    /// Every file in `dir`, so a test can see a temporary file left behind.
+    fn names(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// The agent loads before the CLI creates a grant, and saves an unrelated
+    /// setting after it. The grant stays, and the agent then holds it.
+    #[test]
+    fn a_stale_agent_snapshot_cannot_erase_a_grant_the_cli_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut agent = Settings::for_test_at(&path);
+        let mut cli = Settings::for_test_at(&path);
+
+        cli.update(|f| {
+            f.set_cache(&kerberos("EXAMPLE.SITE"));
+            f.grant = Some(grant("1a2b3c4d"));
+        })
+        .unwrap();
+        assert!(agent.grant().is_none(), "the agent's snapshot is stale");
+        agent.update(|f| f.silent = Some(true)).unwrap();
+
+        let stored = on_disk(&path);
+        assert_eq!(stored.grant.as_ref().map(|g| g.grant_id.as_str()), Some("1a2b3c4d"));
+        assert_eq!(stored.cache.realm, "EXAMPLE.SITE");
+        assert_eq!(stored.silent, Some(true));
+        assert!(agent.file == stored, "the merged file is the agent's new baseline");
+    }
+
+    /// Two processes load the same file. Each saves one field. Whichever
+    /// order they save in, both fields stay.
+    #[test]
+    fn sequential_stale_writers_keep_each_others_fields_in_both_orders() {
+        for agent_first in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("config.toml");
+            let mut agent = Settings::for_test_at(&path);
+            let mut cli = Settings::for_test_at(&path);
+            let user_choice = |f: &mut FileConfig| f.windows_sign_in = Some(false);
+            let cache = |f: &mut FileConfig| f.set_cache(&kerberos("EXAMPLE.SITE"));
+
+            if agent_first {
+                agent.update(user_choice).unwrap();
+                cli.update(cache).unwrap();
+            } else {
+                cli.update(cache).unwrap();
+                agent.update(user_choice).unwrap();
+            }
+
+            let stored = on_disk(&path);
+            assert_eq!(stored.windows_sign_in, Some(false), "agent_first={agent_first}");
+            assert_eq!(stored.cache.realm, "EXAMPLE.SITE", "agent_first={agent_first}");
+            let last = if agent_first { &cli } else { &agent };
+            assert!(last.file == stored, "agent_first={agent_first}");
+        }
+    }
+
+    /// The CLI's grant paths. `--grant` writes the grant with its cache, a
+    /// second `--grant` replaces the whole grant, and `--grant-give-up`
+    /// clears the grant only. A newer unrelated value stays each time.
+    #[test]
+    fn cli_grant_create_replace_and_remove_are_explicit_patches() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut cli = Settings::for_test_at(&path);
+        let mut agent = Settings::for_test_at(&path);
+        let create = |id: &str| {
+            let grant = grant(id);
+            move |f: &mut FileConfig| {
+                f.set_cache(&kerberos("EXAMPLE.SITE"));
+                f.grant = Some(grant);
+            }
+        };
+
+        cli.update(create("old")).unwrap();
+        cli.update(|f| {
+            assert!(f.set_grant_principal("old", "riku@EXAMPLE.SITE"));
+        })
+        .unwrap();
+        agent.update(|f| f.grant_for = Some("svc-builder".into())).unwrap();
+
+        cli.update(create("new")).unwrap();
+        let stored = on_disk(&path);
+        let replaced = stored.grant.as_ref().unwrap();
+        assert_eq!(replaced.grant_id, "new");
+        assert!(replaced.principal.is_none(), "a replaced grant keeps nothing of the old one");
+        assert_eq!(stored.grant_for.as_deref(), Some("svc-builder"));
+        cli.update(|f| {
+            assert!(!f.set_grant_principal("old", "riku@EXAMPLE.SITE"), "not the newer grant");
+        })
+        .unwrap();
+
+        agent
+            .update(|f| {
+                f.silent = Some(true);
+                f.expected_working_as = Some("EXAMPLE.SITE|svc-builder".into());
+            })
+            .unwrap();
+        cli.update(|f| f.grant = None).unwrap();
+        let stored = on_disk(&path);
+        assert!(stored.grant.is_none(), "a clear is written, not skipped");
+        assert_eq!(stored.silent, Some(true));
+        assert_eq!(stored.grant_for.as_deref(), Some("svc-builder"));
+        assert_eq!(stored.expected_working_as.as_deref(), Some("EXAMPLE.SITE|svc-builder"));
+        assert_eq!(stored.cache.realm, "EXAMPLE.SITE");
+    }
+
+    /// Retarget cleanup clears the broker-owned fields and nothing else, even
+    /// when the user chose something after the agent loaded.
+    #[test]
+    fn retarget_clears_exactly_the_broker_owned_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut window = Settings::for_test_at(&path);
+        window
+            .update(|f| {
+                f.broker_url = Some("https://a.example.site".into());
+                f.expected_working_as = Some("A.SITE|".into());
+                f.set_cache(&kerberos("A.SITE"));
+                f.grant = Some(grant("1a2b3c4d"));
+                f.browser_session = true;
+            })
+            .unwrap();
+        let mut agent = Settings::for_test_at(&path);
+        window
+            .update(|f| {
+                f.silent = Some(true);
+                f.autostart = Some(false);
+                f.set_grant_for(" svc-builder ");
+            })
+            .unwrap();
+
+        agent.update(|f| f.retarget(Some("https://b.example.site".into()))).unwrap();
+
+        let stored = on_disk(&path);
+        assert_eq!(stored.broker_url.as_deref(), Some("https://b.example.site"));
+        assert!(stored.cache == Cache::default());
+        assert!(stored.grant.is_none());
+        assert!(!stored.browser_session);
+        assert_eq!(stored.silent, Some(true));
+        assert_eq!(stored.autostart, Some(false));
+        assert_eq!(stored.grant_for.as_deref(), Some("svc-builder"));
+        assert_eq!(stored.expected_working_as.as_deref(), Some("A.SITE|"));
+        assert!(agent.file == stored);
+    }
+
+    /// A file that does not parse is an error and stays as it is. It is
+    /// never replaced with defaults.
+    #[test]
+    fn a_malformed_file_is_refused_and_left_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let damaged = "broker_url = \"https://broker.example.site\"\nsilent = tru\n";
+        std::fs::write(&path, damaged).unwrap();
+
+        let mut agent = Settings::for_test_at(&path);
+        assert!(agent.file == FileConfig::default(), "load uses defaults");
+        let refused = agent.update(|f| f.windows_sign_in = Some(false));
+
+        assert!(refused.is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), damaged);
+        assert_eq!(names(dir.path()), ["config.toml"]);
+        assert_eq!(agent.file.windows_sign_in, Some(false), "the change holds in memory");
+
+        // The same change again leaves the value as it is, which is no error.
+        assert!(agent.update(|f| f.windows_sign_in = Some(false)).is_ok());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), damaged);
+    }
+
+    /// An update that changes nothing does not write. A hand-edited file then
+    /// keeps its comments and layout.
+    #[test]
+    fn an_update_that_changes_nothing_does_not_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let edited = "# set by hand\nexpected_working_as = \"EXAMPLE.SITE|\"\n";
+        std::fs::write(&path, edited).unwrap();
+        let mut agent = Settings::for_test_at(&path);
+
+        agent.update(|f| f.expected_working_as = Some("EXAMPLE.SITE|".into())).unwrap();
+        agent
+            .update(|f| {
+                f.set_grant_principal("1a2b3c4d", "riku@EXAMPLE.SITE");
+            })
+            .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+    }
+
+    /// A failed replacement removes its temporary file and leaves the target
+    /// as it was. A non-empty directory at the target makes the rename fail.
+    #[test]
+    fn a_failed_replacement_leaves_no_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("config.toml");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("kept"), "x").unwrap();
+
+        assert!(replace(&target, "silent = true\n").is_err());
+        assert_eq!(names(dir.path()), ["config.toml"]);
+        assert_eq!(names(&target), ["kept"]);
+    }
+
+    /// A reader sees the complete old file or the complete new one, never an
+    /// empty or partial file.
+    #[test]
+    fn a_reader_never_sees_a_partial_file() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let large = KerberosConfig {
+            realm: "EXAMPLE.SITE".into(),
+            kdcs: (0..2_000).map(|n| format!("kdc{n}.example.site")).collect(),
+            services: vec![],
+        };
+        let mut writer = Settings::for_test_at(&path);
+        writer.update(|f| f.broker_url = Some("https://broker.example.site".into())).unwrap();
+
+        let done = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            let reader = scope.spawn(|| {
+                let mut reads = 0;
+                while !done.load(Ordering::Relaxed) {
+                    let text = std::fs::read_to_string(&path).unwrap();
+                    let seen: FileConfig = toml::from_str(&text).expect("a complete file");
+                    assert!(seen.broker_url.is_some(), "an empty or partial file: {text:?}");
+                    assert!(matches!(seen.cache.kdcs.len(), 0 | 1 | 2_000), "a partial cache");
+                    reads += 1;
+                }
+                reads
+            });
+            for n in 0..100 {
+                if n % 2 == 0 {
+                    writer.update(|f| f.set_cache(&large)).unwrap();
+                } else {
+                    writer.update(|f| f.set_cache(&kerberos("EXAMPLE.SITE"))).unwrap();
+                }
+            }
+            done.store(true, Ordering::Relaxed);
+            assert!(reader.join().unwrap() > 0);
+        });
+        assert_eq!(names(dir.path()), ["config.toml"]);
     }
 }

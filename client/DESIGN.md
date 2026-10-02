@@ -1228,6 +1228,44 @@ flowchart LR
   it. State has no historical URL, so this release does not guess one and does not
   add a destructive migration. An accepted snapshot replaces the cached broker
   document; the broker still validates every grant use.
+- **Each write merges into the file as it is on disk now.** The agent and the
+  `kerbridge` CLI write the same `config.toml`, and the agent keeps its copy
+  for hours. So `Settings::update` does these steps for each write:
+  1. It reads and parses the current file.
+  2. It changes only the fields that the caller names. A clear is a change.
+  3. It writes a temporary file in the same directory, flushes it, and renames
+     it over `config.toml`.
+  4. It keeps the merged value as the writer's copy in memory.
+
+  Related fields change in one update:
+  - The CLI writes a new grant together with its cache.
+  - The agent's *give up* removes the grant together with the expectation. It
+    gives up the grant that the file holds at that time.
+  - A broker change writes the new URL and removes the old broker's cache,
+    grant and browser-session marker. The grant that it gives up is the one
+    that the file holds at that time.
+
+  A change about one grant applies only to that grant. The agent removes a
+  grant that the broker refused only when the file still holds the same grant
+  ID and sign-in deadline. It records the principal only on the grant that did
+  the exchange. A grant that the CLI made or renewed since then stays.
+  - **What this prevents.** A stale copy cannot undo a newer change to a
+    different field. For example, an agent that started before the CLI
+    recorded a grant does not erase that grant when it saves a setting. A
+    reader sees the complete old file or the complete new file, also after a
+    crash.
+  - **What this does not prevent.** It is not concurrency control. Two writers
+    that read the same version can both write, and the second write removes
+    the first. For one field, the last write wins. The agent sees a change from
+    another process only at its next update. A failed write stays in memory
+    only until that next update. A full guarantee needs a lock, a version
+    check or one writer.
+  - **A file that does not parse is never replaced.** The agent starts with
+    defaults, and each update that changes a value fails with an error in the
+    log. Correct or remove the file.
+  - **Edit `config.toml` by hand only while the agent is stopped.** The agent
+    takes in a hand edit at its next update, without the cleanup that the
+    Settings window does for a broker change.
 - **`ntlm_fallback_recovery`** gates the repair offer, and a machine policy value
   overrides the file. When it is `false` the agent offers no elevated restart: a
   stuck fallback is then recoverable only by a reboot or by IT. TGT recovery runs

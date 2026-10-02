@@ -84,10 +84,8 @@ pub(crate) fn obtain_token(args: &Args, broker: &str) -> Result<(String, Secret)
     // Share the realm with the agent only when this run follows its effective
     // broker. An explicit override must not replace the agent's cached realm.
     let mut settings = config::Settings::load();
-    if stored_state_applies(args.broker.as_deref(), broker, settings.broker_url())
-        && settings.set_cache(&config.kerberos)
-    {
-        let _ = settings.save();
+    if stored_state_applies(args.broker.as_deref(), broker, settings.broker_url()) {
+        let _ = settings.update(|f| f.set_cache(&config.kerberos));
     }
     let tokens = oidc::login(&config.oidc, &AtomicBool::new(false))
         .context("browser sign-in")?

@@ -103,9 +103,12 @@ pub(crate) fn do_grant(args: &Args, broker: &str) -> Result<()> {
     println!("  identity  {}", grant.identity);
 
     // The accepted discovery document and device grant are one record.
-    settings.set_cache(&config.kerberos);
-    settings.set_grant(Some(grant));
-    settings.save().context("recording the device grant in config.toml")?;
+    settings
+        .update(|f| {
+            f.set_cache(&config.kerberos);
+            f.grant = Some(grant);
+        })
+        .context("recording the device grant in config.toml")?;
     println!("[kerbridge] the agent uses it too -- both read the same config.toml");
     Ok(())
 }
@@ -257,8 +260,7 @@ pub(crate) fn do_grant_give_up(args: &Args) -> Result<()> {
         return Ok(());
     };
     let told = session::revoke_this_device(resolve_broker(args).ok().as_deref(), &grant);
-    settings.set_grant(None);
-    settings.save().context("forgetting the device grant in config.toml")?;
+    settings.update(|f| f.grant = None).context("forgetting the device grant in config.toml")?;
     println!("[kerbridge] gave up this machine's device grant {}", grant.grant_id);
     if !told {
         println!(

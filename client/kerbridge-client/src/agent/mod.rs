@@ -562,16 +562,17 @@ impl Agent {
             && self.settings.broker_url() == Some(stamp.requested_broker_url.as_str())
     }
 
-    /// Replace one accepted broker payload in memory. Validation is first, so a
+    /// Replace one accepted broker payload, and write its Kerberos block as the
+    /// cache. False when the payload is not current. Validation is first, so a
     /// rejected payload does not read enrollment state, clear a fault, or mutate
     /// the persisted cache image.
     fn replace_broker_snapshot(
         &mut self,
         stamp: &DiscoveryStamp,
         snapshot: BrokerSnapshot,
-    ) -> Option<bool> {
+    ) -> bool {
         if !self.discovery_is_current(stamp) {
-            return None;
+            return false;
         }
 
         if self.phase != Phase::SignedOut
@@ -589,7 +590,9 @@ impl Agent {
             self.reset_session();
         }
         let enroll_state = enroll::state(&snapshot.kerberos);
-        let cache_changed = self.settings.set_cache(&snapshot.kerberos);
+        if let Err(e) = self.settings.update(|f| f.set_cache(&snapshot.kerberos)) {
+            log::warn(&format!("could not save the accepted broker settings: {e:#}"));
+        }
         self.settings.set_defaults(snapshot.defaults);
         self.kerberos = snapshot.kerberos;
         self.enroll_state = enroll_state;
@@ -604,7 +607,7 @@ impl Agent {
             self.record(None, String::new());
         }
         self.reset_probe();
-        Some(cache_changed)
+        true
     }
 
     /// Start one probe at the current target. `None` while one runs, or while
@@ -659,8 +662,8 @@ impl Agent {
         self.probe_at = Some(now);
     }
 
-    /// Clear broker-owned state after a requested broker URL change. User and policy values,
-    /// including a once-applied autostart choice, stay in [`Settings`].
+    /// Clear the in-memory broker-owned state after a requested broker URL
+    /// change. [`crate::config::FileConfig::retarget`] clears the stored part.
     fn clear_broker_snapshot(&mut self) {
         self.discovery_ended = false;
         self.kerberos = KerberosConfig::default();
@@ -670,7 +673,6 @@ impl Agent {
         self.idp_name.clear();
         self.source.clear();
         self.settings.clear_defaults();
-        self.settings.clear_broker_state();
     }
 
     fn invalidate_broker_snapshot(&mut self) {
@@ -765,12 +767,10 @@ impl Agent {
     /// Remember, or forget, that expectation.
     fn expect(&mut self, on: bool) {
         let scope = if on { self.scope() } else { None };
-        // Only when it is news: `Event::SignedIn` fires on every landed
-        // exchange, silent renewals included, and an unconditional write would
+        // `Event::SignedIn` fires on every landed exchange, silent renewals
+        // included. `update` writes only a changed value, so this does not
         // rewrite `config.toml` every few hours.
-        if self.settings.set_expected_working_as(scope.as_deref())
-            && let Err(e) = self.settings.save()
-        {
+        if let Err(e) = self.settings.update(|f| f.expected_working_as = scope) {
             log::warn(&format!("could not record what this device works as: {e:#}"));
         }
     }
@@ -966,12 +966,27 @@ fn purge_realm(realm: &str) -> bool {
 /// Invalidate discovery and remove everything tied to the old route. The
 /// broker snapshot is cleared separately from ticket, device-grant, and cloud-session
 /// teardown so neither can accidentally preserve the other.
-fn retarget(a: &mut Agent, old_broker: Option<String>) -> bool {
+///
+/// One write stores `broker_url` and removes the old broker's stored values,
+/// before discovery reads the new target.
+fn retarget(a: &mut Agent, old_broker: Option<String>, broker_url: Option<String>) -> bool {
     let old_realm = a.settings.cache().realm.clone();
-    let old_grant = a.settings.grant().cloned();
     if !purge_realm(&old_realm) {
         return false;
     }
+    // The grant to give up is the one in the file now, which can be newer
+    // than the one this process loaded.
+    let mut old_grant = None;
+    let saved = match a.settings.update(|f| {
+        old_grant = f.grant.take();
+        f.retarget(broker_url);
+    }) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn(&format!("could not clear state from the previous broker: {e:#}"));
+            false
+        }
+    };
     a.invalidate_broker_snapshot();
     a.restart_probe(time::now());
     a.cloud_sign_out = None;
@@ -980,13 +995,6 @@ fn retarget(a: &mut Agent, old_broker: Option<String>) -> bool {
     *REFRESH_TOKEN.lock().unwrap() = None;
     a.reset_session();
 
-    let saved = match a.settings.save() {
-        Ok(()) => true,
-        Err(e) => {
-            log::warn(&format!("could not clear state from the previous broker: {e:#}"));
-            false
-        }
-    };
     if let Some(grant) = old_grant {
         worker::give_up_captured_grant(a, old_broker, grant, saved, false);
     }
@@ -1007,9 +1015,7 @@ pub fn init(h: &'static dyn Host) {
     // Before anything reads it. A policy value is the one autostart answer that
     // has to hold with no network: `enforce_autostart` runs again after the
     // first `/config`, for the deployment default that only arrives there.
-    if settings.enforce_autostart()
-        && let Err(e) = settings.save()
-    {
+    if let Err(e) = settings.enforce_autostart() {
         log::warn(&format!("could not record the autostart entry: {e:#}"));
     }
     let mut agent = Agent::new(settings);
@@ -1425,10 +1431,10 @@ mod tests {
         let mut a = test_agent("https://a.example.site");
         let first_a = a.advance_discovery().unwrap();
         let snapshot_a = snapshot("A.SITE", "a");
-        assert!(a.replace_broker_snapshot(&first_a, snapshot_a).is_some());
+        assert!(a.replace_broker_snapshot(&first_a, snapshot_a));
 
         let delayed_a = a.advance_discovery().unwrap();
-        a.settings.set_broker_url("https://b.example.site");
+        a.settings.update(|f| f.retarget(Some("https://b.example.site".into()))).unwrap();
         a.invalidate_broker_snapshot();
         assert!(a.kerberos.realm.is_empty());
         assert!(a.settings.cache().realm.is_empty());
@@ -1441,14 +1447,14 @@ mod tests {
 
         let request_b = a.advance_discovery().unwrap();
         let snapshot_b = snapshot("B.SITE", "b");
-        assert!(a.replace_broker_snapshot(&request_b, snapshot_b.clone()).is_some());
+        assert!(a.replace_broker_snapshot(&request_b, snapshot_b.clone()));
         a.record(Some(Fault::Network), "B is temporarily unreachable".to_owned());
         let probe_at = a.probe_at;
         let enrollment = format!("{:?}", a.enroll_state);
         let generation = a.discovery_generation;
         let target = a.discovery_target.clone();
 
-        assert!(a.replace_broker_snapshot(&delayed_a, snapshot("LATE.SITE", "late")).is_none());
+        assert!(!a.replace_broker_snapshot(&delayed_a, snapshot("LATE.SITE", "late")));
         assert_broker_snapshot(&a, &snapshot_b);
         assert_eq!(format!("{:?}", a.enroll_state), enrollment);
         assert_eq!(a.discovery_generation, generation);
@@ -1468,11 +1474,11 @@ mod tests {
             let current = snapshot("NEW.SITE", "new");
 
             if newest_finishes_first {
-                assert!(a.replace_broker_snapshot(&newer, current.clone()).is_some());
-                assert!(a.replace_broker_snapshot(&older, snapshot("OLD.SITE", "old")).is_none());
+                assert!(a.replace_broker_snapshot(&newer, current.clone()));
+                assert!(!a.replace_broker_snapshot(&older, snapshot("OLD.SITE", "old")));
             } else {
-                assert!(a.replace_broker_snapshot(&older, snapshot("OLD.SITE", "old")).is_none());
-                assert!(a.replace_broker_snapshot(&newer, current.clone()).is_some());
+                assert!(!a.replace_broker_snapshot(&older, snapshot("OLD.SITE", "old")));
+                assert!(a.replace_broker_snapshot(&newer, current.clone()));
             }
             assert_broker_snapshot(&a, &current);
         }
@@ -1482,7 +1488,7 @@ mod tests {
     fn accepted_snapshot_replaces_present_values_with_absence() {
         let mut a = test_agent("https://a.example.site");
         let first = a.advance_discovery().unwrap();
-        assert!(a.replace_broker_snapshot(&first, snapshot("A.SITE", "a")).is_some());
+        assert!(a.replace_broker_snapshot(&first, snapshot("A.SITE", "a")));
 
         let next = a.advance_discovery().unwrap();
         let replacement = BrokerSnapshot {
@@ -1490,7 +1496,7 @@ mod tests {
             idp_name: "IdP B".into(),
             ..BrokerSnapshot::default()
         };
-        assert!(a.replace_broker_snapshot(&next, replacement.clone()).is_some());
+        assert!(a.replace_broker_snapshot(&next, replacement.clone()));
 
         assert_broker_snapshot(&a, &replacement);
         assert!(a.kerberos.kdcs.is_empty());
@@ -1505,7 +1511,7 @@ mod tests {
     fn changed_realm_cannot_relabel_a_live_session() {
         let mut a = test_agent("https://broker.example.site");
         let first = a.advance_discovery().unwrap();
-        assert!(a.replace_broker_snapshot(&first, snapshot("A.SITE", "a")).is_some());
+        assert!(a.replace_broker_snapshot(&first, snapshot("A.SITE", "a")));
         a.phase = Phase::Connected;
         a.principal = "riku@A.SITE".into();
         a.start = 100;
@@ -1515,7 +1521,7 @@ mod tests {
         a.expect(true);
 
         let next = a.advance_discovery().unwrap();
-        assert!(a.replace_broker_snapshot(&next, snapshot("B.SITE", "b")).is_some());
+        assert!(a.replace_broker_snapshot(&next, snapshot("B.SITE", "b")));
 
         assert_eq!(a.kerberos.realm, "B.SITE");
         assert!(a.phase == Phase::SignedOut);
@@ -1562,7 +1568,7 @@ mod tests {
         found.source = crate::discovery::source_name("https://kerbridge.example.site/entra");
 
         assert_eq!(stamp.requested_broker_url, requested);
-        assert!(a.replace_broker_snapshot(&stamp, found).is_some());
+        assert!(a.replace_broker_snapshot(&stamp, found));
         assert_eq!(a.discovery_target.as_deref(), Some(requested));
         assert_eq!(a.source, "entra");
     }
@@ -1671,10 +1677,14 @@ mod tests {
             ..FileConfig::default()
         }));
         if supply {
-            a.settings.set_grant(Some(Grant {
-                sign_in_required_by: T0 + 30 * 86_400,
-                ..grant(Some("riku@EXAMPLE.SITE"))
-            }));
+            a.settings
+                .update(|f| {
+                    f.grant = Some(Grant {
+                        sign_in_required_by: T0 + 30 * 86_400,
+                        ..grant(Some("riku@EXAMPLE.SITE"))
+                    })
+                })
+                .unwrap();
         }
         a.enroll_state = enroll::State::Enrolled;
         a.phase = Phase::Connected;

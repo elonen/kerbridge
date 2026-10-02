@@ -86,26 +86,36 @@ enum RefreshUpdate {
 pub(super) struct WorkerEffects {
     refresh_token: RefreshUpdate,
     browser_session_started: bool,
-    grant_stale: bool,
+    /// The grant the broker refused as invalid proof.
+    stale_grant: Option<Grant>,
     injection_realm: Option<String>,
 }
 
 impl WorkerEffects {
     /// Apply worker-local mutations only after the terminal stamp is accepted.
     fn apply(self, a: &mut Agent) {
-        let mut save = false;
         if let RefreshUpdate::Set(refresh_token) = self.refresh_token {
             *REFRESH_TOKEN.lock().unwrap() = refresh_token;
         }
-        if self.browser_session_started {
-            save |= a.settings.set_browser_session(true);
-        }
-        if self.grant_stale && a.settings.grant().is_some() {
-            a.settings.set_grant(None);
-            save = true;
+        let mut forgot = false;
+        let saved = a.settings.update(|f| {
+            f.browser_session |= self.browser_session_started;
+            // Forget only the refused grant. A grant created or renewed since
+            // has another ID or deadline, and stays.
+            if let Some(stale) = &self.stale_grant
+                && f.grant.as_ref().is_some_and(|g| {
+                    g.grant_id == stale.grant_id
+                        && g.sign_in_required_by == stale.sign_in_required_by
+                })
+            {
+                f.grant = None;
+                forgot = true;
+            }
+        });
+        if forgot {
             log::info("this device's grant is no longer usable; a browser sign-in is needed again");
         }
-        if save && let Err(e) = a.settings.save() {
+        if let Err(e) = saved {
             log::warn(&format!("could not save worker session state: {e:#}"));
         }
     }
@@ -118,10 +128,11 @@ pub(super) enum Event {
         injected: Injected,
         realm: String,
         effects: WorkerEffects,
-        /// The exchange was proved with this machine's grant, so the principal
-        /// that came back is what the grant works as -- the one fact that lets a
-        /// later startup tell this machine's ticket from anybody else's.
-        via_grant: bool,
+        /// The ID of the grant that proved the exchange, if one did. The
+        /// principal that came back is then what that grant works as -- the one
+        /// fact that lets a later startup tell this machine's ticket from
+        /// anybody else's.
+        via_grant: Option<String>,
     },
     SignInFailed {
         stamp: DiscoveryStamp,
@@ -302,14 +313,11 @@ fn apply_event(ev: Event) -> bool {
                 // its second step at least one probe this streak did not land.
                 let broker_was_away =
                     a.fault == Some(Fault::Network) && a.probe_backoff > 2 * PROBE_FIRST_SECS;
-                let Some(cache_changed) = a.replace_broker_snapshot(&stamp, snapshot) else {
+                if !a.replace_broker_snapshot(&stamp, snapshot) {
                     return false;
-                };
-                let autostart_changed = a.settings.enforce_autostart();
-                if (cache_changed || autostart_changed)
-                    && let Err(e) = a.settings.save()
-                {
-                    log::warn(&format!("could not save the accepted broker settings: {e:#}"));
+                }
+                if let Err(e) = a.settings.enforce_autostart() {
+                    log::warn(&format!("could not record the autostart entry: {e:#}"));
                 }
                 // The re-probe reached a broker that had been away. Without a
                 // ticket where one is expected, the pending silent attempt runs
@@ -389,11 +397,17 @@ fn apply_event(ev: Event) -> bool {
                     || ((!recovered || a.escalated) && (a.fault.is_some() || a.silent_failed));
                 // Recorded before anything else reads it: this is how a later
                 // startup knows the ticket in the cache is this machine's own.
-                if via_grant && a.settings.set_grant_principal(&injected.principal) {
-                    if let Err(e) = a.settings.save() {
+                if let Some(grant_id) = via_grant.as_deref() {
+                    let mut news = false;
+                    let saved = a.settings.update(|f| {
+                        news = f.set_grant_principal(grant_id, &injected.principal);
+                    });
+                    if let Err(e) = saved {
                         log::warn(&format!("could not record what the grant works as: {e:#}"));
                     }
-                    log::info(&format!("this device's grant works as {}", injected.principal));
+                    if news {
+                        log::info(&format!("this device's grant works as {}", injected.principal));
+                    }
                 }
                 a.principal = injected.principal;
                 a.start = injected.start;
@@ -572,12 +586,12 @@ fn apply_event(ev: Event) -> bool {
                     grant.grant_id,
                     time::local_stamp(grant.sign_in_required_by)
                 ));
-                a.settings.set_grant(Some(grant));
-                // Reported, not just logged. The key exists and a slot at the broker
-                // has been spent, but an unwritten grant is gone at the next start --
-                // so "won't need a browser sign-in for 30 days" would be exactly
-                // wrong, and wrong about the thing the user pressed the button for.
-                let unsaved = a.settings.save().is_err_and(|e| {
+                // Reported, not just logged. The key exists and the broker spent a
+                // slot. An unsaved grant is lost at the next update that reads the
+                // file, and at the next start. "Won't need a browser sign-in for 30
+                // days" would then be wrong about the thing the user pressed the
+                // button for.
+                let unsaved = a.settings.update(|f| f.grant = Some(grant)).is_err_and(|e| {
                     log::warn(&format!("could not save the device grant: {e:#}"));
                     true
                 });
@@ -632,10 +646,7 @@ fn apply_event(ev: Event) -> bool {
                 // authority ended anything -- opening a URL never is -- but it is the
                 // difference between "there is no session" and "we meant there to be
                 // none".
-                if asked
-                    && a.settings.set_browser_session(false)
-                    && let Err(e) = a.settings.save()
-                {
+                if asked && let Err(e) = a.settings.update(|f| f.browser_session = false) {
                     log::warn(&format!("could not forget the browser session: {e:#}"));
                 }
             }
@@ -878,7 +889,7 @@ pub(super) fn start_worker(trigger: Trigger) {
 }
 
 /// The worker body. Runs off the UI thread; returns user-facing text on failure,
-/// and on success whether the grant is what proved the exchange.
+/// and on success the ID of the grant that proved the exchange, if one did.
 fn run_sign_in(
     stamp: &DiscoveryStamp,
     silent: bool,
@@ -886,7 +897,7 @@ fn run_sign_in(
     grant: Option<&Grant>,
     pin: Option<&str>,
     effects: &mut WorkerEffects,
-) -> Result<Option<(Injected, bool, String)>, Failure> {
+) -> Result<Option<(Injected, Option<String>, String)>, Failure> {
     let requested_broker_url = stamp.requested_broker_url.clone();
     let document = discovery::broker_document(&requested_broker_url)
         .map_err(|e| describe_discovery_error(&e, &requested_broker_url))?;
@@ -926,7 +937,7 @@ fn run_sign_in(
     if let Some(grant) = grant {
         effects.injection_realm = Some(realm.clone());
         match session::inject_with_grant(broker_url, grant) {
-            Ok(injected) => return Ok(Some((injected, true, realm))),
+            Ok(injected) => return Ok(Some((injected, Some(grant.grant_id.clone()), realm))),
             // Not marked stale, unlike the refusal below: both of these are the
             // operator's to undo, and a grant put back in the group works again
             // untouched. Forgetting it would cost a browser sign-in to rebuild
@@ -943,7 +954,7 @@ fn run_sign_in(
                 ))
             }
             Err(InjectError::Broker(broker::BrokerError::InvalidProof(why))) => {
-                effects.grant_stale = true;
+                effects.stale_grant = Some(grant.clone());
                 log::warn(&format!("this device's grant was refused ({why}); signing in instead"))
             }
             Err(e) => return Err(describe_inject_error(&e, &host_of(broker_url))),
@@ -976,7 +987,7 @@ fn run_sign_in(
 
     effects.injection_realm = Some(realm.clone());
     match session::inject(broker_url, token.expose()) {
-        Ok(injected) => Ok(Some((injected, false, realm))),
+        Ok(injected) => Ok(Some((injected, None, realm))),
         Err(e) => Err(describe_inject_error(&e, &host_of(broker_url))),
     }
 }
@@ -1119,19 +1130,25 @@ pub(super) fn give_up_grant(a: &mut Agent, broker: Option<String>) -> bool {
     if BUSY.load(Ordering::Relaxed) || GRANT_CLEANUP.load(Ordering::Relaxed) {
         return false;
     }
-    let Some(grant) = a.settings.grant().cloned() else {
-        return false;
-    };
-    a.settings.set_grant(None);
-    // One of the two things that clear the expectation: whatever this machine
-    // was authorized to be, it is not that now.
-    a.settings.set_expected_working_as(None);
-    let saved = match a.settings.save() {
+    // The grant to give up is the one in the file now, which can be newer
+    // than the one this process loaded.
+    let mut taken = None;
+    let saved = match a.settings.update(|f| {
+        taken = f.grant.take();
+        // Giving up the grant clears the expectation: whatever this machine
+        // was authorized to be, it is not that now.
+        if taken.is_some() {
+            f.expected_working_as = None;
+        }
+    }) {
         Ok(()) => true,
         Err(e) => {
             log::warn(&format!("could not forget the device grant: {e:#}"));
             false
         }
+    };
+    let Some(grant) = taken else {
+        return false;
     };
     give_up_captured_grant(a, broker, grant, saved, true)
 }
@@ -1476,7 +1493,7 @@ mod tests {
         let late_a = with(Agent::advance_discovery).unwrap();
 
         with(|a| {
-            a.settings.set_broker_url("https://b.example.site");
+            a.settings.update(|f| f.retarget(Some("https://b.example.site".into()))).unwrap();
             a.invalidate_broker_snapshot();
         });
         let older_b = with(Agent::advance_discovery).unwrap();
@@ -1502,13 +1519,17 @@ mod tests {
         let accepted = with(Agent::advance_discovery).unwrap();
         assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
         with(|a| {
-            a.settings.set_grant(Some(Grant {
-                grant_id: "1a2b3c4d".into(),
-                identity: "kb1|entra|subject".into(),
-                principal: None,
-                audience: "kerbridge://A.SITE".into(),
-                sign_in_required_by: 1_785_000_000,
-            }));
+            a.settings
+                .update(|f| {
+                    f.grant = Some(Grant {
+                        grant_id: "1a2b3c4d".into(),
+                        identity: "kb1|entra|subject".into(),
+                        principal: None,
+                        audience: "kerbridge://A.SITE".into(),
+                        sign_in_required_by: 1_785_000_000,
+                    })
+                })
+                .unwrap();
         });
         *REFRESH_TOKEN.lock().unwrap() = Some(crate::secret::Secret::new("current"));
 
@@ -1527,7 +1548,7 @@ mod tests {
         let effects = WorkerEffects {
             refresh_token: RefreshUpdate::Set(None),
             browser_session_started: true,
-            grant_stale: true,
+            stale_grant: with(|a| a.settings.grant().cloned()),
             injection_realm: None,
         };
         assert!(apply(Event::SignInFailed {
@@ -1551,13 +1572,48 @@ mod tests {
         finish_test();
     }
 
+    /// The broker refuses grant A, while the CLI has already replaced it with
+    /// grant B. Only A is forgotten: B, newer on disk, stays.
+    #[test]
+    fn a_refused_grant_does_not_erase_a_newer_one_on_disk() {
+        let grant = |id: &str, by: i64| Grant {
+            grant_id: id.into(),
+            identity: "kb1|entra|subject".into(),
+            principal: None,
+            audience: "kerbridge://A.SITE".into(),
+            sign_in_required_by: by,
+        };
+        let refused = grant("a", 1_785_000_000);
+        for (on_disk, kept) in [
+            (refused.clone(), false),
+            (grant("b", 1_786_000_000), true),
+            (grant("a", 1_786_000_000), true),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("config.toml");
+            let mut agent = Agent::new(crate::config::Settings::for_test_at(&path));
+            agent.settings.update(|f| f.grant = Some(refused.clone())).unwrap();
+            let mut cli = crate::config::Settings::for_test_at(&path);
+            cli.update(|f| f.grant = Some(on_disk.clone())).unwrap();
+
+            let effects =
+                WorkerEffects { stale_grant: Some(refused.clone()), ..WorkerEffects::default() };
+            effects.apply(&mut agent);
+
+            let expected = kept.then_some(on_disk.clone());
+            assert!(agent.settings.grant() == expected.as_ref(), "{}", on_disk.grant_id);
+            let stored = crate::config::Settings::for_test_at(&path);
+            assert!(stored.grant() == expected.as_ref(), "{}", on_disk.grant_id);
+        }
+    }
+
     #[test]
     fn stale_terminal_cannot_release_newer_busy_or_cloud_work() {
         let _guard = STATE_LOCK.lock().unwrap();
         install_agent(at("https://a.example.site"));
         let accepted = with(Agent::advance_discovery).unwrap();
         assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
-        with(|a| assert!(a.settings.set_browser_session(true)));
+        with(|a| a.settings.update(|f| f.browser_session = true).unwrap());
         let stale = with(Agent::advance_discovery).unwrap();
         let newer = with(|a| {
             let stamp = a.advance_discovery().unwrap();
@@ -1609,7 +1665,7 @@ mod tests {
         install_agent(at("https://a.example.site"));
         let accepted = with(Agent::advance_discovery).unwrap();
         assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
-        with(|a| assert!(a.settings.set_browser_session(true)));
+        with(|a| a.settings.update(|f| f.browser_session = true).unwrap());
         let cloud = with(|a| {
             let stamp = a.advance_discovery().unwrap();
             a.cloud_sign_out = Some(stamp.clone());
@@ -1836,7 +1892,7 @@ mod tests {
             },
             realm: "A.SITE".into(),
             effects: WorkerEffects::default(),
-            via_grant: false,
+            via_grant: None,
         }
     }
 
@@ -1970,7 +2026,7 @@ mod tests {
         with(|a| {
             // Plaintext: the HTTPS-only agent refuses it before any socket or
             // proxy is used.
-            a.settings.set_broker_url("http://127.0.0.1:1");
+            a.settings.update(|f| f.broker_url = Some("http://127.0.0.1:1".into())).unwrap();
             a.busy_operation = None;
             a.in_flight.clear();
             a.loss.suspended = true;
@@ -2766,7 +2822,7 @@ mod tests {
         let now = time::now();
         with(|a| {
             a.kerberos.realm = "A.SITE".into();
-            a.settings.set_grant(Some(grant_due(now)));
+            a.settings.update(|f| f.grant = Some(grant_due(now))).unwrap();
         });
         let Probe::Config(stamp) = begin() else { panic!("a broker URL: the probe asks /config") };
 
@@ -2792,7 +2848,7 @@ mod tests {
             install_agent(at(BROKER));
             let now = ticket_ends();
             if with_deadline {
-                with(|a| a.settings.set_grant(Some(grant_due(now))));
+                with(|a| a.settings.update(|f| f.grant = Some(grant_due(now))).unwrap());
             }
             let before = notified();
             tick_and_announce(now);

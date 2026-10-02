@@ -261,14 +261,13 @@ pub struct SettingsChange<'a> {
 pub fn apply_settings(change: SettingsChange<'_>) {
     with(|a| {
         let before = a.settings.broker_url().unwrap_or_default().to_string();
-        let before_user = a.settings.user_broker_url();
         let old_broker = (!before.is_empty()).then(|| before.clone());
         // `None` is "the user did not touch the field", which is not the same as
         // an empty one. It matters because `broker_url()` resolves *through* the
         // address DNS volunteered, which `config.rs` keeps deliberately in memory
         // only -- so a caller that read the field back and handed it here would
-        // pin a machine that was following DNS, and the `before != after` guard
-        // below would compare equal and say nothing happened.
+        // pin a machine that was following DNS, and the comparison with
+        // `before` below would find no change.
         let broker_change_blocked = change.broker_url.is_some()
             && (BUSY.load(Ordering::Relaxed)
                 || GRANT_CLEANUP.load(Ordering::Relaxed)
@@ -276,57 +275,66 @@ pub fn apply_settings(change: SettingsChange<'_>) {
         if broker_change_blocked {
             log::warn("broker URL change ignored while agent work is in progress");
         }
+        // The `update` below stores this only when the effective broker stays.
+        // `retarget` stores a changed one.
+        let mut broker_url = None;
         if let Some(url) = change.broker_url
             && !broker_change_blocked
             && !a.settings.broker_url_locked()
         {
-            a.settings.set_broker_url(url);
-        }
-        if a.settings.broker_url().unwrap_or_default() != before {
-            log::info("broker URL changed; ending the previous realm's session");
-            if retarget(a, old_broker) {
-                // Try the new address at once, silently. The old broker payload
-                // and every old fault are already gone.
-                a.startup_retry_at = Some(time::now());
-                // A cleared address returns to DNS, and autostart waits for
-                // its answer as it does at logon.
-                a.autostart_awaits_broker =
-                    a.settings.broker_url().is_none() && autostart_eligible(a);
+            let next = config::typed_broker_url(url);
+            if a.settings.broker_url_with(next.as_deref()).unwrap_or_default() == before {
+                broker_url = Some(next);
             } else {
-                a.settings.restore_user_broker_url(before_user);
-                log::warn("broker URL change cancelled because old realm tickets remain");
+                log::info("broker URL changed; ending the previous realm's session");
+                if retarget(a, old_broker, next) {
+                    // Try the new address at once, silently. The old broker payload
+                    // and every old fault are already gone.
+                    a.startup_retry_at = Some(time::now());
+                    // A cleared address returns to DNS, and autostart waits for
+                    // its answer as it does at logon.
+                    a.autostart_awaits_broker =
+                        a.settings.broker_url().is_none() && autostart_eligible(a);
+                } else {
+                    log::warn("broker URL change cancelled because old realm tickets remain");
+                }
             }
         }
-        if let Some(target) = change.grant_for
-            && !a.settings.grant_for_locked()
-        {
-            a.settings.set_grant_for(target);
-        }
-        if let Some(on) = change.windows_sign_in
-            && !a.settings.windows_sign_in_locked()
-        {
-            a.settings.set_windows_sign_in(on);
-        }
-        if let Some(on) = change.silent
-            && !a.settings.silent_locked()
-        {
-            a.settings.set_silent(on);
-        }
+        let grant_for = change.grant_for.filter(|_| !a.settings.grant_for_locked());
+        let windows_sign_in =
+            change.windows_sign_in.filter(|_| !a.settings.windows_sign_in_locked());
+        let silent = change.silent.filter(|_| !a.settings.silent_locked());
         // Under a machine-wide entry or a policy value the checkbox is disabled
         // and reads the decided value, so what comes back here is not a choice
         // anyone made: writing it back would leave a per-user entry that
         // outlives the deployment's, and a `config.toml` line that outlives the
         // policy.
-        if let Some(on) = change.autostart
-            && !config::autostart_machine_wide()
-            && !a.settings.autostart_managed()
+        let autostart = change
+            .autostart
+            .filter(|_| !config::autostart_machine_wide() && !a.settings.autostart_managed());
+        if let Some(on) = autostart
+            && let Err(e) = config::set_autostart(on)
         {
-            a.settings.set_autostart_choice(on);
-            if let Err(e) = config::set_autostart(on) {
-                log::warn(&format!("could not update the autostart entry: {e:#}"));
-            }
+            log::warn(&format!("could not update the autostart entry: {e:#}"));
         }
-        if let Err(e) = a.settings.save() {
+        let saved = a.settings.update(|f| {
+            if let Some(url) = broker_url {
+                f.broker_url = url;
+            }
+            if let Some(target) = grant_for {
+                f.set_grant_for(target);
+            }
+            if let Some(on) = windows_sign_in {
+                f.windows_sign_in = Some(on);
+            }
+            if let Some(on) = silent {
+                f.silent = Some(on);
+            }
+            if let Some(on) = autostart {
+                f.autostart = Some(on);
+            }
+        });
+        if let Err(e) = saved {
             log::warn(&format!("could not save config.toml: {e:#}"));
         }
     })
