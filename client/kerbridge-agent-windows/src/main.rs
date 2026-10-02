@@ -60,13 +60,14 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SystemParametersInfoW, TranslateMessage, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
+use kerbridge_client::VERSION;
 use kerbridge_client::agent::{self, NativeToken, Outcome, Severity};
 use kerbridge_client::describe::Action;
 use kerbridge_client::discovery::OidcConfig;
 use kerbridge_client::present::action_label;
 use kerbridge_client::strings::tr;
 
-use app::{App, VERSION, app, register_class};
+use app::{App, app, register_class};
 use present::ranked;
 use sys::wide;
 use theme::{Theme, allow_dark_for_window, init_app_dark_mode};

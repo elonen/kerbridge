@@ -81,6 +81,14 @@ pub mod tickets;
 pub mod time;
 pub mod tls;
 
+/// The version About and `--version` show. `KB_BUILD` at compile time is
+/// `debian/make-changelog --print-build`, which the agents' `make installer` and
+/// `make app` pass in; unset or empty, it is the crate version.
+pub const VERSION: &str = match option_env!("KB_BUILD") {
+    Some(v) if !v.is_empty() => v,
+    _ => env!("CARGO_PKG_VERSION"),
+};
+
 /// Where a surface's *Help* goes when the deployment publishes no page of its
 /// own (`discovery`'s `help_url`). One address, because two agents pointing at
 /// different pages is one of them wrong.

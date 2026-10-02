@@ -35,6 +35,8 @@ names the tag, and it stops if that section is absent or empty.
   and no longer call it an NTLM fallback.
 - The `NtlmFallbackRecovery=0` policy now removes only the repair offer.
 - Agents renew at once after the computer sleeps past a ticket's end.
+- About and `kerbridge --version` show the exact build, for example
+  `1.0.1+git20261001.5dd4ebd`.
 
 ## 1.0.1
 

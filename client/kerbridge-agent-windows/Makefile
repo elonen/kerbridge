@@ -19,6 +19,8 @@ TMP        := .local-tmp/icon
 DIST       := ../../dist
 # Use the crate version as the MSI ProductVersion.
 VERSION    := $(shell sed -n '/^\[package\]/,/^\[/ s/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)
+# About shows KB_BUILD. Without git it is empty, and About shows the crate version.
+installer: KB_BUILD := $(shell ../../debian/make-changelog --print-build 2>/dev/null)
 
 .PHONY: all build cli check icon installer clean
 
@@ -56,10 +58,10 @@ $(ICO): $(SVG)
 # requires split Docker stages; see docs/setup/rough-edges.md.
 installer:
 	docker build -f Dockerfile --target msi-dist \
-	  --build-arg VERSION=$(VERSION) \
+	  --build-arg VERSION=$(VERSION) --build-arg KB_BUILD=$(KB_BUILD) \
 	  --output type=local,dest=$(DIST) ../..
 	@# Print an absolute path because the root Makefile invokes this target.
-	@echo "wrote $(abspath $(DIST))/$(MSI) (version $(VERSION), unsigned)"
+	@echo "wrote $(abspath $(DIST))/$(MSI) (version $(VERSION), build $(KB_BUILD), unsigned)"
 
 clean:
 	cargo clean

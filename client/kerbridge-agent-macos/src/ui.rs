@@ -596,7 +596,7 @@ pub fn about() {
     alert.setMessageText(&NSString::from_str(&format!(
         "{} {} · {}",
         s.app_name,
-        env!("CARGO_PKG_VERSION"),
+        kerbridge_client::VERSION,
         s.tagline
     )));
     alert.setInformativeText(&NSString::from_str(&format!("{COPYRIGHT}\n\n{}", s.about_license)));

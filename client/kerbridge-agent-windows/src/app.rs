@@ -17,8 +17,6 @@ use crate::sys::{svg_to_hicon, wide};
 use crate::theme::Theme;
 use crate::{modal, settings};
 
-pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
-
 /// `SM_CXSMICON`: the size the shell actually asks a notification-area icon for.
 pub(crate) const SM_CXSMICON: u32 = 49;
 /// `SM_CXICON`: the large-icon metric, what a title bar's `ICON_BIG` is scaled to.

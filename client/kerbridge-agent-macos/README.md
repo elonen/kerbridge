@@ -148,6 +148,11 @@ make app     # dist/NAS Access.app, ad-hoc signed
 Native build only. The `.app` is assembled on a Mac. No container can substitute
 (unlike Windows).
 
+About shows the version that `debian/make-changelog --print-build` gives, for
+example `1.0.1+git20261001.5dd4ebd`, with `+dirty` for uncommitted changes.
+`make app` passes it to the build as `KB_BUILD`. A build with no git, or a
+plain `cargo build`, shows the crate version.
+
 **The bundle is ad-hoc signed. It is not notarized.** Ad-hoc signature is enough
 for Notification Center. It runs locally. Shipping to other users needs:
 Developer ID signature, notarization. The publisher does this at release time.

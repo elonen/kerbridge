@@ -33,13 +33,19 @@
 # a caller that has the tags hands the version to one that does not: the
 # Makefile computes it on the host and passes KB_VERSION into the container, so
 # no image build needs `.git` in its context. One derivation, two callers.
+#
+# `--print-build` prints the same version with `+dirty` appended when the tree
+# has uncommitted changes. The client agents show it in About; a package
+# version never carries the mark.
 set -eu
 
 print_only=0
+mark_dirty=0
 case ${1:-} in
     --print-version) print_only=1 ;;
+    --print-build) print_only=1; mark_dirty=1 ;;
     "") ;;
-    *) echo "usage: make-changelog [--print-version]" >&2; exit 1 ;;
+    *) echo "usage: make-changelog [--print-version | --print-build]" >&2; exit 1 ;;
 esac
 
 cd "$(dirname "$0")/.."
@@ -77,8 +83,12 @@ if [ -z "$version" ]; then
         version="$last+git$date.$sha"
     fi
     case $described in
-        *-dirty) echo "make-changelog: the tree has uncommitted changes;" \
-                      "$version names the commit, not what is being built." >&2 ;;
+        *-dirty) if [ "$mark_dirty" = 1 ]; then
+                     version="$version+dirty"
+                 else
+                     echo "make-changelog: the tree has uncommitted changes;" \
+                          "$version names the commit, not what is being built." >&2
+                 fi ;;
     esac
 fi
 

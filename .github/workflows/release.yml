@@ -91,6 +91,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: docker/setup-buildx-action@v3
       # The MSI alone. It carries both exes, so a release that also published
       # them would ship the same code twice under names that name no version.
@@ -114,11 +116,12 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       # Ad-hoc signed only, which needs no certificate and no secret. It is
-      # enough for Notification Center and nothing else: Gatekeeper quarantines
-      # the download, and the Secure Enclave key device grants need an
-      # entitlement that needs a real identity, so this bundle offers no grant.
+      # enough for Notification Center and device grants, but Gatekeeper
+      # quarantines the download.
       # See docs/setup/rough-edges.md.
       - run: make macos-zip
       - uses: actions/upload-artifact@v4

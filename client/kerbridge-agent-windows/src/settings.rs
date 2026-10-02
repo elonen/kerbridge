@@ -54,11 +54,12 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
 };
 
+use kerbridge_client::VERSION;
 use kerbridge_client::agent;
 use kerbridge_client::describe::Action;
 use kerbridge_client::strings::{fill, tr};
 
-use crate::app::{App, VERSION, app, register_class};
+use crate::app::{App, app, register_class};
 use crate::sys::{center_on_work_area, client_size, dip, hiword, loword, measure_width, wide};
 use crate::theme::{apply_control_theme, apply_frame};
 use crate::ui::{

@@ -244,6 +244,12 @@ the built database (see the `msi` stage of [`Dockerfile`](Dockerfile)). What is
 still rough about the installer is in
 [`docs/setup/rough-edges.md`](../../docs/setup/rough-edges.md).
 
+About shows the version that `debian/make-changelog --print-build` gives on the
+host, for example `1.0.1+git20261001.5dd4ebd`, with `+dirty` for uncommitted
+changes. `make installer` passes it into the container as `KB_BUILD`. A build
+with no git, or any other build, shows the crate version. The MSI
+ProductVersion stays the crate version.
+
 `x86_64` on purpose: the production client is an amd64 workstation, so this is
 the shipping artifact, and the ARM64 dev VM runs these exact bytes under x64
 emulation rather than a native build that would never ship.

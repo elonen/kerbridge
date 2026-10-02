@@ -20,6 +20,9 @@ RUN apt-get update \
 RUN rustup target add x86_64-pc-windows-gnu
 WORKDIR /src
 COPY client ./client
+# The version About shows: `debian/make-changelog --print-build` on the host.
+# Empty, the crate version.
+ARG KB_BUILD=
 # Two builds, one per crate directory. The target is named here rather than
 # pinned per crate, because the core builds for the host too; the linker comes
 # from client/.cargo/config.toml. They share the workspace target directory, so

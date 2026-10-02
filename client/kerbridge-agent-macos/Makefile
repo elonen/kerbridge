@@ -37,6 +37,9 @@ check: build
 	cargo test $(CARGO_TEST_Q)
 	cd ../kerbridge-client && cargo test $(CARGO_TEST_Q)
 
+# About shows KB_BUILD. Without git it is empty, and About shows the crate version.
+app: export KB_BUILD := $(shell ../../debian/make-changelog --print-build 2>/dev/null)
+
 # Apply an ad-hoc signature because Notification Center rejects unsigned
 # binaries. The publisher applies the Developer ID signature during release.
 app: build $(ICNS)

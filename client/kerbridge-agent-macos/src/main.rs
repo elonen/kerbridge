@@ -64,7 +64,7 @@ struct Shown {
 }
 
 fn main() {
-    log::info(&format!("kerbridge-agent {} starting", env!("CARGO_PKG_VERSION")));
+    log::info(&format!("kerbridge-agent {} starting", kerbridge_client::VERSION));
 
     let mtm = MainThreadMarker::new().expect("main() runs on the main thread");
     let app = NSApplication::sharedApplication(mtm);

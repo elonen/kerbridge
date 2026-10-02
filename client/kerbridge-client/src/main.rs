@@ -28,6 +28,7 @@ use cli::verify::verify_share;
 #[derive(Parser)]
 #[command(
     name = "kerbridge",
+    version = kerbridge_client::VERSION,
     about = "Sign in to the cloud IdP and put a broker-issued Kerberos TGT in this user's ticket cache, for passwordless NAS access"
 )]
 struct Args {
