@@ -139,8 +139,9 @@ ticket mean anything.
    ```
 
    A `_kerbridge._tcp.<domain>` SRV record in the machine's own DNS domain is
-   looked up at startup when the first two are silent, so an operator who already
-   publishes `_kerberos._udp` need push nothing to the workstation.
+   looked up when the first two are silent, at startup and then on a backoff
+   until it answers. So an operator who already publishes `_kerberos._udp` need
+   push nothing to the workstation.
 2. **Enrollment** (`--enroll`, elevated one-shot, only when Windows does not
    already know the realm) — re-fetches `/config` itself and runs `ksetup`. Still
    no Entra involvement: nothing here talks to the IdP, and nothing here prompts

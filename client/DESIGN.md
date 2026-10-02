@@ -415,21 +415,46 @@ label and gives up nothing. **Give up** (the holder relinquishes) and **revoke**
 *n/a* on the CLI rows because that process holds its refresh token for the length
 of one run and writes it nowhere — there is nothing for a flag to keep or drop.
 
-### The re-probe of a broker that went away
+### The re-probe of the broker
 
 The re-injection schedule runs only while a ticket is held, and the startup
 retries stop after three. Without a third clock, a machine that booted ahead of
-its network keeps reporting *Can't reach …* about a server that has come back.
+its network keeps reporting *Can't reach …* about a server that has come back,
+or never finds the broker that DNS names.
 
-`probe_at` is that third clock. The **first** transport failure arms it, anything
-that is not a transport failure disarms it, and it asks for `/config` — never for
-a sign-in.
+`probe_at` is that third clock. The probe asks for `/config` at the effective
+broker URL. With no broker URL from policy, `config.toml` or DNS, it looks up
+the `_kerbridge._tcp` SRV record instead, and an answer starts the `/config`
+probe at once. It never asks for a sign-in.
 
+- **Startup runs the probe once**, unless a startup sign-in holds the busy slot
+  and asks for `/config` itself.
+- **A failed probe or the first transport failure arms it.** It starts at 30 s
+  and doubles to a ceiling of 10 minutes. The interval starts when the failed
+  attempt ends.
+- **It is armed once, not on every failure.** `Agent::record` runs on every
+  failure, and to re-arm would hold the interval at its floor for ever.
+- **An accepted `/config` stops it and resets the backoff.** A failure of
+  another class or a sign-off does not stop it.
+- **A broker URL change starts it again** at the new target on the next tick,
+  from the first step. An SRV answer starts it again in the same way, for the
+  broker that the answer names.
+- **One probe runs at a time.** A broker URL change forgets the running probe,
+  so its SRV answer or `/config` reply changes nothing. A newer request for the
+  same broker supersedes its reply.
+- **A failed probe writes to the log only.** It shows no notification and no
+  fault, because nobody asked for it. An SRV lookup that finds no record writes
+  nothing. A malformed or insecure document is retried on the same backoff, and
+  the sign-in that meets it shows the fault.
+- **A machine in a network with no KerBridge record** continues to query
+  `_kerbridge._tcp.<domain>` every 10 minutes.
+- **An SRV answer starts a sign-in only for autostart that waited for it.**
+  The autostart sign-in at logon waits when every condition holds except a
+  broker URL. A sign-off, a user sign-in or another session reset cancels the
+  wait. A cleared broker URL in Settings starts it again under the same
+  conditions.
 - **`/config` needs no credential**, so this is the one useful thing a machine
   with nothing to be silent with can do. On macOS that is every machine.
-- **It is armed once, not on every failure.** `Agent::record` runs on every
-  failure, and to re-arm would hold the interval at its floor for ever. It starts
-  at 30 s and doubles to a ceiling of 10 minutes.
 - **A landed `/config` clears the transport fault**, which is what replaces the
   stale sentence with the truth — usually *a browser sign-in is needed*, a
   different and actionable thing.
@@ -1149,7 +1174,8 @@ flowchart LR
   of their parents down to two labels; the walk up is what lets one record in the
   broker's own zone serve clients in per-site subdomains, and a copy published in
   the subdomain is refused, because its target is then outside the domain that
-  answered.
+  answered. The lookup runs at startup, and then on the probe backoff until it
+  answers (see [The re-probe of the broker](#the-re-probe-of-the-broker)).
 - **Discovery state has a run-local owner.** Every request carries the exact
   requested broker URL and a monotonic generation. A result applies only when
   both still match, so an old target or an older request for the same target

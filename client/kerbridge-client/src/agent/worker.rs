@@ -29,8 +29,8 @@ use super::failure::{
 use super::{
     Agent, BROWSER_LEG, BUSY, BrokerSnapshot, CANCEL, DiscoveryStamp, GRANT_CLEANUP,
     LOSS_POLL_SECS, MIN_REFRESH_DELAY, NativeToken, Outcome, PROBE_FIRST_SECS, PROBE_MAX_SECS,
-    Phase, REFRESH_TOKEN, STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS, Severity, TgtLoss, host,
-    host_of, is_the_grants, midpoint, next_backoff, notify, purge_realm, with,
+    Phase, Probe, REFRESH_TOKEN, STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS, Severity, TgtLoss,
+    host, host_of, is_the_grants, midpoint, next_backoff, notify, purge_realm, with,
 };
 
 // ---- the queue -------------------------------------------------------------
@@ -143,17 +143,23 @@ pub(super) enum Event {
         outcome: Outcome,
         recheck_enrollment: bool,
     },
-    /// DNS answered with a broker for a client that had none configured.
-    BrokerDiscovered {
-        url: String,
+    /// The SRV probe of `generation` finished. `url` is the broker DNS names, or
+    /// `None` when no record answered.
+    BrokerLookup {
+        generation: u64,
+        url: Option<String>,
     },
     /// One complete discovery document. This is the only event that publishes
     /// broker-owned snapshot fields. `accepted` lets an operation wait before it
-    /// starts OIDC discovery.
+    /// starts OIDC discovery; `None` is the probe's own request.
     Discovered {
         stamp: DiscoveryStamp,
         snapshot: BrokerSnapshot,
         accepted: Option<std::sync::mpsc::Sender<bool>>,
+    },
+    /// The probe's `/config` request failed. The probe backoff answers it.
+    DiscoveryFailed {
+        stamp: DiscoveryStamp,
     },
     /// Ask whether a worker's requested broker URL and generation are still
     /// current before an external side effect.
@@ -281,6 +287,9 @@ fn apply(ev: Event) -> bool {
         }
         Event::Discovered { stamp, snapshot, accepted } => {
             let applied = with(|a| {
+                if accepted.is_none() {
+                    a.end_probe(stamp.generation, time::now());
+                }
                 // The probe doubles once per launch from its first step, so past
                 // its second step at least one probe this streak did not land.
                 let broker_was_away =
@@ -314,6 +323,10 @@ fn apply(ev: Event) -> bool {
             }
             return applied;
         }
+        Event::DiscoveryFailed { stamp } => {
+            with(|a| a.end_probe(stamp.generation, time::now()));
+            return false;
+        }
         Event::StaleGrantCompensated { stamp } => {
             return with(|a| a.finish_busy(&stamp, true));
         }
@@ -342,7 +355,6 @@ fn apply(ev: Event) -> bool {
     let mut finished: Option<(Action, Outcome)> = None;
     let mut grant_sign_in = false;
     let mut elevating = None;
-    let mut discover = false;
 
     with(|a| {
         match ev {
@@ -505,23 +517,27 @@ fn apply(ev: Event) -> bool {
                 }
             }
             Event::Discovered { .. }
+            | Event::DiscoveryFailed { .. }
             | Event::Current { .. }
             | Event::StaleGrantCompensated { .. } => {
                 unreachable!("worker acknowledgements are handled before shared events")
             }
-            Event::BrokerDiscovered { url } => {
-                // The user may have typed one into Settings while the lookup ran;
-                // theirs wins, and `broker_url` already says so.
-                if a.settings.broker_url().is_none() {
-                    log::info(&format!("using the broker DNS advertises: {url}"));
-                    a.settings.set_discovered(url);
-                    let _ = a.advance_discovery();
-                    // Fetch `/config`: ticket adoption skips startup retry.
-                    discover = true;
-                    // Autostart ran before DNS discovery; retry only when signed out.
-                    if a.phase == Phase::SignedOut {
-                        a.startup_retry_at = Some(time::now());
-                    }
+            Event::BrokerLookup { generation, url } => {
+                // A broker URL typed into Settings while the lookup ran forgot
+                // this probe, so theirs wins.
+                let ended = a.end_probe(generation, time::now());
+                let Some(url) = url.filter(|_| ended) else {
+                    return;
+                };
+                log::info(&format!("using the broker DNS advertises: {url}"));
+                a.settings.set_discovered(url);
+                // A new target. The next tick asks its `/config`: through the
+                // autostart sign-in below, or through the probe without one.
+                a.restart_probe(time::now());
+                // Only the autostart that declined for want of a broker. A user
+                // who signed off or signed in since has cleared it.
+                if std::mem::take(&mut a.autostart_awaits_broker) {
+                    a.startup_retry_at = Some(time::now());
                 }
             }
             Event::GrantCreated { stamp, grant, effects, .. } => {
@@ -659,11 +675,6 @@ fn apply(ev: Event) -> bool {
         }
     });
 
-    // Run after the agent borrow: discovery reads settings.
-    if discover {
-        #[cfg(not(test))]
-        discover_in_background();
-    }
     // Before the dialog rather than after it: the modal pumps messages, so the
     // exchange lands while it is still on screen and dismissing it reveals a
     // connected agent instead of starting the wait.
@@ -685,30 +696,51 @@ fn apply(ev: Event) -> bool {
     true
 }
 
-/// Ask the broker for `/config` on a thread of its own.
+/// Run the probe: `/config`, or the SRV lookup when nothing names a broker.
 ///
 /// Needs no credential and never opens a window. It runs at startup, where it is
 /// the only thing that fetches the device-grant policy for a machine that will not sign
-/// in for hours, and on the re-probe backoff, where it is the only thing that can
-/// notice a broker coming back. It waits while cloud sign-out owns the current
-/// discovery generation. It does not take the busy slot and `apply` does not
-/// release one for it.
+/// in for hours, and on the probe backoff, where it is the only thing that can
+/// notice a broker or an SRV record coming back. It waits while cloud sign-out
+/// owns the current discovery generation, and while the previous probe runs. It
+/// does not take the busy slot and `apply` does not release one for it.
 ///
-/// A failure is logged and nothing else: the surface is already saying the broker
-/// is unreachable, and the backoff in [`super::tick`] is what answers it.
+/// A failure goes to the log and arms the backoff in [`super::tick`], and
+/// nothing else: nobody asked for this request, so nobody is interrupted.
 pub(super) fn discover_in_background() {
-    let Some(stamp) =
-        with(|a| if a.cloud_sign_out.is_some() { None } else { a.advance_discovery() })
-    else {
-        return;
-    };
-    std::thread::spawn(move || match discovery::broker_document(&stamp.requested_broker_url) {
-        Ok(document) => post(Event::Discovered {
-            snapshot: BrokerSnapshot::from_document(&document),
-            stamp,
-            accepted: None,
-        }),
-        Err(e) => log::info(&format!("could not reach the broker for its settings: {e:#}")),
+    if let Some(probe) = with(|a| a.begin_probe(time::now())) {
+        run_probe(probe);
+    }
+}
+
+/// One probe on a thread of its own: a dead resolver or broker must not hold up
+/// the status icon. It always reports, because the next probe waits for it.
+fn run_probe(probe: Probe) {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    std::thread::spawn(move || {
+        post(match probe {
+            Probe::Srv { generation } => Event::BrokerLookup {
+                generation,
+                url: catch_unwind(crate::srv::discover_broker).unwrap_or_else(|_| {
+                    log::warn("panic in the SRV lookup worker");
+                    None
+                }),
+            },
+            Probe::Config(stamp) => match catch_unwind(AssertUnwindSafe(|| {
+                discovery::broker_document(&stamp.requested_broker_url)
+                    .map(|document| BrokerSnapshot::from_document(&document))
+            })) {
+                Ok(Ok(snapshot)) => Event::Discovered { snapshot, stamp, accepted: None },
+                Ok(Err(e)) => {
+                    log::info(&format!("could not reach the broker for its settings: {e:#}"));
+                    Event::DiscoveryFailed { stamp }
+                }
+                Err(_) => {
+                    log::warn("panic in the broker discovery worker");
+                    Event::DiscoveryFailed { stamp }
+                }
+            },
+        })
     });
 }
 
@@ -1630,7 +1662,7 @@ mod tests {
             assert!(a.settings.browser_session());
         });
 
-        assert!(apply(Event::BrokerDiscovered { url: url.into() }));
+        srv_answers(Some(url));
         with(|a| {
             assert_eq!(a.settings.broker_url(), Some(url));
             assert_eq!(a.kerberos.realm, "EXAMPLE.SITE");
@@ -1652,11 +1684,13 @@ mod tests {
         });
         let mut agent = Agent::new(settings);
         agent.enroll_state = enroll::State::Enrolled;
+        // What `autostart_sign_in` leaves behind on an eligible machine.
+        agent.autostart_awaits_broker = adopt.is_none();
         if let Some(ticket) = adopt {
             assert!(!agent.adopt_cached_ticket(ticket));
         }
         super::super::AGENT.with(|slot| *slot.borrow_mut() = Some(agent));
-        assert!(apply(Event::BrokerDiscovered { url: "https://kerbridge.example.site".into() }));
+        srv_answers(Some("https://kerbridge.example.site"));
     }
 
     /// `init` adopts before DNS answers, from the cached realm. The SRV answer
@@ -2176,6 +2210,281 @@ mod tests {
             assert!(a.startup_retry_at.is_none());
             assert_eq!(a.startup_backoff, 0);
         });
+        finish_test();
+    }
+
+    // ---- the probe: SRV lookup and `/config` without a worker -------------------
+
+    const BROKER: &str = "https://kerbridge.example.site";
+
+    fn install_without_broker() {
+        let settings = crate::config::Settings::for_test(FileConfig::default());
+        super::super::AGENT.with(|slot| *slot.borrow_mut() = Some(Agent::new(settings)));
+        BUSY.store(false, Ordering::Relaxed);
+        GRANT_CLEANUP.store(false, Ordering::Relaxed);
+        let _ = super::super::HOST.set(&TestHost);
+    }
+
+    /// Start the probe that is due. Tests apply its outcome themselves.
+    fn begin() -> Probe {
+        with(|a| a.begin_probe(time::now())).expect("a probe starts")
+    }
+
+    /// Run one SRV lookup to its answer.
+    fn srv_answers(url: Option<&str>) {
+        let Probe::Srv { generation } = begin() else {
+            panic!("no broker URL: the probe asks DNS")
+        };
+        assert!(apply(Event::BrokerLookup { generation, url: url.map(str::to_owned) }));
+    }
+
+    /// The `/config` probe that the next tick starts after an SRV answer.
+    fn config_probe() -> DiscoveryStamp {
+        assert!(with(|a| super::super::tick_at(a, time::now(), false, &no_cache_read)).probe);
+        let Probe::Config(stamp) = begin() else { panic!("a broker URL: the probe asks /config") };
+        stamp
+    }
+
+    fn change_broker(url: &str) {
+        super::super::commands::apply_settings(super::super::commands::SettingsChange {
+            broker_url: Some(url),
+            ..super::super::commands::SettingsChange::default()
+        });
+    }
+
+    /// The next probe is `secs` after the failure that armed it.
+    fn assert_retry_in(before: i64, secs: i64) -> i64 {
+        let at = with(|a| {
+            assert!(a.probe_in_flight.is_none());
+            a.probe_at.expect("a failed probe retries")
+        });
+        assert!((secs..=secs + 1).contains(&(at - before)), "{} != {secs}", at - before);
+        at
+    }
+
+    #[test]
+    fn a_srv_record_published_late_is_found_and_its_config_accepted() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_without_broker();
+        let notified = NOTIFIED.load(Ordering::Relaxed);
+
+        let before = time::now();
+        srv_answers(None);
+        let retry = assert_retry_in(before, PROBE_FIRST_SECS);
+        with(|a| assert!(a.settings.broker_url().is_none()));
+        let due = with(|a| super::super::tick_at(a, retry - 1, false, &no_cache_read));
+        assert!(!due.probe, "not before it is due");
+        let due = with(|a| super::super::tick_at(a, retry, false, &no_cache_read));
+        assert!(due.probe && due.start.is_none(), "a lookup, never a sign-in");
+
+        // The record is there now. Its `/config` is the next probe, and lands.
+        // Autostart did not wait for a broker here, so nothing signs in.
+        srv_answers(Some(BROKER));
+        with(|a| assert_eq!(a.settings.broker_url(), Some(BROKER)));
+        let due = with(|a| super::super::tick_at(a, time::now(), false, &no_cache_read));
+        assert!(due.probe && due.start.is_none());
+        let Probe::Config(stamp) = begin() else { panic!("a broker URL: the probe asks /config") };
+        assert!(apply(discovered(stamp, snapshot("A.SITE", "a"))));
+        with(|a| {
+            assert_eq!(a.kerberos.realm, "A.SITE");
+            assert!(a.probe_at.is_none() && a.probe_in_flight.is_none());
+            assert_eq!(a.probe_backoff, 0, "the backoff starts again");
+            assert!(a.fault.is_none());
+            let due = super::super::tick_at(a, time::now(), false, &no_cache_read);
+            assert!(due.start.is_none() && !due.probe);
+        });
+        assert_eq!(NOTIFIED.load(Ordering::Relaxed), notified, "discovery interrupts nobody");
+        finish_test();
+    }
+
+    /// A late answer starts the autostart sign-in that declined for want of a
+    /// broker, and only that one: with autostart off, DNS starts nothing.
+    #[test]
+    fn a_late_srv_answer_starts_only_the_autostart_that_waited_for_it() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        for waited in [true, false] {
+            install_without_broker();
+            // `autostart_sign_in` reads OS state, so the test sets its verdict.
+            with(|a| a.autostart_awaits_broker = waited);
+            let before = time::now();
+            srv_answers(None);
+            let retry = assert_retry_in(before, PROBE_FIRST_SECS);
+            assert!(with(|a| super::super::tick_at(a, retry, false, &no_cache_read)).probe);
+
+            srv_answers(Some(BROKER));
+            let due = with(|a| super::super::tick_at(a, time::now(), false, &no_cache_read));
+            let expected = waited.then_some(Trigger::Startup);
+            assert!(due.start == expected, "waited={waited}");
+            assert!(due.probe, "waited={waited}: `tick` lets a started worker ask /config");
+            with(|a| assert!(!a.autostart_awaits_broker, "consumed"));
+            finish_test();
+        }
+    }
+
+    /// Sign off and a user sign-in both end what autostart waited for.
+    #[test]
+    fn a_late_srv_answer_cannot_override_a_sign_off_or_a_sign_in() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        for sign_off in [true, false] {
+            install_without_broker();
+            with(|a| a.autostart_awaits_broker = true);
+            if sign_off {
+                super::super::drop_ticket();
+            } else {
+                // With no broker URL it starts nothing.
+                super::super::sign_in();
+            }
+            assert!(!with(|a| a.autostart_awaits_broker), "sign_off={sign_off}");
+
+            srv_answers(Some(BROKER));
+            with(|a| {
+                assert!(a.startup_retry_at.is_none(), "sign_off={sign_off}");
+                let due = super::super::tick_at(a, time::now(), false, &no_cache_read);
+                assert!(due.start.is_none() && due.probe, "sign_off={sign_off}");
+            });
+            finish_test();
+        }
+    }
+
+    #[test]
+    fn a_broker_named_by_srv_that_is_down_is_asked_again_until_it_answers() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_without_broker();
+
+        srv_answers(Some(BROKER));
+        let before = time::now();
+        assert!(!apply(Event::DiscoveryFailed { stamp: config_probe() }));
+        let retry = assert_retry_in(before, PROBE_FIRST_SECS);
+        with(|a| assert!(a.fault.is_none() && a.message.is_empty(), "the log only"));
+
+        assert!(with(|a| super::super::tick_at(a, retry, false, &no_cache_read)).probe);
+        let Probe::Config(up) = begin() else { panic!("a broker URL: the probe asks /config") };
+        assert_eq!(up.requested_broker_url, BROKER);
+        assert!(apply(discovered(up, snapshot("A.SITE", "a"))));
+        with(|a| {
+            assert_eq!(a.kerberos.realm, "A.SITE");
+            assert!(a.probe_at.is_none());
+        });
+        finish_test();
+    }
+
+    #[test]
+    fn a_configured_broker_that_fails_at_startup_is_asked_again_without_a_worker() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent(BROKER);
+        let _ = super::super::HOST.set(&TestHost);
+        let notified = NOTIFIED.load(Ordering::Relaxed);
+
+        let Probe::Config(refused) = begin() else {
+            panic!("a broker URL: the probe asks /config")
+        };
+        let before = time::now();
+        assert!(!apply(Event::DiscoveryFailed { stamp: refused }));
+        let retry = assert_retry_in(before, PROBE_FIRST_SECS);
+        with(|a| {
+            assert!(a.fault.is_none() && a.startup_retry_at.is_none());
+            // Signing off ends the session, not the search for configuration.
+            a.reset_session();
+            assert_eq!(a.probe_at, Some(retry));
+        });
+
+        let due = with(|a| super::super::tick_at(a, retry, false, &no_cache_read));
+        assert!(due.probe && due.start.is_none());
+        let Probe::Config(back) = begin() else { panic!() };
+        assert!(apply(discovered(back, snapshot("A.SITE", "a"))));
+        with(|a| {
+            assert_eq!(a.kerberos.realm, "A.SITE");
+            assert!(a.probe_at.is_none());
+        });
+        assert_eq!(NOTIFIED.load(Ordering::Relaxed), notified);
+        finish_test();
+    }
+
+    #[test]
+    fn a_broker_change_makes_older_config_results_inert() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent("https://a.example.site");
+        let _ = super::super::HOST.set(&TestHost);
+        let Probe::Config(old) = begin() else { panic!() };
+
+        change_broker("https://b.example.site");
+        let restarted = with(|a| {
+            assert!(a.probe_in_flight.is_none());
+            assert_eq!(a.probe_backoff, 0);
+            assert!(a.probe_at.is_some_and(|t| t <= time::now()), "B is asked at once");
+            a.probe_at
+        });
+        assert!(!apply(Event::DiscoveryFailed { stamp: old.clone() }));
+        assert!(!apply(discovered(old, snapshot("A.SITE", "a"))));
+        with(|a| {
+            assert!(a.kerberos.realm.is_empty());
+            assert_eq!(a.probe_at, restarted);
+            assert_eq!(a.probe_backoff, 0);
+        });
+
+        let Probe::Config(current) = begin() else { panic!() };
+        assert_eq!(current.requested_broker_url, "https://b.example.site");
+        assert!(apply(discovered(current, snapshot("B.SITE", "b"))));
+        with(|a| assert_eq!(a.kerberos.realm, "B.SITE"));
+        finish_test();
+    }
+
+    #[test]
+    fn a_late_srv_answer_never_moves_a_typed_or_cleared_broker() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_without_broker();
+
+        // The user types an address while the lookup runs: theirs stays.
+        let Probe::Srv { generation: overtaken } = begin() else { panic!() };
+        change_broker("https://typed.example.site");
+        assert!(apply(Event::BrokerLookup { generation: overtaken, url: Some(BROKER.into()) }));
+        with(|a| assert_eq!(a.settings.broker_url(), Some("https://typed.example.site")));
+
+        // Cleared again, DNS is asked afresh. An answer to a lookup that ran
+        // before the address was typed and cleared changes nothing.
+        change_broker("");
+        let Probe::Srv { generation: stale } = begin() else { panic!("no broker URL again") };
+        change_broker("https://typed.example.site");
+        change_broker("");
+        let schedule = with(|a| (a.probe_at, a.probe_backoff, a.probe_in_flight));
+        assert!(apply(Event::BrokerLookup { generation: stale, url: Some(BROKER.into()) }));
+        with(|a| {
+            assert!(a.settings.broker_url().is_none());
+            assert_eq!((a.probe_at, a.probe_backoff, a.probe_in_flight), schedule);
+        });
+
+        srv_answers(Some(BROKER));
+        with(|a| assert_eq!(a.settings.broker_url(), Some(BROKER)));
+        finish_test();
+    }
+
+    #[test]
+    fn failed_probes_back_off_to_the_ceiling_one_at_a_time() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent(BROKER);
+        let _ = super::super::HOST.set(&TestHost);
+
+        let mut seen = Vec::new();
+        let mut before = time::now();
+        let Probe::Config(mut stamp) = begin() else { panic!() };
+        for _ in 0..8 {
+            assert!(!apply(Event::DiscoveryFailed { stamp }));
+            let wait = with(|a| a.probe_backoff);
+            let retry = assert_retry_in(before, wait);
+            seen.push(wait);
+
+            assert!(with(|a| super::super::tick_at(a, retry, false, &no_cache_read)).probe);
+            let Probe::Config(next) = begin() else { panic!() };
+            stamp = next;
+            // While it runs, nothing else starts, however late it is.
+            for late in [retry + PROBE_MAX_SECS, retry + 10 * PROBE_MAX_SECS] {
+                let due = with(|a| super::super::tick_at(a, late, false, &no_cache_read));
+                assert!(!due.probe, "never two at once");
+            }
+            assert!(with(|a| a.begin_probe(retry)).is_none());
+            before = time::now();
+        }
+        assert_eq!(seen, [30, 60, 120, 240, 480, 600, 600, 600]);
         finish_test();
     }
 }

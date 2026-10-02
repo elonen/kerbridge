@@ -38,6 +38,8 @@ names the tag, and it stops if that section is absent or empty.
 - About and `kerbridge --version` show the exact build, for example
   `1.0.1+git20261001.5dd4ebd`.
 - Agents retry a renewal that fails because the network is not up yet.
+- Agents keep looking for the broker and its settings when they start before
+  the network.
 
 ## 1.0.1
 

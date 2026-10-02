@@ -14,7 +14,7 @@ use crate::{config, log, time};
 
 use super::worker::{self, Trigger};
 use super::{
-    BUSY, CANCEL, GRANT_CLEANUP, Phase, STARTUP_RETRIES, host, purge_realm, retarget, with,
+    Agent, BUSY, CANCEL, GRANT_CLEANUP, Phase, STARTUP_RETRIES, host, purge_realm, retarget, with,
 };
 
 /// Start a sign-in the user asked for. No-op while another worker is running.
@@ -29,8 +29,11 @@ use super::{
 /// Where the pin names the signed-in account itself, this is today's behavior
 /// with one extra step: the same person ends up with the same ticket.
 pub fn sign_in() {
-    // Their click supersedes anything autostart still had queued.
-    with(|a| a.startup_retry_at = None);
+    // Their click supersedes anything autostart still had queued or awaited.
+    with(|a| {
+        a.startup_retry_at = None;
+        a.autostart_awaits_broker = false;
+    });
     // Only when there is nothing to re-inject with. A pinned machine holding a
     // live grant has a free, browser-less way to recover from the transient
     // failure that put this button in front of someone, and diverting to
@@ -74,11 +77,10 @@ pub fn renew_now() {
 /// [`worker::start_worker`] never reaches a browser on its own.
 pub fn autostart_sign_in() {
     let go = with(|a| {
-        let go = a.phase == Phase::SignedOut
-            && a.settings.broker_url().is_some()
-            && (a.settings.windows_sign_in() || a.settings.grant().is_some())
-            && !a.enroll_state.needs_action()
-            && config::autostart_active();
+        let eligible = autostart_eligible(a);
+        // DNS can name the broker later; the SRV answer then starts this.
+        a.autostart_awaits_broker = eligible && a.settings.broker_url().is_none();
+        let go = eligible && a.settings.broker_url().is_some() && !a.enroll_state.needs_action();
         if go {
             a.startup_retries = STARTUP_RETRIES;
         }
@@ -88,6 +90,14 @@ pub fn autostart_sign_in() {
         log::info("autostart: trying a silent sign-in");
         worker::start_worker(Trigger::Startup);
     }
+}
+
+/// The autostart conditions that do not depend on the broker. The OS read is
+/// last, so a machine that fails the others does not make it.
+fn autostart_eligible(a: &Agent) -> bool {
+    a.phase == Phase::SignedOut
+        && (a.settings.windows_sign_in() || a.settings.grant().is_some())
+        && config::autostart_active()
 }
 
 pub fn cancel_sign_in() {
@@ -275,6 +285,10 @@ pub fn apply_settings(change: SettingsChange<'_>) {
                 // Try the new address at once, silently. The old broker payload
                 // and every old fault are already gone.
                 a.startup_retry_at = Some(time::now());
+                // A cleared address returns to DNS, and autostart waits for
+                // its answer as it does at logon.
+                a.autostart_awaits_broker =
+                    a.settings.broker_url().is_none() && autostart_eligible(a);
             } else {
                 a.settings.restore_user_broker_url(before_user);
                 log::warn("broker URL change cancelled because old realm tickets remain");

@@ -40,9 +40,9 @@ use crate::config::{Grant, Settings};
 use crate::describe::{Action, Fault};
 use crate::discovery::{Defaults, DeviceGrantConfig, KerberosConfig, OidcConfig};
 use crate::strings::{days, duration, fill, tr};
-use crate::{enroll, log, srv, tickets, time};
+use crate::{enroll, log, tickets, time};
 
-use worker::{Event, Trigger};
+use worker::Trigger;
 
 /// One `agent::` surface, whichever file an item is filed under: a caller has no
 /// reason to know which side of the threading seam a command runs on, or whether
@@ -105,15 +105,16 @@ const FLAKY_QUIET_SECS: i64 = 15 * 60;
 /// ticket; on a ten-hour ticket this puts it two hours out, which is inside the
 /// working session it interrupts.
 const LATE_ELAPSED: f32 = 0.8;
-/// How long after a transport failure to ask the broker for `/config` again, and
-/// the ceiling the interval doubles to.
+/// How long after a failure to run the probe again, and the ceiling the interval
+/// doubles to. See [`Probe`].
 ///
 /// Nothing else ever looks outside a `Fault::Network` retry: the re-injection
 /// schedule runs only while a ticket is held, and a startup failure that is not
 /// `Fault::Network` stops after three, so without this a machine whose broker
-/// has come back keeps reporting "can't reach". `/config` needs no credential,
-/// which is also what makes it the one thing a machine with nothing to be silent
-/// with can usefully ask.
+/// has come back keeps reporting "can't reach", and one that started before its
+/// network never finds its broker. Neither leg needs a credential, which is also
+/// what makes the probe the one thing a machine with nothing to be silent with
+/// can usefully do.
 const PROBE_FIRST_SECS: i64 = 30;
 const PROBE_MAX_SECS: i64 = 10 * 60;
 /// How often to look for a TGT absent before its End Time.
@@ -251,6 +252,15 @@ struct DiscoveryStamp {
     generation: u64,
 }
 
+/// One credential-free request for the broker document: `/config` at the
+/// effective broker URL, or, with no broker URL, the `_kerbridge._tcp` SRV
+/// lookup that looks for one. An SRV answer starts the `/config` probe on the
+/// next tick.
+enum Probe {
+    Srv { generation: u64 },
+    Config(DiscoveryStamp),
+}
+
 /// Every broker-owned value published by one `/config` document.
 #[derive(Clone, Default, PartialEq, Eq)]
 struct BrokerSnapshot {
@@ -316,10 +326,14 @@ struct Agent {
     /// The first transport failure with nothing landed after it, in Unix
     /// seconds. What makes `Flaky` a duration.
     first_failure_at: Option<i64>,
-    /// When to ask the broker for `/config` again, and how long to wait after
-    /// that. Set only while a transport failure stands; see [`PROBE_FIRST_SECS`].
+    /// When to run the [`Probe`] again, and how long to wait after that. Armed
+    /// by a failed probe or a transport failure; an accepted document or a
+    /// retarget resets it. See [`PROBE_FIRST_SECS`].
     probe_at: Option<i64>,
     probe_backoff: i64,
+    /// The generation of the probe that runs. At most one runs at a time. A
+    /// retarget forgets it, so its result is inert.
+    probe_in_flight: Option<u64>,
     /// Backoff for [`Self::refresh_at`] while a network failure stands: doubles
     /// on each further failed attempt, clamped under the ordinary midpoint so a
     /// retry never lands later than today's schedule already would have tried.
@@ -354,6 +368,10 @@ struct Agent {
     /// exchange, a failure that is not a transport failure, or a session reset
     /// ends it.
     startup_backoff: i64,
+    /// The autostart sign-in declined only because no broker URL was known. An
+    /// SRV answer consumes it to start that sign-in late. A session reset or a
+    /// user sign-in clears it, so a late answer cannot override either.
+    autostart_awaits_broker: bool,
     /// The "your session is about to lapse" balloon has been shown for this ticket.
     escalated: bool,
     /// What this deployment allows in the way of device grants, as last
@@ -432,6 +450,7 @@ impl Agent {
             first_failure_at: None,
             probe_at: None,
             probe_backoff: 0,
+            probe_in_flight: None,
             refresh_backoff: 0,
             in_flight: Vec::new(),
             busy_operation: None,
@@ -444,6 +463,7 @@ impl Agent {
             startup_retry_at: None,
             startup_retries: 0,
             startup_backoff: 0,
+            autostart_awaits_broker: false,
             escalated: false,
             device_grant: DeviceGrantConfig::default(),
             help_url: None,
@@ -516,7 +536,60 @@ impl Agent {
         if self.fault == Some(Fault::Network) {
             self.record(None, String::new());
         }
+        self.reset_probe();
         Some(cache_changed)
+    }
+
+    /// Start one probe at the current target. `None` while one runs, or while
+    /// cloud sign-out owns the discovery generation.
+    fn begin_probe(&mut self, now: i64) -> Option<Probe> {
+        if self.probe_in_flight.is_some() || self.cloud_sign_out.is_some() {
+            return None;
+        }
+        let probe = match self.advance_discovery() {
+            Some(stamp) => Probe::Config(stamp),
+            None => Probe::Srv { generation: self.discovery_generation },
+        };
+        self.probe_in_flight = Some(self.discovery_generation);
+        self.arm_probe(now);
+        Some(probe)
+    }
+
+    /// The probe of `generation` finished. False when it is not the one that
+    /// runs: a retarget forgot it, and its result must change nothing.
+    fn end_probe(&mut self, generation: u64, now: i64) -> bool {
+        if self.probe_in_flight != Some(generation) {
+            return false;
+        }
+        self.probe_in_flight = None;
+        // From the end of the attempt, so a slow failure cannot shorten the wait.
+        if self.probe_at.is_some() {
+            self.probe_at = Some(now + self.probe_backoff);
+        }
+        true
+    }
+
+    /// Arm the probe at its first step, unless it is already armed. Armed once
+    /// and then left to its own backoff: re-arming on every failure would hold
+    /// the interval at its floor.
+    fn arm_probe(&mut self, now: i64) {
+        if self.probe_at.is_none() {
+            self.probe_backoff = PROBE_FIRST_SECS;
+            self.probe_at = Some(now + PROBE_FIRST_SECS);
+        }
+    }
+
+    fn reset_probe(&mut self) {
+        self.probe_at = None;
+        self.probe_backoff = 0;
+    }
+
+    /// Probe a new target at the next tick, from the first step. The running
+    /// probe is forgotten, so its result is inert.
+    fn restart_probe(&mut self, now: i64) {
+        self.probe_in_flight = None;
+        self.probe_backoff = 0;
+        self.probe_at = Some(now);
     }
 
     /// Clear broker-owned state after a requested broker URL change. User and policy values,
@@ -586,6 +659,7 @@ impl Agent {
         self.startup_retry_at = None;
         self.startup_retries = 0;
         self.startup_backoff = 0;
+        self.autostart_awaits_broker = false;
         self.principal.clear();
         self.start = 0;
         self.end = 0;
@@ -596,7 +670,6 @@ impl Agent {
         self.message.clear();
         self.fault = None;
         self.first_failure_at = None;
-        self.probe_at = None;
         // The episode was about a ticket this session no longer has.
         self.loss = TgtLoss::default();
         self.loss_check_at = 0;
@@ -645,26 +718,26 @@ impl Agent {
     }
 
     /// Record what happened and what class it was; open the flaky window and arm
-    /// the re-probe on the first transport failure with nothing landed after it,
-    /// and close both on anything that is not one.
+    /// the probe on the first transport failure with nothing landed after it,
+    /// and close the window on anything that is not one.
     ///
-    /// The single owner of both clocks, which is why a landed exchange clears
-    /// them through here rather than by hand.
+    /// The single owner of the flaky window, which is why a landed exchange
+    /// clears it through here rather than by hand. The probe runs on until a
+    /// document is accepted.
     fn record(&mut self, fault: Option<Fault>, message: String) {
         self.message = message;
         self.fault = fault;
         if fault == Some(Fault::Network) {
-            self.first_failure_at.get_or_insert_with(time::now);
-            // Armed once and then left to its own backoff: this runs on every
-            // failure, including the ones the probe itself provokes, and
-            // re-arming would hold the interval at its shortest for ever.
-            if self.probe_at.is_none() {
-                self.probe_backoff = PROBE_FIRST_SECS;
-                self.probe_at = Some(time::now() + PROBE_FIRST_SECS);
+            let now = time::now();
+            // A new streak starts the probe at its first step, not at the
+            // interval an earlier failed probe reached.
+            if self.first_failure_at.is_none() {
+                self.first_failure_at = Some(now);
+                self.probe_at = None;
             }
+            self.arm_probe(now);
         } else {
             self.first_failure_at = None;
-            self.probe_at = None;
         }
     }
 
@@ -831,6 +904,7 @@ fn retarget(a: &mut Agent, old_broker: Option<String>) -> bool {
         return false;
     }
     a.invalidate_broker_snapshot();
+    a.restart_probe(time::now());
     a.cloud_sign_out = None;
     a.in_flight.retain(|action| *action != Action::SignOutIdp);
     CANCEL.store(true, Ordering::Relaxed);
@@ -882,19 +956,11 @@ pub fn init(h: &'static dyn Host) {
     // times to ride out the logon race an unattended machine boots into.
     if reinject {
         worker::start_worker(Trigger::Startup);
-    } else {
-        // Ticket adoption and sign-out bypass sign-in; fetch the discovery document now.
-        worker::discover_in_background();
     }
-
-    // Nothing named a broker, so ask the network whether it knows one. Off the
-    // UI thread: a dead resolver would otherwise hold up the status icon itself.
-    if with(|a| a.settings.broker_url().is_none()) {
-        std::thread::spawn(|| {
-            if let Some(url) = srv::discover_broker() {
-                worker::post(Event::BrokerDiscovered { url });
-            }
-        });
+    // A worker that holds the slot fetches `/config` itself. Otherwise the probe
+    // does, or asks DNS for a broker when nothing names one.
+    if !BUSY.load(Ordering::Relaxed) {
+        worker::discover_in_background();
     }
 }
 
@@ -1002,14 +1068,15 @@ pub fn tick() -> bool {
     if let Some((title, body, severity)) = due.notice {
         notify(&title, &body, severity);
     }
-    if due.probe {
-        worker::discover_in_background();
-    }
     if let Some(trigger) = due.start {
         if trigger == Trigger::Startup {
             log::info("retrying the silent sign-in");
         }
         worker::start_worker(trigger);
+    }
+    // After the worker: one that took the slot asks `/config` the same question.
+    if due.probe && !BUSY.load(Ordering::Relaxed) {
+        worker::discover_in_background();
     }
     due.redraw
 }
@@ -1042,8 +1109,8 @@ fn tick_at(
     // about whether or not this machine holds a ticket. Re-armed before the
     // attempt, so a failure cannot produce a tight loop; skipped while a
     // worker holds the slot, which is already asking that endpoint the same
-    // question.
-    if a.probe_at.is_some_and(|t| now >= t) && !busy {
+    // question, and while the previous probe runs.
+    if a.probe_at.is_some_and(|t| now >= t) && !busy && a.probe_in_flight.is_none() {
         a.probe_backoff = next_backoff(a.probe_backoff, PROBE_FIRST_SECS, PROBE_MAX_SECS);
         a.probe_at = Some(now + a.probe_backoff);
         due.probe = true;
