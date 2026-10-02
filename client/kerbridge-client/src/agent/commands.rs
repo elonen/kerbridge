@@ -14,7 +14,8 @@ use crate::{config, log, time};
 
 use super::worker::{self, Trigger};
 use super::{
-    Agent, BUSY, CANCEL, GRANT_CLEANUP, Phase, STARTUP_RETRIES, host, purge_realm, retarget, with,
+    Agent, BUSY, CANCEL, GRANT_CLEANUP, InterruptionGate, Phase, STARTUP_RETRIES, host,
+    purge_realm, retarget, with,
 };
 
 /// Start a sign-in the user asked for. No-op while another worker is running.
@@ -226,16 +227,18 @@ pub fn settings_view() -> SettingsView {
     })
 }
 
-/// Whether unsolicited platform surfaces are disabled.
+/// Effective silent mode, with the built-in `false` while it is unresolved. For
+/// a surface that follows user input; an unsolicited one asks
+/// [`interruption_gate`].
 pub fn silent() -> bool {
     with(|a| a.settings.silent())
 }
 
-/// Whether macOS may ask for notification permission. `None` means neither
-/// policy nor the user resolves silent mode and the discovery document is
-/// unresolved.
-pub fn notification_authorization_eligible() -> Option<bool> {
-    with(|a| a.settings.resolved_silent().map(|silent| !silent))
+/// Whether an unsolicited interruption may reach the user now. The host asks
+/// before it raises a status surface on its own, and before it asks the OS for
+/// notification permission.
+pub fn interruption_gate() -> InterruptionGate {
+    with(|a| a.interruption_gate())
 }
 
 /// `None` leaves a setting unchanged and does not persist its effective value.

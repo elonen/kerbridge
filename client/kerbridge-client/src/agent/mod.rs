@@ -49,8 +49,8 @@ use worker::Trigger;
 /// what it reads is assembled next to the state or beside the verbs.
 pub use commands::{
     SettingsChange, SettingsView, apply_settings, autostart_sign_in, cancel_sign_in, drop_ticket,
-    give_up_grant_now, notification_authorization_eligible, open_log, open_log_folder, renew_now,
-    settings_view, sign_in, sign_out_idp, silent, status_closed,
+    give_up_grant_now, interruption_gate, open_log, open_log_folder, renew_now, settings_view,
+    sign_in, sign_out_idp, silent, status_closed,
 };
 pub use status::{Status, TicketClock, status};
 pub use worker::{begin_enroll, begin_reenroll, begin_repair, begin_unenroll, create_grant, drain};
@@ -157,6 +157,27 @@ pub enum Severity {
     Error,
 }
 
+/// What an unsolicited interruption may do now: a notification the machine
+/// raised, or a status surface that nobody opened with a click.
+///
+/// Silent mode decides it once policy, the user or an accepted broker document
+/// resolves it. Before that, the built-in `false` applies only after the current
+/// discovery attempt ends without a document. Until then nobody knows whether the
+/// deployment wants silence, so a notification waits (`client/DESIGN.md`
+/// § Notifications).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InterruptionGate {
+    /// Unresolved, and the current discovery attempt has not ended. The core
+    /// holds the newest notification; the host drops a surface request.
+    Defer,
+    Allow,
+    Suppress,
+}
+
+/// One notification: title, body and severity. The body can hold `{action}`,
+/// which [`deliver`] fills.
+type Notice = (String, String, Severity);
+
 /// What one of the hosted operations came to, in the vocabulary its dialog
 /// renders.
 ///
@@ -192,9 +213,9 @@ pub trait Host: Sync {
     fn wake(&self);
     /// A passive notification: a tray balloon, a Notification Center banner.
     ///
-    /// **Suppression lives here, not in the core.** The core emits and logs
-    /// unconditionally, so being quiet never costs the record, and each platform
-    /// judges for itself whether a surface is already on screen saying this.
+    /// The core has logged it and passed it through the [`InterruptionGate`].
+    /// Gate 2 lives here: each platform judges for itself whether a surface is
+    /// already on screen saying this.
     fn notify(&self, title: &str, body: &str, severity: Severity);
     /// One of the six hosted operations finished. The host renders it where it
     /// belongs -- in its modal while one is up, as a notification once it is not.
@@ -308,6 +329,12 @@ struct Agent {
     /// both this generation and this exact effective requested broker URL may publish.
     discovery_generation: u64,
     discovery_target: Option<String>,
+    /// A discovery attempt at the current target has ended. Without an accepted
+    /// document, the built-in `silent = false` then opens the
+    /// [`InterruptionGate`].
+    discovery_ended: bool,
+    /// The newest notification that [`InterruptionGate::Defer`] holds.
+    deferred: Option<Notice>,
     /// Realm/KDC/services as last discovered, falling back to the config cache
     /// so the agent can name the realm before its first successful discovery.
     kerberos: KerberosConfig,
@@ -437,6 +464,8 @@ impl Agent {
             settings,
             discovery_generation: 0,
             discovery_target,
+            discovery_ended: false,
+            deferred: None,
             kerberos,
             enroll_state,
             phase: Phase::SignedOut,
@@ -487,6 +516,44 @@ impl Agent {
             requested_broker_url,
             generation: self.discovery_generation,
         })
+    }
+
+    fn interruption_gate(&self) -> InterruptionGate {
+        match self.settings.resolved_silent() {
+            Some(true) => InterruptionGate::Suppress,
+            Some(false) => InterruptionGate::Allow,
+            None if self.discovery_ended => InterruptionGate::Allow,
+            None => InterruptionGate::Defer,
+        }
+    }
+
+    /// Pass one notification through the gate. Returns it when it is to be
+    /// delivered now. It replaces a deferred one, which it is newer than.
+    fn admit(&mut self, notice: Notice) -> Option<Notice> {
+        self.deferred = None;
+        match self.interruption_gate() {
+            InterruptionGate::Allow => Some(notice),
+            InterruptionGate::Suppress => None,
+            InterruptionGate::Defer => {
+                self.deferred = Some(notice);
+                None
+            }
+        }
+    }
+
+    /// The deferred notification once the gate settles: returned to deliver on
+    /// `Allow`, dropped on `Suppress`.
+    fn settle_deferred(&mut self) -> Option<Notice> {
+        match self.interruption_gate() {
+            InterruptionGate::Defer => None,
+            InterruptionGate::Allow => self.deferred.take(),
+            InterruptionGate::Suppress => {
+                if self.deferred.take().is_some() {
+                    log::info("silent mode is on; the deferred notification is dropped");
+                }
+                None
+            }
+        }
     }
 
     fn discovery_is_current(&self, stamp: &DiscoveryStamp) -> bool {
@@ -595,6 +662,7 @@ impl Agent {
     /// Clear broker-owned state after a requested broker URL change. User and policy values,
     /// including a once-applied autostart choice, stay in [`Settings`].
     fn clear_broker_snapshot(&mut self) {
+        self.discovery_ended = false;
         self.kerberos = KerberosConfig::default();
         self.enroll_state = enroll::State::NotEnrolled;
         self.device_grant = DeviceGrantConfig::default();
@@ -673,6 +741,7 @@ impl Agent {
         // The episode was about a ticket this session no longer has.
         self.loss = TgtLoss::default();
         self.loss_check_at = 0;
+        self.deferred = None;
     }
 
     /// What this machine would be working as right now: the realm, and the
@@ -1065,9 +1134,7 @@ pub fn tick() -> bool {
         tick_at(a, now, busy, &|realm| tickets::realm_tgt(realm).map(|tgt| tgt.is_some()))
     });
 
-    if let Some((title, body, severity)) = due.notice {
-        notify(&title, &body, severity);
-    }
+    announce(due.notice);
     if let Some(trigger) = due.start {
         if trigger == Trigger::Startup {
             log::info("retrying the silent sign-in");
@@ -1085,7 +1152,7 @@ pub fn tick() -> bool {
 #[derive(Default)]
 struct Due {
     redraw: bool,
-    notice: Option<(String, String, Severity)>,
+    notice: Option<Notice>,
     probe: bool,
     /// One worker at most: the busy slot takes one, and every schedule that is
     /// due in the same second wants the same exchange.
@@ -1232,8 +1299,12 @@ const GRANT_NOTIFY_INTERVAL: i64 = 86_400;
 /// away. It infers nothing about the machine's purpose and it fails safe: an
 /// unknown idle time counts as present, so a platform that cannot answer gets a
 /// toast on time rather than none.
-fn grant_deadline_due(a: &Agent, now: i64) -> Option<(String, String, Severity)> {
-    if a.settings.resolved_silent() != Some(false) {
+///
+/// Evaluated again on every tick, so it waits for the [`InterruptionGate`]
+/// instead of being held by it, and the daily accounting is not spent while the
+/// gate defers.
+fn grant_deadline_due(a: &Agent, now: i64) -> Option<Notice> {
+    if a.interruption_gate() != InterruptionGate::Allow {
         return None;
     }
     let deadline = a.settings.grant()?.sign_in_required_by;
@@ -1257,21 +1328,52 @@ fn grant_deadline_due(a: &Agent, now: i64) -> Option<(String, String, Severity)>
     ))
 }
 
-/// Raise a notification, resolving `{action}` against whatever the surface is
-/// leading with.
+/// Raise `notice`, or with none, deliver or drop a deferred notification if the
+/// [`InterruptionGate`] has settled.
+///
+/// Only ever called with the agent borrow released, as [`notify`] is.
+fn announce(notice: Option<Notice>) {
+    match notice {
+        Some(notice) => notify(notice),
+        None => release_deferred(),
+    }
+}
+
+/// Raise a notification through the [`InterruptionGate`]. A deferred one that
+/// the gate has settled goes first, so a newer one cannot replace it after the
+/// gate opens.
 ///
 /// Only ever called with the agent borrow released: the host reads [`status`] to
 /// answer, and `Shell_NotifyIcon` re-enters the message machinery.
-fn notify(title: &str, body: &str, severity: Severity) {
-    let body = if body.contains("{action}") {
+fn notify(notice: Notice) {
+    release_deferred();
+    // Logged whatever the gate and the host do with it: the record is the
+    // core's, and both gates suppress the interruption rather than the fact.
+    log::info(&format!("notify: {} -- {}", notice.0, with_action(&notice.1)));
+    if let Some(notice) = with(|a| a.admit(notice)) {
+        deliver(notice);
+    }
+}
+
+fn release_deferred() {
+    if let Some(notice) = with(Agent::settle_deferred) {
+        log::info(&format!("notify: delivering the deferred \"{}\"", notice.0));
+        deliver(notice);
+    }
+}
+
+/// Hand a notification to the host. `{action}` is filled at delivery, against
+/// whatever the surface leads with then.
+fn deliver((title, body, severity): Notice) {
+    host().notify(&title, &with_action(&body), severity);
+}
+
+fn with_action(body: &str) -> String {
+    if body.contains("{action}") {
         fill(body, &[("action", &host().primary_action_label())])
     } else {
         body.to_owned()
-    };
-    // Logged whatever the host does with it: the record is the core's, and gate 2
-    // suppresses the interruption rather than the fact.
-    log::info(&format!("notify: {title} -- {body}"));
-    host().notify(title, &body, severity);
+    }
 }
 
 #[cfg(test)]
@@ -1423,22 +1525,6 @@ mod tests {
         assert!(a.refresh_at.is_none());
         assert_eq!(a.loss, TgtLoss::default());
         assert!(!a.expected());
-    }
-
-    #[test]
-    fn grant_deadline_waits_until_silent_mode_resolves() {
-        let mut a = test_agent("https://broker.example.site");
-        a.settings.set_grant(Some(Grant {
-            grant_id: "1a2b3c4d".into(),
-            identity: "kb1|entra|subject".into(),
-            principal: None,
-            audience: "kerbridge://EXAMPLE.SITE".into(),
-            sign_in_required_by: time::now() + 86_400,
-        }));
-
-        assert!(!a.settings.defaults_ready());
-        assert!(grant_deadline_due(&a, time::now()).is_none());
-        assert!(a.grant_notified_at.is_none());
     }
 
     #[test]

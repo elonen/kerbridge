@@ -196,8 +196,13 @@ fn report(mine: bool, action: Action, ok: bool, message: String, detail: Option<
         to_phase(Phase::Result);
         return;
     }
-    // Detached, or never had a dialog. The title names the operation, because
-    // there is no per-failure headline anywhere else in the product.
+    // Detached, or never had a dialog. It answers the user, so the core's
+    // interruption gate does not hold it, but silent mode still applies.
+    if agent::silent() {
+        return;
+    }
+    // The title names the operation, because there is no per-failure headline
+    // anywhere else in the product.
     let s = tr();
     let realm = agent::status().realm;
     let title = if ok {

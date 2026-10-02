@@ -1022,11 +1022,51 @@ are standing facts that do not decay, so an unread toast costs nothing and the
 surface itself tells the monthly visitor. There is no persistent row, no unread
 badge and no "while you were out" list.
 
-**Silent mode is the outer gate.** The core still emits and logs every event, but
-the platform delivers no OS notification and honors no machine-raised status
-request. An explicit icon click still opens the status surface.
+**Silent mode is the outer gate.** The core still logs every event, but it gives
+the host no notification to deliver, and the host honors no machine-raised
+status request. An explicit icon click still opens the status surface.
 
-Two gates, in order.
+**The interruption gate applies silent mode, also before it resolves.** The
+deployment default is memory-only, so at each start silent mode is unresolved
+until policy, the user or an accepted `/config` decides it. The core keeps one
+run-local gate with three states:
+
+| State | When |
+|---|---|
+| `Suppress` | effective silent mode is on |
+| `Allow` | effective silent mode is off, or the current discovery attempt ended without a document, so the built-in `false` applies |
+| `Defer` | none of these: the startup or retarget discovery runs |
+
+The gate holds machine-raised interruptions only: a notification from the core,
+and the status surface that a second Windows launch asks for. State, icon, log
+and explicit user actions change at once in every state. On Windows a
+notification is a balloon, which is an interruption.
+
+- **`Defer` holds the newest notification**, and a newer one replaces it. The
+  one-shot state that raised it moves at once (`Phase::Expired`, the
+  escalation), so the held notification is its only copy. It is about the
+  condition at that moment, so only the newest is still true.
+- **A surface request in `Defer` is dropped.** It carries no state, and a
+  status surface that opens long after the launch is a surprise.
+- **Settlement delivers or drops the held notification once.** An accepted
+  document with `silent = true` drops it. One with `silent = false` or no value
+  delivers it. A current attempt that ends without a document delivers it: a
+  probe's `/config` failure, an SRV lookup that finds no record, or a worker's
+  first-leg `/config` failure. The attempt is current only when its stamp still
+  matches. A worker can advance the generation while a probe runs, so a probe
+  result needs both `end_probe` and a current stamp. A later retry can change
+  the gate again. When the gate opens, the held notification goes before any
+  newer one.
+- **A retarget returns to `Defer`**, unless policy or the user decides silent
+  mode, and drops the held notification. Any session reset drops it, because it
+  is about a session that no longer exists.
+- **The sign-in deadline waits in place.** It is evaluated on every tick, so in
+  `Defer` it is not raised and its daily accounting is not spent.
+- **macOS asks for notification permission only after the gate allows**, when
+  the first Warning or Error reaches the host.
+
+A notification that the interruption gate lets through then passes two
+numbered gates, in this order.
 
 **Gate 1 — is it worth an announcement at all?** Do not announce a successful
 operation, with these exemptions: the condition improved from a fault; a lengthy
@@ -1042,8 +1082,11 @@ Examples:
 - *Renew now* fails with surface open → do not notify (surface already shows
   blocker + message)
 
-Implementation: suppression logic lives in the host, never in the core. Core
-emits and logs unconditionally. Each platform judges its own surface.
+Implementation: gate 2 lives in the host. The core logs every notification
+unconditionally and applies the interruption gate before the host sees it. Each
+platform judges its own surface. A detached result of a user-started operation
+does not pass the interruption gate, because it answers the user; the host
+applies silent mode to it.
 
 | Event | Notify | Why |
 |---|---|---|
@@ -1192,7 +1235,9 @@ flowchart LR
   deployment-wide `true` may not arm on macOS a repair that macOS neither needs
   nor offers a switch for.
 - **`silent`** suppresses OS notifications and unsolicited status surfaces. It
-  does not suppress the icon, log, or a surface opened by an icon click.
+  does not suppress the icon, log, or a surface opened by an icon click. Until
+  it resolves, the interruption gate defers them; see
+  [Notifications](#notifications).
 - **Autostart is applied, not only recorded.** The login entry is per-user on
   both platforms, so a policy value or a `client_defaults` answer means nothing
   until the agent writes one — it does that at startup for policy, and after the

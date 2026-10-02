@@ -211,6 +211,17 @@ runtime by the platform's agent binary. Not the platform seam for non-UI work.
 <!-- refs: methods `wake`, `notify`, `finished`, `elevating`, `primary_action_label`, `open_path`, `native_token`; non-UI seam is `sys` -->
 <!-- avoid: ui seam, platform seam, backend, the host app -->
 
+### interruption gate
+
+The core's run-local verdict on a machine-raised interruption: a
+[notification](#notification), or a status [surface](#surface) that nobody
+clicked open. `Suppress` while [silent mode](#silent-mode) is on, `Allow` while
+it is off or the current discovery attempt ended without a document, and
+`Defer` before either. `Defer` holds the newest notification until the gate
+settles and drops a surface request.
+<!-- refs: `kerbridge_client::agent::InterruptionGate`, `agent::interruption_gate` -->
+<!-- avoid: silent gate, startup quiet period, pending silent -->
+
 ### `kerbridge-agent`
 
 The agent binary's name, identical on Windows and macOS. Neither it nor the
@@ -239,9 +250,10 @@ installer. There is no second artwork file to keep in sync with it.
 
 The client's out-of-surface announcement of an `outcome` or a state change, at
 one of the `severity` levels — a tray balloon on Windows, a Notification
-Center banner on macOS. The core emits and logs unconditionally and each
-platform host decides whether to suppress one because a surface is already on
-screen saying it. Never a parallel record of state.
+Center banner on macOS. The core logs every one unconditionally and passes it
+through the [interruption gate](#interruption-gate); each platform host then
+decides whether to suppress one because a surface is already on screen saying
+it. Never a parallel record of state.
 <!-- refs: `agent::Host::notify` -->
 <!-- avoid: balloon, toast, notification bubble -->
 
@@ -363,7 +375,9 @@ stretches none. Shown to users as *Authorization expires in …*.
 
 A setting that suppresses every OS [notification](#notification) and every
 machine-raised status [surface](#surface). The icon, log, and a surface opened by
-an explicit icon click remain. The built-in default is off.
+an explicit icon click remain. The built-in default is off. While it is
+unresolved and discovery runs, the [interruption gate](#interruption-gate)
+defers.
 <!-- refs: `silent` in `config.toml`; Windows policy `Silent` -->
 <!-- avoid: quiet mode, do not disturb -->
 

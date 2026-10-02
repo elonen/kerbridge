@@ -19,7 +19,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 use windows_sys::core::GUID;
 
-use kerbridge_client::agent::{self, Severity, Status};
+use kerbridge_client::agent::{self, InterruptionGate, Severity, Status};
 use kerbridge_client::describe::Action;
 use kerbridge_client::present::action_label;
 use kerbridge_client::strings::tr;
@@ -105,8 +105,10 @@ pub(crate) unsafe extern "system" fn wndproc(
             }
             0
         }
+        // A second launch carries no state, so a request that the gate
+        // does not allow is dropped and never replayed.
         WM_SHOW_FLYOUT => {
-            if !agent::silent() {
+            if agent::interruption_gate() == InterruptionGate::Allow {
                 flyout::show();
             }
             0
@@ -348,12 +350,9 @@ fn show_menu() {
     }
 }
 
-/// Balloon notification through the tray icon. Reached through `WinHost`, which
-/// has already decided that no surface of ours is carrying this.
+/// Balloon notification through the tray icon. The caller has applied silent
+/// mode and decided that no surface of ours is carrying this.
 pub(crate) fn notify(title: &str, body: &str, severity: Severity) {
-    if agent::silent() {
-        return;
-    }
     let a = app();
     unsafe {
         let mut nid = tray_id(a.owner);

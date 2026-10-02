@@ -40,6 +40,7 @@ names the tag, and it stops if that section is absent or empty.
 - Agents retry a renewal that fails because the network is not up yet.
 - Agents keep looking for the broker and its settings when they start before
   the network.
+- Agents hold startup notifications until they know if silent mode is on.
 
 ## 1.0.1
 

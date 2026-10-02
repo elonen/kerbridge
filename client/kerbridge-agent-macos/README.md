@@ -104,15 +104,17 @@ do not exist.
 Notification Center notifications; an icon click still opens the menu.
 
 **Notification authorization is lazy.** When it runs from the app bundle, launch,
-settings changes, and menu use never request it. After configuration resolves to
-non-silent, the first bundled Warning or Error notification with the menu closed
+settings changes, and menu use never request it. After the core's interruption
+gate allows, the first bundled Warning or Error notification with the menu closed
 requests authorization. That notification waits for the result. Approval permits
-delivery if silent mode and menu visibility still permit it. A denial or request
+delivery if the gate and menu visibility still permit it. A denial or request
 error is final for that process.
 
-When policy and user settings do not decide silent mode, an unresolved deployment
-default is not treated as non-silent. A silent policy, user choice, or deployment
-default suppresses authorization requests and delivery.
+While silent mode is unresolved and discovery runs, the core holds the newest
+notification and this agent sees nothing, so it asks nothing. When the gate
+settles, the core delivers that notification once or drops it. A silent policy,
+user choice, or deployment default suppresses authorization requests and
+delivery.
 
 - Info notifications stay in the core log. They do not request authorization or
   reach Notification Center.

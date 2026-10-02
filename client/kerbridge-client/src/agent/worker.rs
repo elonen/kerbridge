@@ -28,9 +28,10 @@ use super::failure::{
 };
 use super::{
     Agent, BROWSER_LEG, BUSY, BrokerSnapshot, CANCEL, DiscoveryStamp, GRANT_CLEANUP,
-    LOSS_POLL_SECS, MIN_REFRESH_DELAY, NativeToken, Outcome, PROBE_FIRST_SECS, PROBE_MAX_SECS,
-    Phase, Probe, REFRESH_TOKEN, STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS, Severity, TgtLoss,
-    host, host_of, is_the_grants, midpoint, next_backoff, notify, purge_realm, with,
+    LOSS_POLL_SECS, MIN_REFRESH_DELAY, NativeToken, Notice, Outcome, PROBE_FIRST_SECS,
+    PROBE_MAX_SECS, Phase, Probe, REFRESH_TOKEN, STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS,
+    Severity, TgtLoss, announce, host, host_of, is_the_grants, midpoint, next_backoff, notify,
+    purge_realm, with,
 };
 
 // ---- the queue -------------------------------------------------------------
@@ -276,9 +277,16 @@ fn reject_stale_terminal(ev: Event) -> bool {
     }
 }
 
-/// One worker's result. As in [`tick`], the balloon is raised only after the
-/// agent borrow is released.
+/// One worker's result, then the deferred notification if the result settled
+/// the [`super::InterruptionGate`].
 fn apply(ev: Event) -> bool {
+    let applied = apply_event(ev);
+    announce(None);
+    applied
+}
+
+/// As in [`tick`], the balloon is raised only after the agent borrow is released.
+fn apply_event(ev: Event) -> bool {
     // These events only answer a worker that is waiting. They publish no state.
     let ev = match ev {
         Event::Current { stamp, current } => {
@@ -324,7 +332,13 @@ fn apply(ev: Event) -> bool {
             return applied;
         }
         Event::DiscoveryFailed { stamp } => {
-            with(|a| a.end_probe(stamp.generation, time::now()));
+            with(|a| {
+                // A worker can advance the generation while the probe runs, and
+                // then the probe is not the current attempt.
+                if a.end_probe(stamp.generation, time::now()) && a.discovery_is_current(&stamp) {
+                    a.discovery_ended = true;
+                }
+            });
             return false;
         }
         Event::StaleGrantCompensated { stamp } => {
@@ -342,8 +356,13 @@ fn apply(ev: Event) -> bool {
         | Event::CloudSignedOut { stamp, .. } => Some(stamp),
         _ => None,
     };
-    if terminal_stamp.is_some_and(|stamp| !with(|a| a.discovery_is_current(stamp))) {
-        return reject_stale_terminal(ev);
+    if let Some(stamp) = terminal_stamp {
+        if !with(|a| a.discovery_is_current(stamp)) {
+            return reject_stale_terminal(ev);
+        }
+        // Each worker fetches `/config` first. A current result ends that
+        // attempt, with an accepted document or without one.
+        with(|a| a.discovery_ended = true);
     }
 
     // Elevated operations use the busy slot without a discovery stamp.
@@ -351,7 +370,7 @@ fn apply(ev: Event) -> bool {
         BUSY.store(false, Ordering::Relaxed);
         with(|a| a.in_flight.retain(|action| action.outside_busy_slot()));
     }
-    let mut pending: Option<(String, String, Severity)> = None;
+    let mut pending: Option<Notice> = None;
     let mut finished: Option<(Action, Outcome)> = None;
     let mut grant_sign_in = false;
     let mut elevating = None;
@@ -526,6 +545,8 @@ fn apply(ev: Event) -> bool {
                 // A broker URL typed into Settings while the lookup ran forgot
                 // this probe, so theirs wins.
                 let ended = a.end_probe(generation, time::now());
+                // No record: no deployment default is coming from this attempt.
+                a.discovery_ended |= ended && url.is_none();
                 let Some(url) = url.filter(|_| ended) else {
                     return;
                 };
@@ -681,8 +702,8 @@ fn apply(ev: Event) -> bool {
     if grant_sign_in {
         start_worker(Trigger::Granted);
     }
-    if let Some((title, body, severity)) = pending {
-        notify(&title, &body, severity);
+    if let Some(notice) = pending {
+        notify(notice);
     }
     // The host decides where this lands: its own dialog while one is up, a
     // notification once it is not. That is gate 2, and it lives there because
@@ -1351,6 +1372,7 @@ fn result_path() -> std::path::PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{InterruptionGate, announce, interruption_gate};
     use super::*;
     use crate::config::FileConfig;
     use crate::discovery::{Defaults, DeviceGrantConfig, KerberosConfig};
@@ -1358,15 +1380,18 @@ mod tests {
 
     static STATE_LOCK: Mutex<()> = Mutex::new(());
 
-    fn install_agent(broker_url: &str) {
-        let settings = crate::config::Settings::for_test(FileConfig {
-            broker_url: Some(broker_url.to_owned()),
-            ..FileConfig::default()
-        });
+    fn install_agent(file: FileConfig) {
+        let settings = crate::config::Settings::for_test(file);
         super::super::AGENT.with(|slot| *slot.borrow_mut() = Some(Agent::new(settings)));
         BUSY.store(false, Ordering::Relaxed);
         GRANT_CLEANUP.store(false, Ordering::Relaxed);
         *REFRESH_TOKEN.lock().unwrap() = None;
+        let _ = super::super::HOST.set(&TestHost);
+    }
+
+    /// A configuration that names `broker_url` and nothing else.
+    fn at(broker_url: &str) -> FileConfig {
+        FileConfig { broker_url: Some(broker_url.to_owned()), ..FileConfig::default() }
     }
 
     fn snapshot(realm: &str, source: &str) -> BrokerSnapshot {
@@ -1421,7 +1446,7 @@ mod tests {
     #[test]
     fn broker_snapshot_is_applied_before_following_oidc_failure() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent("https://a.example.site");
+        install_agent(at("https://a.example.site"));
         let stamp = with(Agent::advance_discovery).unwrap();
         let expected = snapshot("A.SITE", "a");
 
@@ -1445,7 +1470,7 @@ mod tests {
     #[test]
     fn event_application_rejects_late_target_and_same_target_generations() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent("https://a.example.site");
+        install_agent(at("https://a.example.site"));
         let accepted_a = with(Agent::advance_discovery).unwrap();
         assert!(apply(discovered(accepted_a, snapshot("A.SITE", "a"))));
         let late_a = with(Agent::advance_discovery).unwrap();
@@ -1473,7 +1498,7 @@ mod tests {
     #[test]
     fn stale_terminal_discards_worker_effects_and_releases_only_its_operation() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent("https://a.example.site");
+        install_agent(at("https://a.example.site"));
         let accepted = with(Agent::advance_discovery).unwrap();
         assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
         with(|a| {
@@ -1529,7 +1554,7 @@ mod tests {
     #[test]
     fn stale_terminal_cannot_release_newer_busy_or_cloud_work() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent("https://a.example.site");
+        install_agent(at("https://a.example.site"));
         let accepted = with(Agent::advance_discovery).unwrap();
         assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
         with(|a| assert!(a.settings.set_browser_session(true)));
@@ -1562,7 +1587,7 @@ mod tests {
     #[test]
     fn broker_change_is_rejected_while_worker_owns_the_slot() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent("https://a.example.site");
+        install_agent(at("https://a.example.site"));
         let generation = with(|a| a.discovery_generation);
         BUSY.store(true, Ordering::Relaxed);
 
@@ -1581,7 +1606,7 @@ mod tests {
     #[test]
     fn cloud_sign_out_serializes_generation_allocating_work_in_both_directions() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent("https://a.example.site");
+        install_agent(at("https://a.example.site"));
         let accepted = with(Agent::advance_discovery).unwrap();
         assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
         with(|a| assert!(a.settings.set_browser_session(true)));
@@ -1616,7 +1641,7 @@ mod tests {
     #[test]
     fn background_grant_cleanup_does_not_present_a_result() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent("https://new.example.site");
+        install_agent(at("https://new.example.site"));
         let generation = with(Agent::started_grant_cleanup);
         GRANT_CLEANUP.store(true, Ordering::Relaxed);
 
@@ -1754,11 +1779,14 @@ mod tests {
     struct TestHost;
 
     static NOTIFIED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    /// The title of each delivered notification, oldest first.
+    static TITLES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     impl super::super::Host for TestHost {
         fn wake(&self) {}
-        fn notify(&self, _: &str, _: &str, _: Severity) {
+        fn notify(&self, title: &str, _: &str, _: Severity) {
             NOTIFIED.fetch_add(1, Ordering::Relaxed);
+            TITLES.lock().unwrap().push(title.to_owned());
         }
         fn finished(&self, _: Action, _: Outcome) {}
         fn elevating(&self, _: Action) {}
@@ -1774,7 +1802,7 @@ mod tests {
     /// A live ticket whose TGT is absent, one recovery attempt already failed on
     /// transport, and the next one running in the busy slot.
     fn recovering() -> DiscoveryStamp {
-        install_agent("https://a.example.site");
+        install_agent(at("https://a.example.site"));
         let _ = super::super::HOST.set(&TestHost);
         let accepted = with(Agent::advance_discovery).unwrap();
         assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
@@ -2020,7 +2048,7 @@ mod tests {
     /// Field case: the machine slept across End Time and resumed before its
     /// network. The first tick starts the overdue re-injection; it is running.
     fn resumed() -> DiscoveryStamp {
-        install_agent("https://a.example.site");
+        install_agent(at("https://a.example.site"));
         let _ = super::super::HOST.set(&TestHost);
         let accepted = with(Agent::advance_discovery).unwrap();
         assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
@@ -2172,7 +2200,7 @@ mod tests {
         let _guard = STATE_LOCK.lock().unwrap();
         for after_login in [false, true] {
             let first = if after_login {
-                install_agent("https://a.example.site");
+                install_agent(at("https://a.example.site"));
                 let _ = super::super::HOST.set(&TestHost);
                 retry_failed(take_slot(), Some(Fault::Network))
             } else {
@@ -2217,14 +2245,6 @@ mod tests {
 
     const BROKER: &str = "https://kerbridge.example.site";
 
-    fn install_without_broker() {
-        let settings = crate::config::Settings::for_test(FileConfig::default());
-        super::super::AGENT.with(|slot| *slot.borrow_mut() = Some(Agent::new(settings)));
-        BUSY.store(false, Ordering::Relaxed);
-        GRANT_CLEANUP.store(false, Ordering::Relaxed);
-        let _ = super::super::HOST.set(&TestHost);
-    }
-
     /// Start the probe that is due. Tests apply its outcome themselves.
     fn begin() -> Probe {
         with(|a| a.begin_probe(time::now())).expect("a probe starts")
@@ -2265,7 +2285,7 @@ mod tests {
     #[test]
     fn a_srv_record_published_late_is_found_and_its_config_accepted() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_without_broker();
+        install_agent(FileConfig::default());
         let notified = NOTIFIED.load(Ordering::Relaxed);
 
         let before = time::now();
@@ -2303,7 +2323,7 @@ mod tests {
     fn a_late_srv_answer_starts_only_the_autostart_that_waited_for_it() {
         let _guard = STATE_LOCK.lock().unwrap();
         for waited in [true, false] {
-            install_without_broker();
+            install_agent(FileConfig::default());
             // `autostart_sign_in` reads OS state, so the test sets its verdict.
             with(|a| a.autostart_awaits_broker = waited);
             let before = time::now();
@@ -2326,7 +2346,7 @@ mod tests {
     fn a_late_srv_answer_cannot_override_a_sign_off_or_a_sign_in() {
         let _guard = STATE_LOCK.lock().unwrap();
         for sign_off in [true, false] {
-            install_without_broker();
+            install_agent(FileConfig::default());
             with(|a| a.autostart_awaits_broker = true);
             if sign_off {
                 super::super::drop_ticket();
@@ -2349,7 +2369,7 @@ mod tests {
     #[test]
     fn a_broker_named_by_srv_that_is_down_is_asked_again_until_it_answers() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_without_broker();
+        install_agent(FileConfig::default());
 
         srv_answers(Some(BROKER));
         let before = time::now();
@@ -2371,7 +2391,7 @@ mod tests {
     #[test]
     fn a_configured_broker_that_fails_at_startup_is_asked_again_without_a_worker() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent(BROKER);
+        install_agent(at(BROKER));
         let _ = super::super::HOST.set(&TestHost);
         let notified = NOTIFIED.load(Ordering::Relaxed);
 
@@ -2403,7 +2423,7 @@ mod tests {
     #[test]
     fn a_broker_change_makes_older_config_results_inert() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent("https://a.example.site");
+        install_agent(at("https://a.example.site"));
         let _ = super::super::HOST.set(&TestHost);
         let Probe::Config(old) = begin() else { panic!() };
 
@@ -2432,7 +2452,7 @@ mod tests {
     #[test]
     fn a_late_srv_answer_never_moves_a_typed_or_cleared_broker() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_without_broker();
+        install_agent(FileConfig::default());
 
         // The user types an address while the lookup runs: theirs stays.
         let Probe::Srv { generation: overtaken } = begin() else { panic!() };
@@ -2461,7 +2481,7 @@ mod tests {
     #[test]
     fn failed_probes_back_off_to_the_ceiling_one_at_a_time() {
         let _guard = STATE_LOCK.lock().unwrap();
-        install_agent(BROKER);
+        install_agent(at(BROKER));
         let _ = super::super::HOST.set(&TestHost);
 
         let mut seen = Vec::new();
@@ -2485,6 +2505,365 @@ mod tests {
             before = time::now();
         }
         assert_eq!(seen, [30, 60, 120, 240, 480, 600, 600, 600]);
+        finish_test();
+    }
+
+    // ---- the interruption gate ---------------------------------------------------
+
+    /// A ticket at End Time with nothing scheduled: the next tick announces
+    /// the expiry.
+    fn ticket_ends() -> i64 {
+        let now = time::now();
+        with(|a| {
+            a.kerberos.realm = "A.SITE".into();
+            a.phase = Phase::Connected;
+            a.principal = "riku@A.SITE".into();
+            a.start = now - 36_000;
+            a.end = now;
+            a.refresh_at = None;
+        });
+        now
+    }
+
+    /// One tick, and the notification it raises, as `tick` carries them out.
+    fn tick_and_announce(now: i64) {
+        let due = with(|a| super::super::tick_at(a, now, false, &no_cache_read));
+        announce(due.notice);
+    }
+
+    fn notified() -> usize {
+        NOTIFIED.load(Ordering::Relaxed)
+    }
+
+    fn newest_titles(n: usize) -> Vec<String> {
+        let titles = TITLES.lock().unwrap();
+        titles[titles.len() - n..].to_vec()
+    }
+
+    /// A device grant whose sign-in deadline is one day after `now`.
+    fn grant_due(now: i64) -> Grant {
+        Grant {
+            grant_id: "1a2b3c4d".into(),
+            identity: "kb1|entra|subject".into(),
+            principal: None,
+            audience: "kerbridge://A.SITE".into(),
+            sign_in_required_by: now + 86_400,
+        }
+    }
+
+    fn expiry_title() -> String {
+        fill(tr().notify_stopped_title, &[("realm", "A.SITE")])
+    }
+
+    #[test]
+    fn a_user_choice_decides_interruptions_at_once() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        for (silent, gate, delivered) in
+            [(true, InterruptionGate::Suppress, 0), (false, InterruptionGate::Allow, 1)]
+        {
+            install_agent(FileConfig { silent: Some(silent), ..at(BROKER) });
+            assert_eq!(interruption_gate(), gate, "silent={silent}");
+            let now = ticket_ends();
+            let before = notified();
+
+            tick_and_announce(now);
+
+            assert_eq!(notified(), before + delivered, "silent={silent}");
+            with(|a| {
+                assert!(a.phase == Phase::Expired, "silent={silent}");
+                assert!(a.deferred.is_none(), "silent={silent}");
+            });
+            finish_test();
+        }
+    }
+
+    /// A broker value `false` and no broker value both resolve non-silent.
+    #[test]
+    fn an_expiry_while_deferred_is_delivered_once_after_a_non_silent_document() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        for value in [Some(false), None] {
+            install_agent(at(BROKER));
+            let Probe::Config(stamp) = begin() else {
+                panic!("a broker URL: the probe asks /config")
+            };
+            assert_eq!(interruption_gate(), InterruptionGate::Defer);
+            let now = ticket_ends();
+            let before = notified();
+
+            tick_and_announce(now);
+            with(|a| assert!(a.phase == Phase::Expired, "the state moves at once"));
+            assert_eq!(notified(), before, "{value:?}: held");
+            tick_and_announce(now + 1);
+            assert_eq!(notified(), before, "{value:?}: held, not repeated");
+
+            let mut document = snapshot("A.SITE", "a");
+            document.defaults.silent = value;
+            assert!(apply(discovered(stamp, document)));
+            assert_eq!(interruption_gate(), InterruptionGate::Allow);
+            assert_eq!(notified(), before + 1, "{value:?}");
+            assert_eq!(newest_titles(1), [expiry_title()]);
+
+            tick_and_announce(now + 2);
+            assert_eq!(notified(), before + 1, "{value:?}: once");
+            finish_test();
+        }
+    }
+
+    /// The current attempt ends without a document: the built-in non-silent
+    /// default applies, whichever request it was.
+    #[test]
+    fn an_expiry_while_deferred_is_delivered_once_when_the_current_attempt_fails() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        for case in ["/config probe", "SRV probe with no record", "worker's own /config"] {
+            install_agent(if case == "SRV probe with no record" {
+                FileConfig::default()
+            } else {
+                at(BROKER)
+            });
+            let now = ticket_ends();
+            let before = notified();
+            tick_and_announce(now);
+            assert_eq!(notified(), before, "{case}: held");
+
+            let failure = match begin() {
+                Probe::Srv { generation } => Event::BrokerLookup { generation, url: None },
+                Probe::Config(_) if case == "worker's own /config" => {
+                    // The worker advances the generation past the probe.
+                    retry_failed(take_slot(), Some(Fault::Network))
+                }
+                Probe::Config(stamp) => Event::DiscoveryFailed { stamp },
+            };
+            apply(failure);
+
+            assert_eq!(interruption_gate(), InterruptionGate::Allow, "{case}");
+            assert_eq!(notified(), before + 1, "{case}");
+            assert_eq!(newest_titles(1), [expiry_title()], "{case}");
+            tick_and_announce(now + 1);
+            assert_eq!(notified(), before + 1, "{case}: once");
+            finish_test();
+        }
+    }
+
+    #[test]
+    fn silent_resolution_discards_the_deferred_notice() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        for by_document in [true, false] {
+            install_agent(at(BROKER));
+            let Probe::Config(stamp) = begin() else {
+                panic!("a broker URL: the probe asks /config")
+            };
+            let now = ticket_ends();
+            let before = notified();
+            tick_and_announce(now);
+
+            if by_document {
+                let mut document = snapshot("A.SITE", "a");
+                document.defaults.silent = Some(true);
+                assert!(apply(discovered(stamp, document)));
+            } else {
+                change_silent(true);
+                tick_and_announce(now + 1);
+            }
+            assert_eq!(interruption_gate(), InterruptionGate::Suppress, "document={by_document}");
+            with(|a| assert!(a.deferred.is_none(), "document={by_document}"));
+
+            // Silent mode turned off later replays nothing.
+            change_silent(false);
+            tick_and_announce(now + 2);
+            assert_eq!(notified(), before, "document={by_document}");
+            finish_test();
+        }
+    }
+
+    fn change_silent(on: bool) {
+        super::super::commands::apply_settings(super::super::commands::SettingsChange {
+            silent: Some(on),
+            ..super::super::commands::SettingsChange::default()
+        });
+    }
+
+    #[test]
+    fn a_probe_a_worker_overtook_does_not_settle_the_gate() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent(at(BROKER));
+        let Probe::Config(overtaken) = begin() else {
+            panic!("a broker URL: the probe asks /config")
+        };
+        let worker = take_slot();
+        let now = ticket_ends();
+        tick_and_announce(now);
+        let before = notified();
+
+        assert!(!apply(Event::DiscoveryFailed { stamp: overtaken }));
+        assert_eq!(interruption_gate(), InterruptionGate::Defer);
+        assert_eq!(notified(), before);
+
+        assert!(apply(retry_failed(worker, Some(Fault::Network))));
+        assert_eq!(interruption_gate(), InterruptionGate::Allow);
+        assert_eq!(notified(), before + 1);
+        finish_test();
+    }
+
+    /// A retarget returns to `Defer` and forgets the old session's notice. Only
+    /// the new target's attempt settles the gate again.
+    #[test]
+    fn a_retarget_defers_again_and_old_results_settle_nothing() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent(at("https://a.example.site"));
+        let Probe::Config(old) = begin() else { panic!("a broker URL: the probe asks /config") };
+        tick_and_announce(ticket_ends());
+        with(|a| assert!(a.deferred.is_some()));
+
+        change_broker("https://b.example.site");
+        assert_eq!(interruption_gate(), InterruptionGate::Defer);
+        with(|a| assert!(a.deferred.is_none(), "the old session's notice is gone"));
+        assert!(!apply(Event::DiscoveryFailed { stamp: old.clone() }));
+        assert!(!apply(discovered(old, snapshot("A.SITE", "a"))));
+        assert_eq!(interruption_gate(), InterruptionGate::Defer);
+
+        let now = ticket_ends();
+        let before = notified();
+        tick_and_announce(now);
+        assert_eq!(notified(), before, "held for the new target");
+        let Probe::Config(current) = begin() else {
+            panic!("a broker URL: the probe asks /config")
+        };
+        assert!(!apply(Event::DiscoveryFailed { stamp: current }));
+        assert_eq!(interruption_gate(), InterruptionGate::Allow);
+        assert_eq!(notified(), before + 1);
+        finish_test();
+
+        // An SRV answer to a lookup that a typed address overtook.
+        install_agent(FileConfig::default());
+        let Probe::Srv { generation } = begin() else {
+            panic!("no broker URL: the probe asks DNS")
+        };
+        change_broker("https://typed.example.site");
+        assert!(apply(Event::BrokerLookup { generation, url: None }));
+        assert_eq!(interruption_gate(), InterruptionGate::Defer);
+        finish_test();
+
+        // A settled gate defers again.
+        install_agent(at("https://a.example.site"));
+        let Probe::Config(stamp) = begin() else { panic!("a broker URL: the probe asks /config") };
+        assert!(!apply(Event::DiscoveryFailed { stamp }));
+        assert_eq!(interruption_gate(), InterruptionGate::Allow);
+        change_broker("https://b.example.site");
+        assert_eq!(interruption_gate(), InterruptionGate::Defer);
+        finish_test();
+
+        // A user choice survives the retarget.
+        install_agent(FileConfig { silent: Some(false), ..at("https://a.example.site") });
+        change_broker("https://b.example.site");
+        assert_eq!(interruption_gate(), InterruptionGate::Allow);
+        finish_test();
+    }
+
+    #[test]
+    fn the_sign_in_deadline_waits_unconsumed_while_deferred() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent(at(BROKER));
+        let now = time::now();
+        with(|a| {
+            a.kerberos.realm = "A.SITE".into();
+            a.settings.set_grant(Some(grant_due(now)));
+        });
+        let Probe::Config(stamp) = begin() else { panic!("a broker URL: the probe asks /config") };
+
+        let due = with(|a| super::super::tick_at(a, now, false, &no_cache_read));
+        assert!(due.notice.is_none());
+        with(|a| assert!(a.grant_notified_at.is_none(), "not consumed"));
+
+        assert!(!apply(Event::DiscoveryFailed { stamp }));
+        let due = with(|a| super::super::tick_at(a, now + 1, false, &no_cache_read));
+        assert!(due.notice.is_some_and(|(_, _, severity)| severity == Severity::Warning));
+        with(|a| assert_eq!(a.grant_notified_at, Some(now + 1)));
+        let due = with(|a| super::super::tick_at(a, now + 2, false, &no_cache_read));
+        assert!(due.notice.is_none(), "once a day");
+        finish_test();
+    }
+
+    /// The user turns silent mode off while a notice is held. The next tick
+    /// delivers it, and before the sign-in deadline that the same tick raises.
+    #[test]
+    fn a_user_who_turns_silent_off_gets_the_held_notice_first() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        for with_deadline in [false, true] {
+            install_agent(at(BROKER));
+            let now = ticket_ends();
+            if with_deadline {
+                with(|a| a.settings.set_grant(Some(grant_due(now))));
+            }
+            let before = notified();
+            tick_and_announce(now);
+            assert_eq!(notified(), before, "deadline={with_deadline}: held");
+
+            change_silent(false);
+            assert_eq!(interruption_gate(), InterruptionGate::Allow);
+            tick_and_announce(now + 1);
+
+            if with_deadline {
+                let deadline = fill(tr().notify_grant_due_title, &[("days", &days(1))]);
+                assert_eq!(notified(), before + 2);
+                assert_eq!(newest_titles(2), [expiry_title(), deadline]);
+            } else {
+                assert_eq!(notified(), before + 1);
+                assert_eq!(newest_titles(1), [expiry_title()]);
+            }
+            finish_test();
+        }
+    }
+
+    #[test]
+    fn a_stale_worker_result_does_not_settle_the_gate() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent(at("https://a.example.site"));
+        let stale = take_slot();
+        BUSY.store(false, Ordering::Relaxed);
+        change_broker("https://b.example.site");
+        let now = ticket_ends();
+        tick_and_announce(now);
+        let before = notified();
+
+        apply(retry_failed(stale, Some(Fault::Network)));
+
+        assert_eq!(interruption_gate(), InterruptionGate::Defer);
+        assert_eq!(notified(), before);
+        with(|a| assert!(a.deferred.is_some(), "still held"));
+        finish_test();
+    }
+
+    /// The escalation is held; the expiry replaces it, and only the expiry is
+    /// delivered.
+    #[test]
+    fn a_newer_notice_replaces_the_held_one() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        install_agent(at(BROKER));
+        let Probe::Config(stamp) = begin() else { panic!("a broker URL: the probe asks /config") };
+        let now = time::now();
+        with(|a| {
+            a.kerberos.realm = "A.SITE".into();
+            a.phase = Phase::Connected;
+            a.principal = "riku@A.SITE".into();
+            a.start = now - 36_000;
+            a.end = now + 600;
+            a.refresh_at = None;
+            a.silent_failed = true;
+            a.loss_check_at = i64::MAX;
+        });
+        let before = notified();
+
+        tick_and_announce(now);
+        with(|a| {
+            assert!(a.escalated);
+            assert!(a.deferred.as_ref().is_some_and(|(_, _, s)| *s == Severity::Warning));
+        });
+        tick_and_announce(now + 600);
+        with(|a| assert!(a.deferred.as_ref().is_some_and(|(_, _, s)| *s == Severity::Error)));
+
+        assert!(!apply(Event::DiscoveryFailed { stamp }));
+        assert_eq!(notified(), before + 1);
+        assert_eq!(newest_titles(1), [expiry_title()]);
         finish_test();
     }
 }

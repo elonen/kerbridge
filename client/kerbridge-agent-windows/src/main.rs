@@ -178,8 +178,9 @@ fn main() {
         std::process::exit(elevated::run(mode, broker, result) as i32);
     }
 
-    // One agent per user session. A second launch just raises the first one's
-    // flyout -- which is also what makes the autostart entry safe to double-fire.
+    // One agent per user session. A second launch only asks the first one for
+    // its flyout -- which is also what makes the autostart entry safe to
+    // double-fire. The first one shows it when its interruption gate allows.
     if !sys::claim_single_instance("Local\\KerBridgeNasAuthTray") {
         let existing = sys::find_window(OWNER_CLASS);
         if !existing.is_null() {

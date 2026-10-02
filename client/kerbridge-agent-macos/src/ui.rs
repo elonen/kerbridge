@@ -18,7 +18,7 @@ use objc2_foundation::{
     NSPoint, NSRect, NSRunLoop, NSRunLoopCommonModes, NSSize, NSString, NSTimer, NSURL,
 };
 
-use kerbridge_client::agent::{self, Outcome, Severity};
+use kerbridge_client::agent::{self, InterruptionGate, Outcome, Severity};
 use kerbridge_client::describe::{Action, Supply};
 use kerbridge_client::log;
 use kerbridge_client::present::action_label;
@@ -64,23 +64,23 @@ struct AuthorizationCoordinator {
 
 #[derive(Clone, Copy)]
 struct NotificationEligibility {
-    /// `None` until policy, user settings, or a broker snapshot resolves silence.
-    /// `Some(true)` permits an interruption.
-    configuration_allows: Option<bool>,
+    /// The core's interruption gate allows. The core submits a notice only
+    /// then; the check matters when the authorization prompt returns.
+    gate_allows: bool,
     menu_open: bool,
     bundled: bool,
 }
 
 impl NotificationEligibility {
     fn allows(self, severity: Severity) -> bool {
-        self.configuration_allows == Some(true)
+        self.gate_allows
             && !self.menu_open
             && self.bundled
             && matches!(severity, Severity::Warning | Severity::Error)
     }
 
     fn allows_pending(self) -> bool {
-        self.configuration_allows == Some(true) && !self.menu_open
+        self.gate_allows && !self.menu_open
     }
 }
 
@@ -334,7 +334,7 @@ pub fn notify(title: &str, body: &str, severity: Severity) {
 
 fn notification_eligibility() -> NotificationEligibility {
     NotificationEligibility {
-        configuration_allows: agent::notification_authorization_eligible(),
+        gate_allows: agent::interruption_gate() == InterruptionGate::Allow,
         menu_open: crate::menu::is_open(),
         bundled: bundled(),
     }
@@ -619,11 +619,7 @@ mod tests {
     }
 
     fn eligible() -> NotificationEligibility {
-        NotificationEligibility {
-            configuration_allows: Some(true),
-            menu_open: false,
-            bundled: true,
-        }
+        NotificationEligibility { gate_allows: true, menu_open: false, bundled: true }
     }
 
     #[test]
@@ -718,14 +714,7 @@ mod tests {
     #[test]
     fn ineligible_notices_leave_authorization_unasked() {
         let cases = [
-            (
-                NotificationEligibility { configuration_allows: None, ..eligible() },
-                Severity::Warning,
-            ),
-            (
-                NotificationEligibility { configuration_allows: Some(false), ..eligible() },
-                Severity::Warning,
-            ),
+            (NotificationEligibility { gate_allows: false, ..eligible() }, Severity::Warning),
             (NotificationEligibility { menu_open: true, ..eligible() }, Severity::Warning),
             (NotificationEligibility { bundled: false, ..eligible() }, Severity::Error),
             (eligible(), Severity::Info),
@@ -741,11 +730,10 @@ mod tests {
     #[test]
     fn turning_silent_off_without_a_notice_is_inert() {
         let mut coordinator = AuthorizationCoordinator::new();
-        let mut current =
-            NotificationEligibility { configuration_allows: Some(false), ..eligible() };
+        let mut current = NotificationEligibility { gate_allows: false, ..eligible() };
         assert_eq!(coordinator.submit(notice("silent", Severity::Warning), current), None);
 
-        current.configuration_allows = Some(true);
+        current.gate_allows = true;
         assert!(current.allows(Severity::Warning));
         assert_eq!(coordinator.state, AuthorizationState::Unasked);
     }
@@ -753,8 +741,7 @@ mod tests {
     #[test]
     fn grant_rechecks_silence_and_menu_before_releasing_pending() {
         let changed = [
-            NotificationEligibility { configuration_allows: None, ..eligible() },
-            NotificationEligibility { configuration_allows: Some(false), ..eligible() },
+            NotificationEligibility { gate_allows: false, ..eligible() },
             NotificationEligibility { menu_open: true, ..eligible() },
         ];
 
