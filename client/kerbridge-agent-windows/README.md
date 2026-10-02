@@ -150,9 +150,10 @@ ticket mean anything.
 3. **Sign in** — the first Entra bind, and the only place a WAM or browser prompt
    can appear. This is where the one-time WAM interaction happens, if the tenant
    demands one. With *Start at login* on, every logon after that one signs in
-   by itself: the tray tries WAM silently at startup (three goes, 20 s apart, to
-   ride out a logon/network race) and stays quietly signed out if Windows has no
-   credential to give — no window, no balloon.
+   by itself: the tray tries WAM silently after login and stays quietly signed
+   out if Windows has no credential to give — no window, no balloon. A network
+   failure retries from 5 s, doubling to every 10 minutes, until the network is
+   up; any other failure retries three times, 20 s apart.
 4. **Re-injection** at ~50 % of ticket lifetime — silent from then on.
 
 The one-time interaction is **not** part of enrollment. Enrollment is a machine

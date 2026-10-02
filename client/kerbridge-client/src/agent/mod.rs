@@ -341,15 +341,18 @@ struct Agent {
     /// A silent renewal has failed, so the ticket will run out unless the user
     /// signs in again. Drives the amber state before End Time actually arrives.
     silent_failed: bool,
-    /// When to retry the autostart sign-in, and how many non-network goes are
-    /// left. Nothing pending is also what a user-initiated sign-in or a sign-out
-    /// leaves behind: a retry that fires after either would be the agent acting
-    /// on its own against what the user just did.
+    /// When to retry the autostart sign-in, or a silent attempt that failed on
+    /// transport with no ticket held where one is expected, and how many
+    /// non-network goes are left. Nothing pending is also what a user-initiated
+    /// sign-in or a sign-out leaves behind: a retry that fires after either
+    /// would be the agent acting on its own against what the user just did.
     startup_retry_at: Option<i64>,
     startup_retries: u8,
-    /// Backoff for [`Self::startup_retry_at`] while a `Fault::Network` failure
-    /// stands: doubles on each further failure and never runs out, unlike
-    /// [`Self::startup_retries`]. 0 outside a network failure streak.
+    /// Backoff for [`Self::startup_retry_at`] through a streak of
+    /// `Fault::Network` failures: doubles on each further failure and never runs
+    /// out, unlike [`Self::startup_retries`]. 0 outside a streak; a landed
+    /// exchange, a failure that is not a transport failure, or a session reset
+    /// ends it.
     startup_backoff: i64,
     /// The "your session is about to lapse" balloon has been shown for this ticket.
     escalated: bool,
@@ -582,6 +585,7 @@ impl Agent {
         self.phase = Phase::SignedOut;
         self.startup_retry_at = None;
         self.startup_retries = 0;
+        self.startup_backoff = 0;
         self.principal.clear();
         self.start = 0;
         self.end = 0;
@@ -1003,7 +1007,7 @@ pub fn tick() -> bool {
     }
     if let Some(trigger) = due.start {
         if trigger == Trigger::Startup {
-            log::info("autostart: retrying the silent sign-in");
+            log::info("retrying the silent sign-in");
         }
         worker::start_worker(trigger);
     }
@@ -1076,7 +1080,7 @@ fn tick_at(
     if a.phase != Phase::Connected {
         if a.startup_retry_at.is_some_and(|t| now >= t) && !busy {
             a.startup_retry_at = None;
-            if a.phase == Phase::SignedOut {
+            if matches!(a.phase, Phase::SignedOut | Phase::Error) {
                 due.start = Some(Trigger::Startup);
             }
         }

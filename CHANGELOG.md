@@ -37,6 +37,7 @@ names the tag, and it stops if that section is absent or empty.
 - Agents renew at once after the computer sleeps past a ticket's end.
 - About and `kerbridge --version` show the exact build, for example
   `1.0.1+git20261001.5dd4ebd`.
+- Agents retry a renewal that fails because the network is not up yet.
 
 ## 1.0.1
 

@@ -28,9 +28,9 @@ use super::failure::{
 };
 use super::{
     Agent, BROWSER_LEG, BUSY, BrokerSnapshot, CANCEL, DiscoveryStamp, GRANT_CLEANUP,
-    LOSS_POLL_SECS, MIN_REFRESH_DELAY, NativeToken, Outcome, PROBE_MAX_SECS, Phase, REFRESH_TOKEN,
-    STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS, Severity, TgtLoss, host, host_of,
-    is_the_grants, midpoint, next_backoff, notify, purge_realm, with,
+    LOSS_POLL_SECS, MIN_REFRESH_DELAY, NativeToken, Outcome, PROBE_FIRST_SECS, PROBE_MAX_SECS,
+    Phase, REFRESH_TOKEN, STARTUP_RETRY_BOUNDED_SECS, STARTUP_RETRY_SECS, Severity, TgtLoss, host,
+    host_of, is_the_grants, midpoint, next_backoff, notify, purge_realm, with,
 };
 
 // ---- the queue -------------------------------------------------------------
@@ -48,9 +48,10 @@ pub(super) enum Trigger {
     /// The re-injection schedule. Silent, and a failure is worth a balloon: the
     /// session lapses without one.
     Renewal,
-    /// Autostart at logon. Silent, and a failure is unremarkable -- there may be no
-    /// Windows credential to ride, or no network yet -- so it goes to the log and
-    /// the agent sits in "not signed in" rather than announcing anything.
+    /// Autostart at logon, and every retry on its backoff. Silent, and a failure
+    /// is unremarkable -- there may be no Windows credential to ride, or no
+    /// network yet -- so it goes to the log and the agent sits in "not signed in"
+    /// rather than announcing anything.
     Startup,
     /// A grant was just created, and the machine has no ticket of that grant's
     /// yet. Silent -- it holds a grant, so a
@@ -65,6 +66,11 @@ impl Trigger {
     /// already held, or it does not happen.
     fn silent(self) -> bool {
         self != Trigger::User
+    }
+
+    /// True when nobody asked for the attempt, so its failure interrupts nobody.
+    fn quiet(self) -> bool {
+        matches!(self, Trigger::Startup | Trigger::Granted)
     }
 }
 
@@ -124,7 +130,7 @@ pub(super) enum Event {
         /// list already explains, and not something to dress as a breakage.
         fault: Option<Fault>,
         message: String,
-        quiet: bool,
+        trigger: Trigger,
     },
     Cancelled {
         stamp: DiscoveryStamp,
@@ -275,6 +281,10 @@ fn apply(ev: Event) -> bool {
         }
         Event::Discovered { stamp, snapshot, accepted } => {
             let applied = with(|a| {
+                // The probe doubles once per launch from its first step, so past
+                // its second step at least one probe this streak did not land.
+                let broker_was_away =
+                    a.fault == Some(Fault::Network) && a.probe_backoff > 2 * PROBE_FIRST_SECS;
                 let Some(cache_changed) = a.replace_broker_snapshot(&stamp, snapshot) else {
                     return false;
                 };
@@ -283,6 +293,19 @@ fn apply(ev: Event) -> bool {
                     && let Err(e) = a.settings.save()
                 {
                     log::warn(&format!("could not save the accepted broker settings: {e:#}"));
+                }
+                // The re-probe reached a broker that had been away. Without a
+                // ticket where one is expected, the pending silent attempt runs
+                // now, not at the end of its backoff. A running worker already is
+                // that attempt.
+                if accepted.is_none()
+                    && broker_was_away
+                    && a.startup_retry_at.is_some()
+                    && !BUSY.load(Ordering::Relaxed)
+                    && matches!(a.phase, Phase::SignedOut | Phase::Error)
+                    && a.expected()
+                {
+                    a.startup_retry_at = Some(time::now());
                 }
                 true
             });
@@ -392,7 +415,7 @@ fn apply(ev: Event) -> bool {
                     ));
                 }
             }
-            Event::SignInFailed { stamp, effects, fault, message, quiet } => {
+            Event::SignInFailed { stamp, effects, fault, message, trigger } => {
                 a.finish_busy(&stamp, false);
                 effects.apply(a);
                 log::warn(&format!("sign-in failed: {message}"));
@@ -430,35 +453,45 @@ fn apply(ev: Event) -> bool {
                         let now = time::now();
                         a.refresh_at = Some((now + a.refresh_backoff).min(midpoint(now, a.end)));
                     }
-                } else if quiet {
-                    // Nobody asked for this one. Leave the agent exactly as a logon with
-                    // no credential should look -- not signed in, one click away -- and
-                    // give the network a moment in case that was the problem.
-                    a.phase = Phase::SignedOut;
-                    a.refresh_at = None;
-                    if fault == Some(Fault::Network) {
-                        // A network fault at logon is the case this exists for --
-                        // Wi-Fi or a VPN still coming up -- so it backs off instead
-                        // of giving up outright.
-                        a.startup_backoff = if fresh_streak {
-                            STARTUP_RETRY_SECS
-                        } else {
-                            next_backoff(a.startup_backoff, STARTUP_RETRY_SECS, PROBE_MAX_SECS)
-                        };
-                        a.startup_retry_at = Some(time::now() + a.startup_backoff);
-                    } else if a.startup_retries > 0 {
-                        a.startup_retries -= 1;
-                        a.startup_retry_at = Some(time::now() + STARTUP_RETRY_BOUNDED_SECS);
-                    }
                 } else {
-                    // Somebody asked for this, or an overdue re-injection ran
-                    // after End Time, and no ticket came of it. The product has
-                    // no per-failure headline: the resulting condition is the
-                    // title, and the mechanism sentence is the body. If the
-                    // flyout is up, gate 2 suppresses the toast.
-                    a.phase = Phase::Error;
                     a.refresh_at = None;
-                    pending = Some((tr().cond_stopped.into(), a.message.clone(), Severity::Error));
+                    if trigger.quiet() {
+                        // Nobody asked for this one. Leave the agent exactly as a
+                        // logon with no credential should look -- not signed in, one
+                        // click away -- and give the network a moment in case that
+                        // was the problem.
+                        a.phase = Phase::SignedOut;
+                    } else {
+                        // Somebody asked for this, or an overdue re-injection ran
+                        // after End Time, and no ticket came of it. The product has
+                        // no per-failure headline: the resulting condition is the
+                        // title, and the mechanism sentence is the body. If the
+                        // flyout is up, gate 2 suppresses the toast.
+                        a.phase = Phase::Error;
+                        pending =
+                            Some((tr().cond_stopped.into(), a.message.clone(), Severity::Error));
+                    }
+                    // A network fault at logon or resume is the case this exists
+                    // for -- Wi-Fi or a VPN still coming up -- so it backs off
+                    // instead of giving up outright. A silent attempt where access
+                    // is expected retries the same way. The retries are `Startup`,
+                    // hence quiet: the notice above is the episode's only one.
+                    // The ladder is its own streak, not the fault's: a retry whose
+                    // `/config` lands clears the fault before `/ticket` fails.
+                    if fault == Some(Fault::Network)
+                        && (trigger.quiet() || (trigger.silent() && a.expected()))
+                    {
+                        a.startup_backoff =
+                            next_backoff(a.startup_backoff, STARTUP_RETRY_SECS, PROBE_MAX_SECS);
+                        a.startup_retry_at = Some(time::now() + a.startup_backoff);
+                    } else if trigger.quiet() && a.startup_retries > 0 {
+                        a.startup_retries -= 1;
+                        a.startup_backoff = 0;
+                        a.startup_retry_at = Some(time::now() + STARTUP_RETRY_BOUNDED_SECS);
+                    } else {
+                        a.startup_retry_at = None;
+                        a.startup_backoff = 0;
+                    }
                 }
             }
             Event::Cancelled { stamp, effects } => {
@@ -772,21 +805,20 @@ pub(super) fn start_worker(trigger: Trigger) {
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             run_sign_in(&stamp, silent, use_native, grant.as_ref(), pin.as_deref(), &mut effects)
         }));
-        let quiet = matches!(trigger, Trigger::Startup | Trigger::Granted);
         match outcome {
             Ok(Ok(Some((injected, via_grant, realm)))) => {
                 post(Event::SignedIn { stamp, injected, realm, effects, via_grant })
             }
             Ok(Ok(None)) => post(Event::Cancelled { stamp, effects }),
             Ok(Err((fault, message))) => {
-                post(Event::SignInFailed { stamp, effects, fault, message, quiet })
+                post(Event::SignInFailed { stamp, effects, fault, message, trigger })
             }
             Err(_) => post(Event::SignInFailed {
                 stamp,
                 effects,
                 fault: Some(Fault::Other),
                 message: fill(tr().err_internal, &[("detail", "panic in the sign-in worker")]),
-                quiet,
+                trigger,
             }),
         }
     });
@@ -1446,7 +1478,7 @@ mod tests {
             effects,
             fault: Some(Fault::Refused),
             message: "stale fault".into(),
-            quiet: false,
+            trigger: Trigger::User,
         }));
 
         with(|a| {
@@ -1608,6 +1640,64 @@ mod tests {
         finish_test();
     }
 
+    // ---- launch with a broker from DNS ---------------------------------------------
+
+    fn dns_startup(adopt: Option<crate::tickets::CachedTgt>) {
+        let settings = crate::config::Settings::for_test(FileConfig {
+            cache: crate::config::Cache {
+                realm: "EXAMPLE.SITE".into(),
+                ..crate::config::Cache::default()
+            },
+            ..FileConfig::default()
+        });
+        let mut agent = Agent::new(settings);
+        agent.enroll_state = enroll::State::Enrolled;
+        if let Some(ticket) = adopt {
+            assert!(!agent.adopt_cached_ticket(ticket));
+        }
+        super::super::AGENT.with(|slot| *slot.borrow_mut() = Some(agent));
+        assert!(apply(Event::BrokerDiscovered { url: "https://kerbridge.example.site".into() }));
+    }
+
+    /// `init` adopts before DNS answers, from the cached realm. The SRV answer
+    /// then schedules nothing more, and the next exchange is the adopted
+    /// ticket's midpoint re-injection.
+    #[test]
+    fn dns_startup_with_a_live_ticket_adopts_it_and_waits_for_its_midpoint() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        let now = time::now();
+        dns_startup(Some(crate::tickets::CachedTgt {
+            principal: "riku@EXAMPLE.SITE".into(),
+            start: now - 3 * 3_600,
+            end: now + 7 * 3_600,
+            renew_till: now + 7 * 3_600,
+        }));
+        with(|a| {
+            assert!(a.phase == Phase::Connected);
+            assert!(a.startup_retry_at.is_none());
+            let due = super::super::tick_at(a, now + 1, false, &|_| Ok(true));
+            assert!(due.start.is_none());
+            let midpoint = a.refresh_at.unwrap();
+            assert!((now + 3 * 3_600..=now + 7 * 3_600 / 2 + 1).contains(&midpoint));
+            let due = super::super::tick_at(a, midpoint, false, &|_| Ok(true));
+            assert!(due.start == Some(Trigger::Renewal));
+        });
+        finish_test();
+    }
+
+    /// Nothing adopted: the SRV answer starts a silent attempt on the next tick.
+    #[test]
+    fn dns_startup_without_a_ticket_attempts_on_the_next_tick() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        dns_startup(None);
+        with(|a| {
+            assert!(a.phase == Phase::SignedOut);
+            let due = super::super::tick_at(a, time::now(), false, &|_| Ok(true));
+            assert!(due.start == Some(Trigger::Startup));
+        });
+        finish_test();
+    }
+
     #[test]
     fn rejected_first_leg_never_starts_oidc() {
         let oidc_started = Cell::new(false);
@@ -1694,7 +1784,7 @@ mod tests {
             effects: WorkerEffects::default(),
             fault,
             message: "no".into(),
-            quiet: false,
+            trigger: Trigger::Renewal,
         }
     }
 
@@ -1728,7 +1818,7 @@ mod tests {
             effects: WorkerEffects::default(),
             fault: Some(Fault::Network),
             message: "broker down".into(),
-            quiet: false,
+            trigger: Trigger::Renewal,
         }));
 
         with(|a| {
@@ -1862,6 +1952,229 @@ mod tests {
         with(|a| {
             assert!(a.phase == Phase::Error);
             assert!(a.refresh_at.is_none(), "nothing further comes round");
+        });
+        finish_test();
+    }
+
+    // ---- recovery after End Time -------------------------------------------------
+
+    fn no_cache_read(_: &str) -> anyhow::Result<bool> {
+        panic!("the ticket cache was read without a live ticket")
+    }
+
+    /// Take the busy slot the way `start_worker` does.
+    fn take_slot() -> DiscoveryStamp {
+        let stamp = with(|a| {
+            let stamp = a.advance_discovery().unwrap();
+            a.started_busy(stamp.clone(), Action::ReinjectTicket);
+            stamp
+        });
+        BUSY.store(true, Ordering::Relaxed);
+        stamp
+    }
+
+    fn retry_failed(stamp: DiscoveryStamp, fault: Option<Fault>) -> Event {
+        Event::SignInFailed {
+            stamp,
+            effects: WorkerEffects::default(),
+            fault,
+            message: "no".into(),
+            trigger: Trigger::Startup,
+        }
+    }
+
+    /// Field case: the machine slept across End Time and resumed before its
+    /// network. The first tick starts the overdue re-injection; it is running.
+    fn resumed() -> DiscoveryStamp {
+        install_agent("https://a.example.site");
+        let _ = super::super::HOST.set(&TestHost);
+        let accepted = with(Agent::advance_discovery).unwrap();
+        assert!(apply(discovered(accepted, snapshot("A.SITE", "a"))));
+        let now = time::now();
+        with(|a| {
+            a.phase = Phase::Connected;
+            a.principal = "riku@A.SITE".into();
+            a.start = now - 46_000;
+            a.end = now - 10_000;
+            a.refresh_at = Some(now - 28_000);
+            a.expect(true);
+            let due = super::super::tick_at(a, now, false, &no_cache_read);
+            assert!(due.start == Some(Trigger::Renewal));
+            assert!(a.phase == Phase::Expired);
+        });
+        take_slot()
+    }
+
+    /// The overdue attempt failed on DNS: one notice, then quiet retries on the
+    /// startup backoff until one lands.
+    #[test]
+    fn a_network_failure_after_end_time_retries_until_an_exchange_lands() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        let stamp = resumed();
+        let notified = NOTIFIED.load(Ordering::Relaxed);
+
+        let before = time::now();
+        assert!(apply(failed(stamp, Some(Fault::Network))));
+        assert_eq!(NOTIFIED.load(Ordering::Relaxed), notified + 1, "No access, once");
+        let first = with(|a| {
+            assert!(a.phase == Phase::Error);
+            assert!(a.refresh_at.is_none());
+            a.startup_retry_at.expect("a transport failure retries")
+        });
+        assert!((STARTUP_RETRY_SECS..=STARTUP_RETRY_SECS + 1).contains(&(first - before)));
+
+        let due = with(|a| super::super::tick_at(a, first - 1, false, &no_cache_read));
+        assert!(due.start.is_none(), "not before it is due");
+        let due = with(|a| super::super::tick_at(a, first, false, &no_cache_read));
+        assert!(due.start == Some(Trigger::Startup), "silent: no browser can open");
+
+        // Still no network. Quiet, and the interval doubles.
+        let before = time::now();
+        assert!(apply(retry_failed(take_slot(), Some(Fault::Network))));
+        assert_eq!(NOTIFIED.load(Ordering::Relaxed), notified + 1, "a retry says nothing");
+        let second = with(|a| a.startup_retry_at.expect("still retrying"));
+        let doubled = 2 * STARTUP_RETRY_SECS;
+        assert!((doubled..=doubled + 1).contains(&(second - before)));
+
+        // The network is back: the retry lands and the episode ends.
+        let due = with(|a| super::super::tick_at(a, second, false, &no_cache_read));
+        assert!(due.start == Some(Trigger::Startup));
+        assert!(apply(landed(take_slot())));
+        with(|a| {
+            assert!(a.phase == Phase::Connected);
+            assert!(a.fault.is_none());
+            assert!(a.startup_retry_at.is_none());
+            assert!(a.refresh_at.is_some());
+        });
+        assert!(!BUSY.load(Ordering::Relaxed));
+        finish_test();
+    }
+
+    #[test]
+    fn retrying_after_end_time_stops_on_a_refusal_or_sign_off() {
+        let _guard = STATE_LOCK.lock().unwrap();
+
+        let stamp = resumed();
+        assert!(apply(failed(stamp, Some(Fault::Network))));
+        let notified = NOTIFIED.load(Ordering::Relaxed);
+        let due = with(|a| {
+            let at = a.startup_retry_at.unwrap();
+            super::super::tick_at(a, at, false, &no_cache_read)
+        });
+        assert!(due.start == Some(Trigger::Startup));
+        assert!(apply(retry_failed(take_slot(), Some(Fault::Refused))));
+        assert_eq!(NOTIFIED.load(Ordering::Relaxed), notified);
+        with(|a| assert!(a.startup_retry_at.is_none(), "a refusal stops the retries"));
+        finish_test();
+
+        let stamp = resumed();
+        assert!(apply(failed(stamp, Some(Fault::Network))));
+        // What `drop_ticket` does to the agent.
+        with(|a| {
+            a.reset_session();
+            a.expect(false);
+        });
+        assert!(apply(failed(take_slot(), Some(Fault::Network))));
+        with(|a| assert!(a.startup_retry_at.is_none(), "nothing is expected after sign-off"));
+        finish_test();
+    }
+
+    /// The re-probe reaches a broker that missed a probe, deep into the
+    /// backoff: the pending attempt starts at once instead of up to ten minutes
+    /// later. Nothing else brings an attempt forward.
+    #[test]
+    fn a_broker_that_answers_again_starts_the_pending_attempt_at_once() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        // (case, probes missed, busy, retry pending, expected, starts now)
+        let cases = [
+            ("away, then back", 1, false, true, true, true),
+            ("a worker runs", 1, true, true, true, false),
+            ("the first probe landed", 0, false, true, true, false),
+            ("nothing pending", 1, false, false, true, false),
+            ("not expected", 1, false, true, false, false),
+        ];
+        for (case, missed, busy, pending, expected, starts) in cases {
+            let stamp = resumed();
+            assert!(apply(failed(stamp, Some(Fault::Network))));
+            let pending_at = with(|a| {
+                a.startup_backoff = PROBE_MAX_SECS;
+                a.startup_retry_at = pending.then(|| time::now() + PROBE_MAX_SECS);
+                a.expect(expected);
+                a.startup_retry_at
+            });
+            for _ in 0..=missed {
+                let due = with(|a| {
+                    let at = a.probe_at.expect("the transport failure armed the probe");
+                    super::super::tick_at(a, at, false, &no_cache_read)
+                });
+                assert!(due.probe && due.start.is_none(), "{case}");
+            }
+
+            // What `discover_in_background` publishes when `/config` lands.
+            let probe = with(Agent::advance_discovery).unwrap();
+            BUSY.store(busy, Ordering::Relaxed);
+            let before = time::now();
+            assert!(apply(discovered(probe, snapshot("A.SITE", "a"))));
+            with(|a| {
+                assert!(a.fault.is_none(), "{case}");
+                if starts {
+                    assert!(a.startup_retry_at.is_some_and(|t| t <= before + 1), "{case}");
+                    let due = super::super::tick_at(a, before + 1, false, &no_cache_read);
+                    assert!(due.start == Some(Trigger::Startup), "{case}");
+                } else {
+                    assert_eq!(a.startup_retry_at, pending_at, "{case}");
+                }
+            });
+            finish_test();
+        }
+    }
+
+    /// The broker answers `/config` and the exchange fails on transport, as
+    /// with `/ticket` 503 or an unreachable IdP. Each retry publishes the
+    /// document, which clears the fault; the ladder climbs regardless. The
+    /// sign-in after login shares it.
+    #[test]
+    fn retries_climb_the_ladder_when_config_lands_and_the_exchange_fails() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        for after_login in [false, true] {
+            let first = if after_login {
+                install_agent("https://a.example.site");
+                let _ = super::super::HOST.set(&TestHost);
+                retry_failed(take_slot(), Some(Fault::Network))
+            } else {
+                failed(resumed(), Some(Fault::Network))
+            };
+            assert!(apply(first));
+            let mut seen = vec![with(|a| a.startup_backoff)];
+            for _ in 0..8 {
+                let stamp = take_slot();
+                let (published, _) = std::sync::mpsc::channel();
+                assert!(apply(Event::Discovered {
+                    stamp: stamp.clone(),
+                    snapshot: snapshot("A.SITE", "a"),
+                    accepted: Some(published),
+                }));
+                assert!(with(|a| a.fault.is_none()));
+                assert!(apply(retry_failed(stamp, Some(Fault::Network))));
+                seen.push(with(|a| a.startup_backoff));
+            }
+            assert_eq!(seen, [5, 10, 20, 40, 80, 160, 320, 600, 600], "after_login={after_login}");
+            finish_test();
+        }
+    }
+
+    /// A failure that arms no retry clears the schedule: here *Renew now*,
+    /// refused while a retry is pending.
+    #[test]
+    fn a_failure_that_arms_no_retry_clears_the_pending_one() {
+        let _guard = STATE_LOCK.lock().unwrap();
+        let stamp = resumed();
+        assert!(apply(failed(stamp, Some(Fault::Network))));
+        assert!(with(|a| a.startup_retry_at.is_some()));
+        assert!(apply(failed(take_slot(), Some(Fault::Refused))));
+        with(|a| {
+            assert!(a.startup_retry_at.is_none());
+            assert_eq!(a.startup_backoff, 0);
         });
         finish_test();
     }

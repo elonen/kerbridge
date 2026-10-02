@@ -344,8 +344,14 @@ T−20 minutes, and at the End Time the condition becomes `Stopped`.
 midpoint and the End Time wakes with both behind it. The first tick after
 resume starts that re-injection silently instead of dropping it, and starts it
 again a minute later if the busy-slot gates declined it. The condition stays
-`Stopped` until the exchange lands, and a failure is announced as `Stopped`.
-After that outcome the agent makes no further attempt after End Time on its own.
+`Stopped` until the exchange lands, and a failure is announced as `Stopped` one
+time. After a transport failure, the agent tries again silently on the backoff
+of the sign-in after login (5 s, doubling to 10 minutes) while this machine is
+supposed to be working. These attempts show no notification. They stop when an
+exchange lands, at a failure that is not a transport failure, or when this
+machine is no longer expected to be working (*Sign off*, another broker or
+account). The backoff climbs even when `/config` answers and the exchange
+fails on transport.
 
 ```mermaid
 flowchart TD
@@ -427,6 +433,10 @@ a sign-in.
 - **A landed `/config` clears the transport fault**, which is what replaces the
   stale sentence with the truth — usually *a browser sign-in is needed*, a
   different and actionable thing.
+- **A landed `/config` brings a pending silent attempt forward** when at least
+  one earlier probe in this streak did not land, and this machine is supposed
+  to be working, holds no ticket and runs no worker. The attempt starts at the
+  next tick and not at the end of its backoff. The probe itself never signs in.
 
 The probe does not take the busy slot, and it is skipped while a worker holds
 one, because that worker already asks the same endpoint the same question.
