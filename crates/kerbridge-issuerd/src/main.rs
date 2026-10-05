@@ -212,7 +212,7 @@ struct Slot<'a>(&'a AtomicUsize);
 impl<'a> Slot<'a> {
     fn claim(counter: &'a AtomicUsize, max: usize) -> Option<Self> {
         counter
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| (n < max).then_some(n + 1))
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| (n < max).then_some(n + 1))
             .ok()
             .map(|_| Self(counter))
     }

@@ -20,7 +20,7 @@ exclude = ["client"]
 [workspace.package]
 version = "1.1.0"
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.95"
 
 # `kerbridge-core` is the deliberate exception and sets its own -- see its manifest.
 license = "GPL-3.0-or-later"
